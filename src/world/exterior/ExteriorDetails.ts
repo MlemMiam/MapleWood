@@ -268,15 +268,37 @@ export function buildExteriorDetails(ctx: WorldBuildContext): void {
     return tex;
   }
 
-  // Place flowers on the grass (green areas)
+  // Place flowers in garden beds (grass areas) as small clusters, not scattered.
   const flowerPositions: Array<[number, number, number]> = [];
-  for (let i = 0; i < 75; i++) {
-    const side = Math.random() < 0.5 ? -1 : 1;
-    const x = side * (7 + Math.random() * 11);
-    let z = 2 + Math.random() * 24;
-    if (z > 11 && z < 17) z = Math.random() < 0.5 ? 2 + Math.random() * 9 : 17 + Math.random() * 9;
-    flowerPositions.push([x, 0.05, z]);
-  }
+  const clusterCenters: Array<[number, number]> = [];
+  // Define cluster centers on the lawns, away from walkways and buildings
+  const lawnZones: Array<{ xMin: number; xMax: number; zMin: number; zMax: number }> = [
+    { xMin: -19, xMax: -8, zMin: 3, zMax: 9 },
+    { xMin: -19, xMax: -8, zMin: 18, zMax: 24 },
+    { xMin: 8, xMax: 19, zMin: 3, zMax: 9 },
+    { xMin: 8, xMax: 19, zMin: 18, zMax: 24 },
+    { xMin: -14, xMax: -9, zMin: 12, zMax: 14 },
+    { xMin: 9, xMax: 14, zMin: 12, zMax: 14 },
+  ];
+  lawnZones.forEach((zone) => {
+    const clustersInZone = 2 + Math.floor(Math.random() * 2);
+    for (let c = 0; c < clustersInZone; c++) {
+      const cx = zone.xMin + Math.random() * (zone.xMax - zone.xMin);
+      const cz = zone.zMin + Math.random() * (zone.zMax - zone.zMin);
+      clusterCenters.push([cx, cz]);
+    }
+  });
+  // Generate flowers around each cluster center
+  clusterCenters.forEach(([cx, cz]) => {
+    const count = 5 + Math.floor(Math.random() * 4);
+    for (let f = 0; f < count; f++) {
+      const angle = Math.random() * Math.PI * 2;
+      const radius = 0.2 + Math.random() * 0.9;
+      const x = cx + Math.cos(angle) * radius;
+      const z = cz + Math.sin(angle) * radius;
+      flowerPositions.push([x, 0.05, z]);
+    }
+  });
 
   flowerPositions.forEach((pos, i) => {
     const flower = new THREE.Group();
