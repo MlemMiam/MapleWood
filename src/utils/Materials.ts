@@ -59,7 +59,7 @@ function configureTexture(
   tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(repeatX, repeatY);
   tex.colorSpace = isColor ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-  tex.anisotropy = Math.min(8, maxAnisotropy);
+  tex.anisotropy = Math.min(4, maxAnisotropy);
   tex.needsUpdate = true;
   return tex;
 }

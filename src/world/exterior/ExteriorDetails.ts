@@ -315,7 +315,7 @@ export function buildExteriorDetails(ctx: WorldBuildContext): void {
       new THREE.Vector3((Math.random() - 0.5) * 0.05, 0.2, (Math.random() - 0.5) * 0.05),
     ]);
     const stem = new THREE.Mesh(new THREE.TubeGeometry(stemCurve, 16, 0.01, 8, false), stemMat);
-    stem.castShadow = true;
+    // stem.castShadow = true; (disabled for perf)
     flower.add(stem);
 
     // Leaves along stem (curved planes)
@@ -352,7 +352,7 @@ export function buildExteriorDetails(ctx: WorldBuildContext): void {
         petal.position.set(Math.cos(a) * 0.065, 0.25, Math.sin(a) * 0.065);
         petal.rotation.y = a;
         petal.rotation.x = 0.55;
-        petal.castShadow = true;
+        // petal.castShadow = true; (disabled for perf)
         flower.add(petal);
       }
       // Inner ring
@@ -399,7 +399,7 @@ export function buildExteriorDetails(ctx: WorldBuildContext): void {
           petal.rotation.y = a;
           petal.rotation.x = 0.35 + layer * 0.12;
           petal.scale.setScalar(1 - layer * 0.1);
-          petal.castShadow = true;
+          // petal.castShadow = true; (disabled for perf)
           flower.add(petal);
         }
       }
@@ -414,7 +414,7 @@ export function buildExteriorDetails(ctx: WorldBuildContext): void {
         petal.position.set(Math.cos(a) * 0.045, 0.27, Math.sin(a) * 0.045);
         petal.rotation.y = a;
         petal.rotation.x = 0.2;
-        petal.castShadow = true;
+        // petal.castShadow = true; (disabled for perf)
         flower.add(petal);
       }
       for (let p = 0; p < 3; p++) {
@@ -448,7 +448,7 @@ export function buildExteriorDetails(ctx: WorldBuildContext): void {
           const a = (r / 4) * Math.PI * 2 + f * 0.4;
           const small = new THREE.Mesh(new THREE.SphereGeometry(0.013, 8, 6), lavenderMat);
           small.position.set(Math.cos(a) * 0.028, y, Math.sin(a) * 0.028);
-          small.castShadow = true;
+          // small.castShadow = true; (disabled for perf)
           flower.add(small);
         }
       }
@@ -561,7 +561,7 @@ export function buildExteriorDetails(ctx: WorldBuildContext): void {
     foam.position.set(0, 0.6, 0);
     fountainGroup.add(foam);
 
-    const splashCount = 60;
+    const splashCount = 30;
     const splashGeo = new THREE.BufferGeometry();
     const splashPos = new Float32Array(splashCount * 3);
     const splashVel = new Float32Array(splashCount * 3);

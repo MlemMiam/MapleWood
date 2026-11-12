@@ -749,6 +749,13 @@ export function buildMainBuilding(ctx: WorldBuildContext): THREE.Group {
   // Register solid wall meshes for camera spring-arm collision
   group.traverse((obj) => {
     if ((obj as THREE.Mesh).isMesh && obj !== floor) {
+      const mesh = obj as THREE.Mesh;
+      // Only register large structural meshes for camera collision to reduce raycast cost
+      if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+      const bb = mesh.geometry.boundingBox!;
+      const size = new THREE.Vector3();
+      bb.getSize(size);
+      if (size.x < 0.6 && size.y < 0.6 && size.z < 0.6) return;
       ctx.cameraColliders.push(obj);
     }
   });
