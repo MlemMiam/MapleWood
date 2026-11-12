@@ -1,228 +1,341 @@
 import * as THREE from 'three';
 import type { WorldBuildContext } from '../WorldContext';
 
-function makeCanvasTexture(w: number, h: number, draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void, repeat = 1): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext('2d')!;
-  draw(ctx, w, h);
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(repeat, repeat);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.needsUpdate = true;
-  return tex;
-}
-
 export function buildExteriorDetails(ctx: WorldBuildContext): void {
-  const { scene, mats, animatedObjects } = ctx;
+  const { scene, mats, physics, animatedObjects } = ctx;
   const group = new THREE.Group();
   group.name = 'ExteriorDetails';
 
   const dummy = new THREE.Object3D();
   const tint = new THREE.Color();
 
-  // ---------------------------------------------------------------------
-  // 1. Ground decals: cracks, stains, leaves scattered on courtyard concrete
-  // ---------------------------------------------------------------------
-  const crackTex = makeCanvasTexture(256, 256, (c, w, h) => {
-    c.fillStyle = 'rgba(0,0,0,0)';
-    c.fillRect(0, 0, w, h);
-    c.strokeStyle = 'rgba(40,45,52,0.55)';
-    c.lineWidth = 1.2;
-    for (let i = 0; i < 18; i++) {
-      const x0 = Math.random() * w;
-      const y0 = Math.random() * h;
-      c.beginPath();
-      c.moveTo(x0, y0);
-      let x = x0, y = y0;
-      for (let s = 0; s < 6; s++) {
-        x += (Math.random() - 0.5) * 28;
-        y += (Math.random() - 0.5) * 28;
-        c.lineTo(x, y);
-      }
-      c.stroke();
+  // Helper: organic perturbed icosahedron lobe (reused for foliage)
+  const makeOrganicLobe = (radius: number, ox: number, oy: number, oz: number, seed: number) => {
+    const geo = new THREE.IcosahedronGeometry(radius, 2);
+    const pos = geo.attributes.position;
+    for (let vi = 0; vi < pos.count; vi++) {
+      const vx = pos.getX(vi);
+      const vy = pos.getY(vi);
+      const vz = pos.getZ(vi);
+      const len = Math.hypot(vx, vy, vz) || 1;
+      const nx = vx / len;
+      const ny = vy / len;
+      const nz = vz / len;
+      const disp =
+        1 +
+        0.12 * Math.sin(nx * 4.2 + seed) * Math.cos(ny * 3.6 - seed * 0.7) +
+        0.07 * Math.sin(nz * 5.8 + seed * 1.3);
+      pos.setXYZ(vi, vx * disp + ox, vy * disp * 0.88 + oy, vz * disp + oz);
     }
-  });
-  const stainTex = makeCanvasTexture(256, 256, (c, w, h) => {
-    c.clearRect(0, 0, w, h);
-    for (let i = 0; i < 6; i++) {
-      const gx = Math.random() * w;
-      const gy = Math.random() * h;
-      const r = 20 + Math.random() * 40;
-      const g = c.createRadialGradient(gx, gy, 0, gx, gy, r);
-      g.addColorStop(0, 'rgba(40,45,52,0.22)');
-      g.addColorStop(1, 'rgba(40,45,52,0)');
-      c.fillStyle = g;
-      c.fillRect(0, 0, w, h);
-    }
-  });
-  const leafTex = makeCanvasTexture(128, 128, (c, w, h) => {
-    c.clearRect(0, 0, w, h);
-    for (let i = 0; i < 14; i++) {
-      const x = Math.random() * w;
-      const y = Math.random() * h;
-      c.save();
-      c.translate(x, y);
-      c.rotate(Math.random() * Math.PI * 2);
-      c.fillStyle = i % 3 === 0 ? '#8a5a2b' : i % 3 === 1 ? '#a06b33' : '#6b4a22';
-      c.beginPath();
-      c.ellipse(0, 0, 6 + Math.random() * 4, 3 + Math.random() * 2, 0, 0, Math.PI * 2);
-      c.fill();
-      c.restore();
-    }
-  });
-
-  const decalMatCrack = new THREE.MeshBasicMaterial({ map: crackTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1 });
-  const decalMatStain = new THREE.MeshBasicMaterial({ map: stainTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1 });
-  const decalMatLeaf = new THREE.MeshBasicMaterial({ map: leafTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1 });
-
-  const decalGeo = new THREE.PlaneGeometry(1, 1);
-  const addDecals = (positions: Array<[number, number, number]>, mat: THREE.Material, scaleRange: [number, number]) => {
-    const mesh = new THREE.InstancedMesh(decalGeo, mat, positions.length);
-    positions.forEach(([x, y, z], i) => {
-      const s = scaleRange[0] + Math.random() * (scaleRange[1] - scaleRange[0]);
-      dummy.position.set(x, y + 0.012, z);
-      dummy.rotation.set(-Math.PI / 2, Math.random() * Math.PI * 2, 0);
-      dummy.scale.set(s, s, 1);
-      dummy.updateMatrix();
-      mesh.setMatrixAt(i, dummy.matrix);
-    });
-    mesh.instanceMatrix.needsUpdate = true;
-    group.add(mesh);
+    geo.computeVertexNormals();
+    return geo.index ? geo.toNonIndexed() : geo;
   };
 
-  // Courtyard concrete cracks/stains/leaves
-  const courtyardDecals: Array<[number, number, number]> = [];
-  for (let i = 0; i < 40; i++) {
-    courtyardDecals.push([(Math.random() - 0.5) * 30, 0, 5 + Math.random() * 25]);
-  }
-  addDecals(courtyardDecals, decalMatCrack, [1.2, 2.6]);
-  addDecals(courtyardDecals.map(([x, y, z]) => [x + 0.3, y, z + 0.4] as [number, number, number]), decalMatStain, [1.4, 3.0]);
-  const leafPositions: Array<[number, number, number]> = [];
-  for (let i = 0; i < 60; i++) {
-    leafPositions.push([(Math.random() - 0.5) * 40, 0, (Math.random() - 0.5) * 40 + 10]);
-  }
-  addDecals(leafPositions, decalMatLeaf, [0.6, 1.1]);
+  // =========================================================================
+  // 1. VARIED, DETAILED VEGETATION
+  // =========================================================================
 
-  // ---------------------------------------------------------------------
-  // 2. Moss patches on building bases (green translucent planes)
-  // ---------------------------------------------------------------------
-  const mossTex = makeCanvasTexture(128, 128, (c, w, h) => {
-    c.clearRect(0, 0, w, h);
-    for (let i = 0; i < 40; i++) {
-      const x = Math.random() * w;
-      const y = Math.random() * h;
-      const r = 8 + Math.random() * 18;
-      const g = c.createRadialGradient(x, y, 0, x, y, r);
-      g.addColorStop(0, 'rgba(40,90,40,0.55)');
-      g.addColorStop(1, 'rgba(40,90,40,0)');
-      c.fillStyle = g;
-      c.fillRect(0, 0, w, h);
+  // ---- Spruce trees with tiered branches ----
+  const spruceTrunkMat = new THREE.MeshStandardMaterial({ color: 0x4a3322, roughness: 0.92, metalness: 0.02 });
+  const spruceBarkBump = new THREE.MeshStandardMaterial({ color: 0x3a2618, roughness: 0.95 });
+  const spruceFoliageMats = [
+    new THREE.MeshStandardMaterial({ color: 0x1f5e2a, roughness: 0.85 }),
+    new THREE.MeshStandardMaterial({ color: 0x2a6e33, roughness: 0.85 }),
+    new THREE.MeshStandardMaterial({ color: 0x184f22, roughness: 0.85 }),
+  ];
+
+  const spruceSpots: Array<[number, number, number, number]> = [
+    [-48, 0, 14, 0.9], [48, 0, 16, 1.0], [-52, 0, -30, 1.1], [52, 0, -28, 0.95],
+    [-70, 0, -60, 1.05], [70, 0, -58, 0.9], [-80, 0, 10, 1.0], [80, 0, 12, 1.1],
+    [-60, 0, 40, 0.95], [60, 0, 42, 1.0],
+  ];
+
+  spruceSpots.forEach(([x, y, z, scale], idx) => {
+    const tree = new THREE.Group();
+    tree.position.set(x, y, z);
+
+    // Trunk with slight taper and bark ridges
+    const trunkGeo = new THREE.CylinderGeometry(0.12 * scale, 0.18 * scale, 4.2 * scale, 10);
+    const trunk = new THREE.Mesh(trunkGeo, spruceTrunkMat);
+    trunk.position.y = 2.1 * scale;
+    trunk.castShadow = true;
+    tree.add(trunk);
+
+    // Bark ridge details
+    for (let r = 0; r < 6; r++) {
+      const ridge = new THREE.Mesh(new THREE.BoxGeometry(0.03 * scale, 4.0 * scale, 0.02 * scale), spruceBarkBump);
+      const a = (r / 6) * Math.PI * 2;
+      ridge.position.set(Math.cos(a) * 0.14 * scale, 2.1 * scale, Math.sin(a) * 0.14 * scale);
+      ridge.rotation.y = a;
+      tree.add(ridge);
     }
-  });
-  const mossMat = new THREE.MeshBasicMaterial({ map: mossTex, transparent: true, depthWrite: false, color: 0x3f7a3a });
-  const mossPositions: Array<[number, number, number, number]> = [
-    [-10, 0, -6, 0], [10, 0, -6, 0], [-12, 0, 4, 0], [12, 0, 4, 0],
-    [-18, 0, 12, 0], [18, 0, 12, 0], [-8, 0, 22, 0], [8, 0, 22, 0],
-    [-30, 0, -2, 0], [30, 0, -2, 0],
-  ];
-  mossPositions.forEach(([x, y, z, ry]) => {
-    const moss = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.7), mossMat);
-    moss.rotation.x = -Math.PI / 2;
-    moss.rotation.z = ry;
-    moss.position.set(x, 0.014, z);
-    group.add(moss);
-  });
 
-  // ---------------------------------------------------------------------
-  // 3. Varied vegetation: spruce & birch trees + seasonal flowers
-  // ---------------------------------------------------------------------
-  // Spruce (conical)
-  const spruceTrunkGeo = new THREE.CylinderGeometry(0.12, 0.16, 3.0, 8);
-  const spruceConeGeo = new THREE.ConeGeometry(1.1, 3.2, 8);
-  const spruceTrunkMat = new THREE.MeshStandardMaterial({ color: 0x4a3322, roughness: 0.9 });
-  const spruceFoliageMat = new THREE.MeshStandardMaterial({ color: 0x1f5e2a, roughness: 0.8 });
+    // Tiered foliage cones (3 levels) with organic perturbation
+    const levels = 3;
+    for (let lvl = 0; lvl < levels; lvl++) {
+      const coneRadius = (1.3 - lvl * 0.35) * scale;
+      const coneHeight = (1.6 - lvl * 0.2) * scale;
+      const yPos = (2.6 + lvl * 1.1) * scale;
+      const mat = spruceFoliageMats[(idx + lvl) % spruceFoliageMats.length];
+      const coneGeo = new THREE.ConeGeometry(coneRadius, coneHeight, 10);
+      // perturb vertices
+      const pos = coneGeo.attributes.position;
+      for (let vi = 0; vi < pos.count; vi++) {
+        const vx = pos.getX(vi);
+        const vy = pos.getY(vi);
+        const vz = pos.getZ(vi);
+        const n = Math.sin(vx * 3 + vy * 2 + vz * 4 + lvl) * 0.08;
+        pos.setXYZ(vi, vx * (1 + n), vy, vz * (1 + n));
+      }
+      coneGeo.computeVertexNormals();
+      const cone = new THREE.Mesh(coneGeo, mat);
+      cone.position.y = yPos;
+      cone.castShadow = true;
+      cone.receiveShadow = true;
+      tree.add(cone);
+    }
 
-  const spruceSpots: Array<[number, number, number]> = [
-    [-48, 0, 14], [48, 0, 16], [-52, 0, -30], [52, 0, -28],
-    [-70, 0, -60], [70, 0, -58], [-80, 0, 10], [80, 0, 12],
-  ];
-  spruceSpots.forEach(([x, y, z]) => {
-    const t = new THREE.Mesh(spruceTrunkGeo, spruceTrunkMat);
-    t.position.set(x, 1.5, z);
-    t.castShadow = true;
-    const c = new THREE.Mesh(spruceConeGeo, spruceFoliageMat);
-    c.position.set(x, 3.6, z);
-    c.castShadow = true;
-    group.add(t, c);
-    ctx.physics.addStaticBox(x, 1.5, z, 0.2, 1.5, 0.2);
+    // Top spire
+    const spire = new THREE.Mesh(new THREE.ConeGeometry(0.35 * scale, 0.9 * scale, 8), spruceFoliageMats[idx % 3]);
+    spire.position.y = (2.6 + 3 * 1.1 + 0.6) * scale;
+    spire.castShadow = true;
+    tree.add(spire);
+
+    group.add(tree);
+    physics.addStaticBox(x, 2.1 * scale, z, 0.2 * scale, 2.1 * scale, 0.2 * scale);
   });
 
-  // Birch (white trunk + light canopy)
-  const birchTrunkGeo = new THREE.CylinderGeometry(0.1, 0.13, 4.0, 8);
-  const birchTrunkMat = new THREE.MeshStandardMaterial({ color: 0xe8e2d6, roughness: 0.6 });
-  const birchCanopyGeo = new THREE.SphereGeometry(1.4, 10, 8);
-  const birchCanopyMat = new THREE.MeshStandardMaterial({ color: 0x7fb069, roughness: 0.8 });
+  // ---- Birch trees with drooping branches and detailed bark ----
+  const birchTrunkMat = new THREE.MeshStandardMaterial({ color: 0xf0ece4, roughness: 0.55, metalness: 0.05 });
+  const birchMarkMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.9 });
+  const birchCanopyMat = new THREE.MeshStandardMaterial({ color: 0x8fbf7a, roughness: 0.82 });
+  const birchCanopyMat2 = new THREE.MeshStandardMaterial({ color: 0xa8d49a, roughness: 0.82 });
 
   const birchSpots: Array<[number, number, number]> = [
     [-22, 0, 6], [22, 0, 7], [-24, 0, 24], [24, 0, 23],
-    [-16, 0, -8], [16, 0, -7],
+    [-16, 0, -8], [16, 0, -7], [-30, 0, 18], [30, 0, 19],
   ];
-  birchSpots.forEach(([x, y, z]) => {
-    const t = new THREE.Mesh(birchTrunkGeo, birchTrunkMat);
-    t.position.set(x, 2.0, z);
-    t.castShadow = true;
-    const c = new THREE.Mesh(birchCanopyGeo, birchCanopyMat);
-    c.position.set(x, 4.2, z);
-    c.castShadow = true;
-    c.receiveShadow = true;
-    group.add(t, c);
-    ctx.physics.addStaticBox(x, 2.0, z, 0.18, 2.0, 0.18);
-  });
 
-  // Seasonal flowers along walkways
-  const flowerMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 });
-  const flowerGeo = new THREE.DodecahedronGeometry(0.07, 0);
-  const flowerSpots: Array<[number, number, number, number]> = [];
-  for (let i = 0; i < 80; i++) {
-    const x = (Math.random() - 0.5) * 26;
-    const z = 8 + Math.random() * 18;
-    flowerSpots.push([x, 0.12, z, i]);
-  }
-  const flowers = new THREE.InstancedMesh(flowerGeo, flowerMat, flowerSpots.length);
-  const flowerColors = [0xf59e0b, 0xef4444, 0xfbbf24, 0xf472b6, 0xffffff, 0x8b5cf6];
-  flowerSpots.forEach(([x, y, z], i) => {
-    dummy.position.set(x, y, z);
-    dummy.rotation.set(Math.random(), Math.random(), Math.random());
-    dummy.scale.setScalar(0.9 + Math.random() * 0.4);
-    dummy.updateMatrix();
-    flowers.setMatrixAt(i, dummy.matrix);
-    tint.setHex(flowerColors[i % flowerColors.length]);
-    flowers.setColorAt(i, tint);
-  });
-  flowers.instanceMatrix.needsUpdate = true;
-  if (flowers.instanceColor) flowers.instanceColor.needsUpdate = true;
-  group.add(flowers);
+  birchSpots.forEach(([x, y, z], idx) => {
+    const tree = new THREE.Group();
+    tree.position.set(x, y, z);
 
-  // Trimmed hedges along main entrance walkway
-  const hedgeMat = new THREE.MeshStandardMaterial({ color: 0x2f6b3a, roughness: 0.85 });
-  const hedgeGeo = new THREE.BoxGeometry(1.6, 0.7, 0.5);
-  for (const side of [-1, 1]) {
-    for (let i = 0; i < 4; i++) {
-      const h = new THREE.Mesh(hedgeGeo, hedgeMat);
-      h.position.set(side * (4.5 + i * 0.1), 0.35, -2 - i * 1.6);
-      h.castShadow = true;
-      group.add(h);
+    // Trunk
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.13, 4.6, 10), birchTrunkMat);
+    trunk.position.y = 2.3;
+    trunk.castShadow = true;
+    tree.add(trunk);
+
+    // Bark marks (horizontal dark streaks)
+    for (let m = 0; m < 8; m++) {
+      const mark = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.04, 0.02), birchMarkMat);
+      const a = Math.random() * Math.PI * 2;
+      const h = 0.6 + m * 0.5;
+      mark.position.set(Math.cos(a) * 0.12, h, Math.sin(a) * 0.12);
+      mark.rotation.y = a;
+      tree.add(mark);
     }
+
+    // Main canopy (organic lobe)
+    const canopy = new THREE.Mesh(makeOrganicLobe(1.5, 0, 4.6, 0, idx * 1.3), idx % 2 === 0 ? birchCanopyMat : birchCanopyMat2);
+    canopy.castShadow = true;
+    canopy.receiveShadow = true;
+    tree.add(canopy);
+
+    // Side lobes
+    for (let s = 0; s < 3; s++) {
+      const a = (s / 3) * Math.PI * 2 + idx;
+      const lobe = new THREE.Mesh(makeOrganicLobe(0.9, Math.cos(a) * 1.1, 4.2, Math.sin(a) * 1.1, idx + s * 2), birchCanopyMat2);
+      lobe.castShadow = true;
+      tree.add(lobe);
+    }
+
+    // Drooping branches
+    for (let b = 0; b < 5; b++) {
+      const a = (b / 5) * Math.PI * 2;
+      const branchCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(0, 4.0, 0),
+        new THREE.Vector3(Math.cos(a) * 0.6, 3.6, Math.sin(a) * 0.6),
+        new THREE.Vector3(Math.cos(a) * 1.2, 3.0, Math.sin(a) * 1.2),
+      ]);
+      const branch = new THREE.Mesh(new THREE.TubeGeometry(branchCurve, 8, 0.025, 6, false), birchTrunkMat);
+      branch.castShadow = true;
+      tree.add(branch);
+
+      // Small leaf cluster at branch tip
+      const tip = new THREE.Mesh(new THREE.SphereGeometry(0.25, 8, 6), birchCanopyMat);
+      tip.position.set(Math.cos(a) * 1.2, 3.0, Math.sin(a) * 1.2);
+      tip.castShadow = true;
+      tree.add(tip);
+    }
+
+    group.add(tree);
+    physics.addStaticBox(x, 2.3, z, 0.18, 2.3, 0.18);
+  });
+
+  // ---- Oak trees (more detailed than base ones, added in outer areas) ----
+  const oakBarkMat = new THREE.MeshStandardMaterial({ color: 0x5b4031, roughness: 0.94, bumpScale: 0.06 });
+  const oakLeafMat = new THREE.MeshStandardMaterial({ color: 0x4a7c3f, roughness: 0.88 });
+  const oakLeafMat2 = new THREE.MeshStandardMaterial({ color: 0x558b48, roughness: 0.88 });
+
+  const oakSpots: Array<[number, number, number]> = [
+    [-36, 0, -12], [36, 0, -10], [-40, 0, 28], [40, 0, 30],
+    [-50, 0, -50], [50, 0, -48], [-75, 0, -90], [75, 0, -88],
+  ];
+
+  oakSpots.forEach(([x, y, z], idx) => {
+    const tree = new THREE.Group();
+    tree.position.set(x, y, z);
+
+    // Trunk
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.3, 3.8, 10), oakBarkMat);
+    trunk.position.y = 1.9;
+    trunk.castShadow = true;
+    tree.add(trunk);
+
+    // Major branches
+    for (let b = 0; b < 4; b++) {
+      const a = (b / 4) * Math.PI * 2 + idx * 0.7;
+      const branchCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(0, 3.0, 0),
+        new THREE.Vector3(Math.cos(a) * 0.8, 3.6, Math.sin(a) * 0.8),
+        new THREE.Vector3(Math.cos(a) * 1.6, 4.0, Math.sin(a) * 1.6),
+      ]);
+      const branch = new THREE.Mesh(new THREE.TubeGeometry(branchCurve, 10, 0.07, 8, false), oakBarkMat);
+      branch.castShadow = true;
+      tree.add(branch);
+    }
+
+    // Multi-lobe canopy
+    const lobes = [
+      [0, 4.6, 0, 1.9],
+      [-1.2, 4.0, 0.5, 1.4],
+      [1.1, 4.1, -0.4, 1.35],
+      [0.3, 4.3, 1.2, 1.3],
+      [-0.4, 5.0, -0.2, 1.2],
+    ];
+    lobes.forEach(([lx, ly, lz, r], li) => {
+      const lobe = new THREE.Mesh(makeOrganicLobe(r, lx, ly, lz, idx * 2 + li), li % 2 === 0 ? oakLeafMat : oakLeafMat2);
+      lobe.castShadow = true;
+      lobe.receiveShadow = true;
+      tree.add(lobe);
+    });
+
+    group.add(tree);
+    physics.addStaticBox(x, 1.9, z, 0.35, 1.9, 0.35);
+  });
+
+  // ---- Seasonal flowers: detailed petals ----
+  const petalMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, side: THREE.DoubleSide });
+  const petalGeo = new THREE.PlaneGeometry(0.06, 0.04);
+  const centerMat = new THREE.MeshStandardMaterial({ color: 0xfbbf24, roughness: 0.5 });
+  const centerGeo = new THREE.SphereGeometry(0.025, 6, 6);
+
+  const flowerColors = [0xf59e0b, 0xef4444, 0xfbbf24, 0xf472b6, 0xffffff, 0x8b5cf6, 0x22c55e];
+  const flowerPositions: Array<[number, number, number]> = [];
+  for (let i = 0; i < 120; i++) {
+    flowerPositions.push([(Math.random() - 0.5) * 28, 0.08, 8 + Math.random() * 18]);
   }
 
-  // ---------------------------------------------------------------------
-  // 4. Fountain upgrade: better water material + splashes + foam
-  // ---------------------------------------------------------------------
-  // Find fountain group in scene
+  flowerPositions.forEach((pos, i) => {
+    const flower = new THREE.Group();
+    flower.position.set(pos[0], pos[1], pos[2]);
+
+    // Stem
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.01, 0.18, 6), new THREE.MeshStandardMaterial({ color: 0x2f6b3a, roughness: 0.9 }));
+    stem.position.y = 0.09;
+    flower.add(stem);
+
+    // Petals
+    const color = flowerColors[i % flowerColors.length];
+    const pMat = petalMat.clone();
+    pMat.color.setHex(color);
+    for (let p = 0; p < 5; p++) {
+      const petal = new THREE.Mesh(petalGeo, pMat);
+      const a = (p / 5) * Math.PI * 2;
+      petal.position.set(Math.cos(a) * 0.04, 0.18, Math.sin(a) * 0.04);
+      petal.rotation.y = a;
+      petal.rotation.x = 0.3;
+      flower.add(petal);
+    }
+
+    // Center
+    const center = new THREE.Mesh(centerGeo, centerMat);
+    center.position.y = 0.18;
+    flower.add(center);
+
+    // Leaves
+    const leafMat = new THREE.MeshStandardMaterial({ color: 0x2f6b3a, roughness: 0.85, side: THREE.DoubleSide });
+    const leaf = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 0.03), leafMat);
+    leaf.position.set(0.03, 0.06, 0);
+    leaf.rotation.z = 0.6;
+    flower.add(leaf);
+
+    group.add(flower);
+  });
+
+  // ---- Trimmed hedges with organic shape ----
+  const hedgeMat = new THREE.MeshStandardMaterial({ color: 0x2f6b3a, roughness: 0.85 });
+  const hedgePositions: Array<[number, number, number, number]> = [
+    [-5.8, 0, -4.6, 0], [5.8, 0, -4.6, 0],
+    [-5.8, 0, 6.5, 0], [5.8, 0, 6.5, 0],
+  ];
+  hedgePositions.forEach(([x, y, z, ry]) => {
+    const hedge = new THREE.Mesh(makeOrganicLobe(0.9, 0, 0.5, 0, x + z), hedgeMat);
+    // flatten into hedge shape
+    const pos = hedge.geometry.attributes.position;
+    for (let vi = 0; vi < pos.count; vi++) {
+      const py = pos.getY(vi);
+      pos.setY(vi, py * 0.5 + 0.25);
+    }
+    hedge.geometry.computeVertexNormals();
+    hedge.position.set(x, 0.1, z);
+    hedge.scale.set(1.8, 0.7, 0.9);
+    hedge.rotation.y = ry;
+    hedge.castShadow = true;
+    hedge.receiveShadow = true;
+    group.add(hedge);
+  });
+
+  // ---- Additional shrubs (organic) ----
+  const shrubMat = new THREE.MeshStandardMaterial({ color: 0x3a7a42, roughness: 0.88 });
+  const shrubSpots: Array<[number, number, number]> = [
+    [-7.1, 0, 1.5], [7.1, 0, 1.5],
+    [-12.2, 0, -4.6], [12.2, 0, -4.6],
+    [-20.8, 0, 4.5], [20.8, 0, 4.5],
+    [-20.8, 0, 23.5], [20.8, 0, 23.5],
+    [-14, 0, 10], [14, 0, 10],
+  ];
+  shrubSpots.forEach(([x, y, z], i) => {
+    const shrub = new THREE.Mesh(makeOrganicLobe(0.55, 0, 0.4, 0, i * 1.7), shrubMat);
+    shrub.position.set(x, 0, z);
+    shrub.scale.set(1, 0.85, 1);
+    shrub.castShadow = true;
+    shrub.receiveShadow = true;
+    // color variation
+    const m = shrub.material as THREE.MeshStandardMaterial;
+    m.color.setHSL(0.3 + (i % 3) * 0.02, 0.45, 0.42 + (i % 2) * 0.06);
+    group.add(shrub);
+  });
+
+  // ---- Vines on building walls (thin planes) ----
+  const vineMat = new THREE.MeshStandardMaterial({ color: 0x2d5a30, roughness: 0.9, side: THREE.DoubleSide, transparent: true, opacity: 0.85 });
+  const vineGeo = new THREE.PlaneGeometry(0.6, 1.8);
+  const vineSpots: Array<[number, number, number, number]> = [
+    [-10, 0, -6, 0], [10, 0, -6, 0], [-18, 0, 12, 0], [18, 0, 12, 0],
+  ];
+  vineSpots.forEach(([x, y, z, ry]) => {
+    for (let v = 0; v < 3; v++) {
+      const vine = new THREE.Mesh(vineGeo, vineMat);
+      vine.position.set(x + (v - 1) * 0.4, 0.9, z);
+      vine.rotation.y = ry;
+      group.add(vine);
+    }
+  });
+
+  // =========================================================================
+  // 2. FOUNTAIN UPGRADE (keep)
+  // =========================================================================
   const foundFountain = ((): THREE.Group | null => {
     let result: THREE.Group | null = null;
     scene.traverse((obj) => {
@@ -232,10 +345,8 @@ export function buildExteriorDetails(ctx: WorldBuildContext): void {
     });
     return result;
   })();
-
   const fountainGroup = foundFountain;
   if (fountainGroup) {
-    // Upgrade water meshes to physical material with clearcoat
     const waterMat = new THREE.MeshPhysicalMaterial({
       color: 0x38bdf8,
       roughness: 0.08,
@@ -254,14 +365,12 @@ export function buildExteriorDetails(ctx: WorldBuildContext): void {
       }
     });
 
-    // Foam ring around basin top
     const foamMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6 });
     const foam = new THREE.Mesh(new THREE.TorusGeometry(2.32, 0.06, 8, 32), foamMat);
     foam.rotation.x = Math.PI / 2;
     foam.position.set(0, 0.6, 0);
     fountainGroup.add(foam);
 
-    // Splash particles
     const splashCount = 60;
     const splashGeo = new THREE.BufferGeometry();
     const splashPos = new Float32Array(splashCount * 3);
@@ -303,56 +412,6 @@ export function buildExteriorDetails(ctx: WorldBuildContext): void {
       foam.rotation.z = elapsed * 0.4;
     });
   }
-
-  // ---------------------------------------------------------------------
-  // 5. Puddles / wet asphalt reflections in parking lots
-  // ---------------------------------------------------------------------
-  const puddleMat = new THREE.MeshStandardMaterial({
-    color: 0x2a3a4a,
-    roughness: 0.05,
-    metalness: 0.7,
-    transparent: true,
-    opacity: 0.55,
-  });
-  const puddleGeo = new THREE.CircleGeometry(1, 16);
-  const puddleSpots: Array<[number, number, number]> = [
-    [-68, 0.02, -6], [-60, 0.02, 2], [-72, 0.02, 4],
-    [70, 0.02, -2], [64, 0.02, 6], [74, 0.02, 2],
-    [0, 0.02, 30], [4, 0.02, 34],
-  ];
-  puddleSpots.forEach(([x, y, z]) => {
-    const p = new THREE.Mesh(puddleGeo, puddleMat);
-    p.rotation.x = -Math.PI / 2;
-    p.scale.set(1.2 + Math.random() * 1.4, 1.2 + Math.random() * 1.4, 1);
-    p.position.set(x, y, z);
-    group.add(p);
-  });
-
-  // ---------------------------------------------------------------------
-  // 6. Weathered parking markings (faded lines)
-  // ---------------------------------------------------------------------
-  // (handled by slightly transparent dashed lines already; add faded decals)
-  const fadeTex = makeCanvasTexture(64, 64, (c, w, h) => {
-    c.fillStyle = 'rgba(255,255,255,0.35)';
-    c.fillRect(0, 0, w, h);
-    for (let i = 0; i < 200; i++) {
-      c.fillStyle = `rgba(0,0,0,${0.1 + Math.random() * 0.3})`;
-      c.fillRect(Math.random() * w, Math.random() * h, 2, 2);
-    }
-  });
-  const fadeMat = new THREE.MeshBasicMaterial({ map: fadeTex, transparent: true, depthWrite: false });
-  const fadeDecalGeo = new THREE.PlaneGeometry(4, 0.15);
-  const fadeSpots: Array<[number, number, number, number]> = [
-    [-68, 0.02, -10, 0], [-68, 0.02, -6, 0], [-68, 0.02, -2, 0],
-    [72, 0.02, -8, 0], [72, 0.02, -4, 0], [72, 0.02, 0, 0],
-  ];
-  fadeSpots.forEach(([x, y, z, ry]) => {
-    const d = new THREE.Mesh(fadeDecalGeo, fadeMat);
-    d.rotation.x = -Math.PI / 2;
-    d.rotation.z = ry;
-    d.position.set(x, y, z);
-    group.add(d);
-  });
 
   ctx.scene.add(group);
 }
