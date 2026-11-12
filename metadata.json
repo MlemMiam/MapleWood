@@ -1,0 +1,6 @@
+{
+  "name": "Maplewood High School 3D",
+  "description": "Carte interactive en 3D du lycée américain Maplewood High School en vue à la troisième personne, avec physique Rapier, PNJ, quêtes et salles visitables.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+:root {
+  --font-display: 'Barlow Condensed', system-ui, sans-serif;
+  --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --mw-navy: #1f3864;
+  --mw-navy-dark: #101d35;
+  --mw-gold: #d4af37;
+  --mw-gold-soft: #f0d778;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background-color: #0b1322;
+  font-family: var(--font-sans);
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.font-mono-tabular {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Accessibility: Colorblind simulation/assistance filters */
+body[data-colorblind="protanopia"] #canvas-container {
+  filter: saturate(1.2) contrast(1.06) hue-rotate(-8deg);
+}
+
+body[data-colorblind="deuteranopia"] #canvas-container {
+  filter: saturate(1.18) contrast(1.06) hue-rotate(10deg);
+}
+
+body[data-colorblind="tritanopia"] #canvas-container {
+  filter: saturate(1.22) contrast(1.08) hue-rotate(24deg);
+}
+
+/* Accessibility: Font size scaling */
+body[data-font-scale="large"] {
+  font-size: 18px;
+}
+
+body[data-font-scale="xlarge"] {
+  font-size: 20px;
+}

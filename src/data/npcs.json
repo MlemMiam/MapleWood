@@ -1,0 +1,202 @@
+[
+  {
+    "id": "npc-receptionist",
+    "name": "Mme Clara Vance",
+    "role": "Agente d'accueil",
+    "roomId": "lobby",
+    "shirtColor": "#1F3864",
+    "pantsColor": "#2A2E39",
+    "skinColor": "#E5B89B",
+    "hairColor": "#4A3222",
+    "questId": "quest-find-room",
+    "waypoints": [
+      { "x": -3.2, "z": -9.0 },
+      { "x": -2.2, "z": -9.0 }
+    ],
+    "greeting": "Bonjour et bienvenue à Maplewood High School ! Je suis Mme Vance. Vous cherchez une salle en particulier ?",
+    "choices": [
+      {
+        "label": "Où se trouve la salle de chimie ?",
+        "reply": "Prenez le couloir principal vers l'est jusqu'à l'Aile Sciences : le laboratoire de chimie est la première porte à gauche. Passez donc inspecter le tableau périodique !",
+        "action": "start-quest-find-room"
+      },
+      {
+        "label": "Comment rejoindre le gymnase ?",
+        "reply": "Traversez le hall et prenez le couloir central tout droit vers le nord, entre les toilettes. Le Coach Miller vous attend sur le parquet !",
+        "action": "none"
+      },
+      {
+        "label": "Merci, je visite le campus.",
+        "reply": "Bonne exploration ! N'oubliez pas de passer voir le Principal Donovan dans l'aile ouest.",
+        "action": "none"
+      }
+    ]
+  },
+  {
+    "id": "npc-math-teacher",
+    "name": "M. Henri Moreau",
+    "role": "Professeur de Mathématiques",
+    "roomId": "main-corridor",
+    "shirtColor": "#3C5A78",
+    "pantsColor": "#3B3E47",
+    "skinColor": "#F0C7A8",
+    "hairColor": "#7A7D82",
+    "questId": null,
+    "waypoints": [
+      { "x": -25, "z": -14.2 },
+      { "x": -15, "z": -14.2 },
+      { "x": -22, "z": -13.6 }
+    ],
+    "greeting": "Ah, bonjour ! La trigonométrie n'attend pas. Mon cours en Salle 101 commence dès que la cloche sonne.",
+    "choices": [
+      {
+        "label": "Quel est le programme du jour ?",
+        "reply": "Les vecteurs dans l'espace ! D'ailleurs, tout ce campus en 3D repose sur de belles matrices de transformation.",
+        "action": "none"
+      },
+      {
+        "label": "Avez-vous vu un carnet bleu ?",
+        "reply": "Il me semble avoir aperçu Léo près des casiers à l'est du couloir qui en cherchait un tout à l'heure.",
+        "action": "none"
+      },
+      {
+        "label": "À plus tard, Monsieur.",
+        "reply": "Travaillez bien !",
+        "action": "none"
+      }
+    ]
+  },
+  {
+    "id": "npc-nervous-student",
+    "name": "Léo Parker",
+    "role": "Élève de Première",
+    "roomId": "main-corridor",
+    "shirtColor": "#D4AF37",
+    "pantsColor": "#1E293B",
+    "skinColor": "#DFAC8B",
+    "hairColor": "#2B1E16",
+    "questId": "quest-lost-notebook",
+    "waypoints": [
+      { "x": 11.5, "z": -14.6 },
+      { "x": 15.0, "z": -14.6 },
+      { "x": 13.0, "z": -13.4 }
+    ],
+    "greeting": "Oh non, oh non... J'ai perdu mon carnet de révisions de biologie ! Sans lui, je vais rater le contrôle...",
+    "choices": [
+      {
+        "label": "Je peux t'aider à le retrouver !",
+        "reply": "Vraiment ?! J'étais en Salle 104 (Informatique) ou dans le Labo de Biologie avant la pause. Regarde sur les bureaux ou les paillasses !",
+        "action": "start-quest-notebook"
+      },
+      {
+        "label": "Courage, respire un bon coup.",
+        "reply": "Merci... Si tu vois un carnet bleu avec l'aigle de Maplewood, préviens-moi !",
+        "action": "none"
+      },
+      {
+        "label": "À tout à l'heure.",
+        "reply": "Je reste près de mon casier au cas où...",
+        "action": "none"
+      }
+    ]
+  },
+  {
+    "id": "npc-coach",
+    "name": "Coach Marcus Miller",
+    "role": "Entraîneur des Aigles",
+    "roomId": "gymnasium",
+    "shirtColor": "#1F3864",
+    "pantsColor": "#111827",
+    "skinColor": "#8D5524",
+    "hairColor": "#1A1A1A",
+    "questId": "quest-basketball",
+    "waypoints": [
+      { "x": -3.5, "z": -43.5 },
+      { "x": 3.5, "z": -43.5 }
+    ],
+    "greeting": "Bienvenue dans le nid des Aigles ! Ici, on vise l'excellence. Prêt pour un défi de lancers francs ?",
+    "choices": [
+      {
+        "label": "Lancer le défi de tirs au panier !",
+        "reply": "C'est parti ! Vise bien le cercle et appuie sur Tirer au bon moment pour marquer 3 paniers !",
+        "action": "start-minigame-basketball"
+      },
+      {
+        "label": "Comment va l'équipe cette saison ?",
+        "reply": "On est invaincus à domicile ! Va jeter un œil au terrain de football américain juste derrière le gymnase.",
+        "action": "none"
+      },
+      {
+        "label": "Je visite juste le gymnase.",
+        "reply": "Fais comme chez toi, et garde la tête haute !",
+        "action": "none"
+      }
+    ]
+  },
+  {
+    "id": "npc-librarian",
+    "name": "Mme Evelyn Brooks",
+    "role": "Bibliothécaire",
+    "roomId": "library",
+    "shirtColor": "#6B4C3B",
+    "pantsColor": "#2D2A32",
+    "skinColor": "#F2CEB6",
+    "hairColor": "#9C6B43",
+    "questId": "quest-library-book",
+    "waypoints": [
+      { "x": 27.5, "z": 10.5 },
+      { "x": 27.5, "z": 14.5 }
+    ],
+    "greeting": "Chut... Bienvenue au Centre de Médias de Maplewood. Souhaitez-vous emprunter un ouvrage sur l'histoire du lycée ?",
+    "choices": [
+      {
+        "label": "Oui, j'aimerais lire les Chroniques de Maplewood.",
+        "reply": "Voici l'exemplaire relié or et marine ! Vous pouvez le consulter ici ou le garder dans votre sac.",
+        "action": "give-library-book"
+      },
+      {
+        "label": "Les ordinateurs sont-ils accessibles ?",
+        "reply": "Bien sûr, approchez-vous d'un poste libre et appuyez sur E pour consulter l'intranet scolaire.",
+        "action": "none"
+      },
+      {
+        "label": "Merci, bonne journée.",
+        "reply": "Bonne lecture !",
+        "action": "none"
+      }
+    ]
+  },
+  {
+    "id": "npc-principal",
+    "name": "Principal Arthur Donovan",
+    "role": "Directeur du Lycée",
+    "roomId": "admin-principal",
+    "shirtColor": "#1B263B",
+    "pantsColor": "#111827",
+    "skinColor": "#E8BE9E",
+    "hairColor": "#C0C4CC",
+    "questId": "quest-principal",
+    "waypoints": [
+      { "x": -47.0, "z": -20.5 },
+      { "x": -45.5, "z": -19.0 }
+    ],
+    "greeting": "Entrez donc ! Je suis Arthur Donovan, proviseur de Maplewood High School. Comment se passe votre visite du campus ?",
+    "choices": [
+      {
+        "label": "Faire le bilan de mon exploration",
+        "reply": "Voyons ensemble tout ce que vous avez accompli aujourd'hui à Maplewood !",
+        "action": "check-principal-summary"
+      },
+      {
+        "label": "Le campus est immense et très vivant.",
+        "reply": "Depuis 1994, Maplewood forme nos Aigles dans l'excellence académique et sportive.",
+        "action": "none"
+      },
+      {
+        "label": "Je continue ma visite, Monsieur.",
+        "reply": "Ma porte reste toujours ouverte.",
+        "action": "none"
+      }
+    ]
+  }
+]
