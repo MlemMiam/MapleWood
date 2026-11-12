@@ -232,9 +232,16 @@ export function buildExteriorDetails(ctx: WorldBuildContext): void {
   const centerGeo = new THREE.SphereGeometry(0.025, 6, 6);
 
   const flowerColors = [0xf59e0b, 0xef4444, 0xfbbf24, 0xf472b6, 0xffffff, 0x8b5cf6, 0x22c55e];
+  // Place flowers on the grass (green areas), not on the white concrete walkways
   const flowerPositions: Array<[number, number, number]> = [];
   for (let i = 0; i < 120; i++) {
-    flowerPositions.push([(Math.random() - 0.5) * 28, 0.08, 8 + Math.random() * 18]);
+    // Pick a side lawn (left or right of the north-south promenade)
+    const side = Math.random() < 0.5 ? -1 : 1;
+    const x = side * (7 + Math.random() * 11);
+    // Avoid the east-west walkway band (z 11.75..16.25) by choosing z outside it
+    let z = 2 + Math.random() * 24;
+    if (z > 11 && z < 17) z = Math.random() < 0.5 ? 2 + Math.random() * 9 : 17 + Math.random() * 9;
+    flowerPositions.push([x, 0.08, z]);
   }
 
   flowerPositions.forEach((pos, i) => {
