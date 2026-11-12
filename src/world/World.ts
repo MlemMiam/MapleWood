@@ -15,7 +15,7 @@ import { buildCourtyard } from './exterior/Courtyard';
 import { buildParkingLots } from './exterior/ParkingLot';
 import { buildSportsField } from './exterior/SportsField';
 import { buildFencing } from './exterior/Fencing';
-
+import { buildExteriorDetails } from './exterior/ExteriorDetails';
 export class CampusWorld {
   public readonly doors: InteractiveDoor[] = [];
   public readonly clocks: ClockUpdateRef[] = [];
@@ -54,8 +54,8 @@ export class CampusWorld {
     buildParkingLots(ctx);
     buildSportsField(ctx);
     buildFencing(ctx);
+    buildExteriorDetails(ctx);
   }
-
   public toggleWingLights(wing: string): boolean {
     this.lightsOn = !this.lightsOn;
     const lights = this.wingLights[wing] || [];
