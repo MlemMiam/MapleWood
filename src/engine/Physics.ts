@@ -39,6 +39,22 @@ export class PhysicsWorld {
     return this.world.createCollider(colliderDesc, body);
   }
 
+  public addStaticCylinder(
+    cx: number,
+    cy: number,
+    cz: number,
+    radius: number,
+    halfHeight: number
+  ): RAPIER.Collider {
+    const bodyDesc = RAPIER.RigidBodyDesc.fixed().setTranslation(cx, cy, cz);
+    const body = this.world.createRigidBody(bodyDesc);
+    const colliderDesc = RAPIER.ColliderDesc.cylinder(
+      Math.max(0.02, halfHeight),
+      Math.max(0.02, radius)
+    );
+    return this.world.createCollider(colliderDesc, body);
+  }
+
   public addKinematicDoorBox(
     cx: number,
     cy: number,

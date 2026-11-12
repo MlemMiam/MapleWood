@@ -699,7 +699,7 @@ export function buildCourtyard(ctx: WorldBuildContext): THREE.Group {
       group.add(pitRing, mulch, canopyShadow);
     }
 
-    physics.addStaticBox(tx, ty + 1.5, tz, 0.38 * scale, 1.5, 0.38 * scale);
+    physics.addStaticCylinder(tx, ty + 1.5, tz, 0.38 * scale, 1.5);
   });
 
   trunks.instanceMatrix.needsUpdate = true;
@@ -816,6 +816,8 @@ export function buildCourtyard(ctx: WorldBuildContext): THREE.Group {
   const blossomGeo = new THREE.DodecahedronGeometry(0.08, 0);
   const blossomMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 });
   const blossoms = new THREE.InstancedMesh(blossomGeo, blossomMat, flowerCoords.length);
+  blossoms.name = 'flower-blossoms';
+  blossoms.userData.isFlower = true;
   const blossomColors = [0xf59e0b, 0xef4444, 0xfbbf24, 0xf472b6, 0xfef08a];
   flowerCoords.forEach(([fx, fy, fz], i) => {
     dummy.position.set(fx, fy, fz);

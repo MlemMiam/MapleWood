@@ -102,7 +102,7 @@ export function buildExteriorDetails(ctx: WorldBuildContext): void {
     tree.add(spire);
 
     group.add(tree);
-    physics.addStaticBox(x, 2.1 * scale, z, 0.2 * scale, 2.1 * scale, 0.2 * scale);
+    physics.addStaticCylinder(x, 2.1 * scale, z, 0.2 * scale, 2.1 * scale);
   });
 
   // ---- Birch trees with drooping branches and detailed bark ----
@@ -170,7 +170,7 @@ export function buildExteriorDetails(ctx: WorldBuildContext): void {
     }
 
     group.add(tree);
-    physics.addStaticBox(x, 2.3, z, 0.18, 2.3, 0.18);
+    physics.addStaticCylinder(x, 2.3, z, 0.18, 2.3);
   });
 
   // ---- Oak trees (more detailed than base ones, added in outer areas) ----
@@ -222,7 +222,7 @@ export function buildExteriorDetails(ctx: WorldBuildContext): void {
     });
 
     group.add(tree);
-    physics.addStaticBox(x, 1.9, z, 0.35, 1.9, 0.35);
+    physics.addStaticCylinder(x, 1.9, z, 0.35, 1.9);
   });
 
   // ---- Seasonal flowers: ultra-fine, multi-species, smooth & non-pixelated ----
