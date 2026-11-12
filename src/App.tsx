@@ -76,6 +76,8 @@ export default function App() {
   const questRef = useRef<QuestState>(questState);
   const activeNpcIdRef = useRef<string | null>(null);
 
+  const titleFrameCounter = useRef(0);
+
   const engineRefs = useRef<{
     renderer?: GameRenderer;
     physics?: PhysicsWorld;
@@ -93,11 +95,13 @@ export default function App() {
     setPhase(next);
     document.body.dataset.state =
       next === 'dialogue' || next === 'map' ? 'playing' : next;
-    const { input, audio } = engineRefs.current;
+    const { input, audio, renderer } = engineRefs.current;
     if (next === 'paused' || next === 'dialogue' || next === 'map' || next === 'title') {
       input?.exitPointerLock();
       input?.clearAll();
     }
+    // Optimize fluidity on title screen: disable expensive shadows/render cost
+    renderer?.setTitleMode(next === 'title');
     if (next === 'paused') {
       audio?.pauseLoops();
     } else if (next === 'playing') {
@@ -341,9 +345,13 @@ export default function App() {
 
         if (curPhase === 'title') {
           cameraCtrl.updateTitleTour(gameRenderer.camera, elapsed);
-          world.update(elapsed, dt);
-          for (const npc of npcs) {
-            npc.update(dt, player.position, false);
+          // Throttle expensive world/NPC updates on title screen for smoother FPS
+          titleFrameCounter.current = (titleFrameCounter.current + 1) % 3;
+          if (titleFrameCounter.current === 0) {
+            world.update(elapsed, dt * 3);
+            for (const npc of npcs) {
+              npc.update(dt * 3, player.position, false);
+            }
           }
         } else if (curPhase === 'playing') {
           if (snap.pauseJustPressed) {

@@ -113,7 +113,25 @@ export class GameRenderer {
     window.addEventListener('resize', this.handleResize);
   }
 
+  private titleMode = false;
+  private currentQuality: GraphicsQuality = 'high';
+
+  public setTitleMode(enabled: boolean): void {
+    if (this.titleMode === enabled) return;
+    this.titleMode = enabled;
+    if (enabled) {
+      this.renderer.shadowMap.enabled = false;
+      this.sunLight.castShadow = false;
+      if (!this.isSoftwareGl) {
+        this.renderer.setPixelRatio(1);
+      }
+    } else {
+      this.setQuality(this.currentQuality);
+    }
+  }
+
   public setQuality(quality: GraphicsQuality): void {
+    this.currentQuality = quality;
     if (this.isSoftwareGl) return;
 
     if (quality === 'low') {
