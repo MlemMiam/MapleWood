@@ -101,12 +101,37 @@ function createBrickTextures(maxAniso: number) {
     }
   }
 
+  // Procedural normal map derived from bump for richer PBR surface detail
+  const normalCanvas = document.createElement('canvas');
+  normalCanvas.width = 512;
+  normalCanvas.height = 512;
+  const nctx = normalCanvas.getContext('2d')!;
+  const bumpData = bumpCtx.getImageData(0, 0, 512, 512);
+  const normalData = nctx.createImageData(512, 512);
+  for (let y = 0; y < 512; y++) {
+    for (let x = 0; x < 512; x++) {
+      const idx = (y * 512 + x) * 4;
+      const left = bumpData.data[((y * 512 + ((x - 1 + 512) % 512)) * 4)];
+      const right = bumpData.data[((y * 512 + ((x + 1) % 512)) * 4)];
+      const up = bumpData.data[(((y - 1 + 512) % 512) * 512 + x) * 4];
+      const down = bumpData.data[(((y + 1) % 512) * 512 + x) * 4];
+      const dx = (right - left) / 255;
+      const dy = (down - up) / 255;
+      normalData.data[idx] = Math.round((dx * 0.5 + 0.5) * 255);
+      normalData.data[idx + 1] = Math.round((dy * 0.5 + 0.5) * 255);
+      normalData.data[idx + 2] = 255;
+      normalData.data[idx + 3] = 255;
+    }
+  }
+  nctx.putImageData(normalData, 0, 0);
+  const normalTex = configureTexture(normalCanvas, 1, 1, false, maxAniso);
+
   return {
     map: configureTexture(canvas, 1, 1, true, maxAniso),
     bumpMap: configureTexture(bumpCanvas, 1, 1, false, maxAniso),
+    normalMap: normalTex,
   };
 }
-
 function hash01(seed: number): number {
   const s = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
   return s - Math.floor(s);
@@ -141,7 +166,31 @@ function createConcreteTexture(maxAniso: number, baseHex: string, withPaverJoint
     }
   }
 
-  return configureTexture(canvas, 1, 1, true, maxAniso);
+  const nCanvas = document.createElement('canvas');
+  nCanvas.width = 256;
+  nCanvas.height = 256;
+  const nctx = nCanvas.getContext('2d')!;
+  const imgData = ctx.getImageData(0, 0, 256, 256);
+  const out = nctx.createImageData(256, 256);
+  for (let y = 0; y < 256; y++) {
+    for (let x = 0; x < 256; x++) {
+      const i = (y * 256 + x) * 4;
+      const l = imgData.data[((y * 256 + ((x - 1 + 256) % 256)) * 4)];
+      const r = imgData.data[((y * 256 + ((x + 1) % 256)) * 4)];
+      const u = imgData.data[(((y - 1 + 256) % 256) * 256 + x) * 4];
+      const d = imgData.data[(((y + 1) % 256) * 256 + x) * 4];
+      const dx = (r - l) / 255;
+      const dy = (d - u) / 255;
+      out.data[i] = Math.round((dx * 0.5 + 0.5) * 255);
+      out.data[i + 1] = Math.round((dy * 0.5 + 0.5) * 255);
+      out.data[i + 2] = 255;
+      out.data[i + 3] = 255;
+    }
+  }
+  nctx.putImageData(out, 0, 0);
+  const colorTex = configureTexture(canvas, 1, 1, true, maxAniso);
+  const normalTex = configureTexture(nCanvas, 1, 1, false, maxAniso);
+  return { map: colorTex, normalMap: normalTex };
 }
 
 function createLinoleumTexture(maxAniso: number) {
@@ -829,7 +878,8 @@ export function createMaterialLibrary(
   const brickTex = createBrickTextures(maxAniso);
   brickTex.map.repeat.set(6, 2);
   brickTex.bumpMap.repeat.set(6, 2);
-  textures.push(brickTex.map, brickTex.bumpMap);
+  brickTex.normalMap.repeat.set(6, 2);
+  textures.push(brickTex.map, brickTex.bumpMap, brickTex.normalMap);
 
   const gymBrickMap = brickTex.map.clone();
   gymBrickMap.repeat.set(6, 4.5);
@@ -840,12 +890,14 @@ export function createMaterialLibrary(
   textures.push(gymBrickMap, gymBrickBump);
 
   const concreteTex = createConcreteTexture(maxAniso, '#C8C5BE', true);
-  concreteTex.repeat.set(6, 6);
-  textures.push(concreteTex);
+  concreteTex.map.repeat.set(6, 6);
+  concreteTex.normalMap.repeat.set(6, 6);
+  textures.push(concreteTex.map, concreteTex.normalMap);
 
   const limestoneTex = createConcreteTexture(maxAniso, '#DCD5C7', false);
-  limestoneTex.repeat.set(3, 2);
-  textures.push(limestoneTex);
+  limestoneTex.map.repeat.set(3, 2);
+  limestoneTex.normalMap.repeat.set(3, 2);
+  textures.push(limestoneTex.map, limestoneTex.normalMap);
 
   const linoTex = createLinoleumTexture(maxAniso);
   linoTex.repeat.set(16, 3);
@@ -881,7 +933,9 @@ export function createMaterialLibrary(
     map: brickTex.map,
     bumpMap: brickTex.bumpMap,
     bumpScale: 0.045,
-    roughness: 0.85,
+    normalMap: brickTex.normalMap,
+    normalScale: new THREE.Vector2(0.5, 0.5),
+    roughness: 0.82,
     metalness: 0.05,
   });
 
@@ -896,8 +950,10 @@ export function createMaterialLibrary(
 
   const concrete = new THREE.MeshStandardMaterial({
     color: 0xffffff,
-    map: concreteTex,
-    roughness: 0.86,
+    map: concreteTex.map,
+    normalMap: concreteTex.normalMap,
+    normalScale: new THREE.Vector2(0.4, 0.4),
+    roughness: 0.84,
     metalness: 0.04,
   });
 
@@ -909,8 +965,10 @@ export function createMaterialLibrary(
 
   const limestone = new THREE.MeshStandardMaterial({
     color: 0xffffff,
-    map: limestoneTex,
-    roughness: 0.74,
+    map: limestoneTex.map,
+    normalMap: limestoneTex.normalMap,
+    normalScale: new THREE.Vector2(0.35, 0.35),
+    roughness: 0.72,
     metalness: 0.04,
   });
 

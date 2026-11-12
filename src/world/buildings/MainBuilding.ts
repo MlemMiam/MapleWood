@@ -715,6 +715,37 @@ export function buildMainBuilding(ctx: WorldBuildContext): THREE.Group {
     });
   }
 
+  // Exterior architectural details: gutters, downspouts, ventilation grilles
+  const gutterMat = mats.chrome;
+  const downspoutMat = mats.concreteDark;
+  const ventMat = mats.limestone;
+
+  for (const z of [-6, -23]) {
+    // Horizontal gutter along roof edge
+    const gutter = new THREE.Mesh(new THREE.BoxGeometry(64.4, 0.12, 0.18), gutterMat);
+    gutter.position.set(0, floorY + wallH + 0.2, z + (z === -6 ? 0.1 : -0.1));
+    gutter.castShadow = true;
+    group.add(gutter);
+  }
+
+  // Downspouts at intervals
+  for (const x of [-28, -14, 0, 14, 28]) {
+    for (const z of [-6, -23]) {
+      const ds = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, wallH + 0.2, 8), downspoutMat);
+      ds.position.set(x, floorY + (wallH + 0.2) / 2, z + (z === -6 ? 0.18 : -0.18));
+      ds.castShadow = true;
+      group.add(ds);
+      physics.addStaticBox(x, floorY + (wallH + 0.2) / 2, z + (z === -6 ? 0.18 : -0.18), 0.08, (wallH + 0.2) / 2, 0.08);
+    }
+  }
+
+  // Ventilation grilles on south facade
+  for (const x of [-24, -8, 8, 24]) {
+    const vent = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.4, 0.05), ventMat);
+    vent.position.set(x, floorY + 1.2, -5.95);
+    group.add(vent);
+  }
+
   // Register solid wall meshes for camera spring-arm collision
   group.traverse((obj) => {
     if ((obj as THREE.Mesh).isMesh && obj !== floor) {
