@@ -813,25 +813,9 @@ export function buildCourtyard(ctx: WorldBuildContext): THREE.Group {
     }
   }
 
-  const blossomGeo = new THREE.DodecahedronGeometry(0.08, 0);
-  const blossomMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 });
-  const blossoms = new THREE.InstancedMesh(blossomGeo, blossomMat, flowerCoords.length);
-  blossoms.name = 'flower-blossoms';
-  blossoms.userData.isFlower = true;
-  const blossomColors = [0xf59e0b, 0xef4444, 0xfbbf24, 0xf472b6, 0xfef08a];
-  flowerCoords.forEach(([fx, fy, fz], i) => {
-    dummy.position.set(fx, fy, fz);
-    dummy.rotation.set(i, i * 0.7, 0);
-    dummy.scale.setScalar(1);
-    dummy.updateMatrix();
-    blossoms.setMatrixAt(i, dummy.matrix);
-    tint.setHex(blossomColors[i % blossomColors.length]);
-    blossoms.setColorAt(i, tint);
-  });
-  blossoms.instanceMatrix.needsUpdate = true;
-  if (blossoms.instanceColor) blossoms.instanceColor.needsUpdate = true;
-  group.add(blossoms);
-
+  // Blossoms removed from concrete planters; flowers are now placed on grass lawns
+  // in ExteriorDetails.ts to avoid flowers on paved surfaces.
+  void flowerCoords;
   // Outdoor Wooden Picnic Tables on East & West Courtyard Lawns
   const topPlankGeo = new RoundedBoxGeometry(2.1, 0.06, 0.95, 2, 0.015);
   const benchPlankGeo = new RoundedBoxGeometry(2.1, 0.05, 0.32, 2, 0.012);
