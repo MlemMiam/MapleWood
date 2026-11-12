@@ -225,58 +225,157 @@ export function buildExteriorDetails(ctx: WorldBuildContext): void {
     physics.addStaticBox(x, 1.9, z, 0.35, 1.9, 0.35);
   });
 
-  // ---- Seasonal flowers: detailed petals ----
-  const petalMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, side: THREE.DoubleSide });
-  const petalGeo = new THREE.PlaneGeometry(0.06, 0.04);
-  const centerMat = new THREE.MeshStandardMaterial({ color: 0xfbbf24, roughness: 0.5 });
-  const centerGeo = new THREE.SphereGeometry(0.025, 6, 6);
+  // ---- Seasonal flowers: high-detail, multi-species ----
+  const stemMat = new THREE.MeshStandardMaterial({ color: 0x2f6b3a, roughness: 0.85 });
+  const leafMat = new THREE.MeshStandardMaterial({ color: 0x2a5e32, roughness: 0.8, side: THREE.DoubleSide });
 
-  const flowerColors = [0xf59e0b, 0xef4444, 0xfbbf24, 0xf472b6, 0xffffff, 0x8b5cf6, 0x22c55e];
+  const flowerColors = [0xf59e0b, 0xef4444, 0xfbbf24, 0xf472b6, 0xffffff, 0x8b5cf6, 0x22c55e, 0xfb7185];
+
   // Place flowers on the grass (green areas), not on the white concrete walkways
   const flowerPositions: Array<[number, number, number]> = [];
-  for (let i = 0; i < 120; i++) {
-    // Pick a side lawn (left or right of the north-south promenade)
+  for (let i = 0; i < 90; i++) {
     const side = Math.random() < 0.5 ? -1 : 1;
     const x = side * (7 + Math.random() * 11);
-    // Avoid the east-west walkway band (z 11.75..16.25) by choosing z outside it
     let z = 2 + Math.random() * 24;
     if (z > 11 && z < 17) z = Math.random() < 0.5 ? 2 + Math.random() * 9 : 17 + Math.random() * 9;
-    flowerPositions.push([x, 0.08, z]);
+    flowerPositions.push([x, 0.05, z]);
   }
 
   flowerPositions.forEach((pos, i) => {
     const flower = new THREE.Group();
     flower.position.set(pos[0], pos[1], pos[2]);
 
-    // Stem
-    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.01, 0.18, 6), new THREE.MeshStandardMaterial({ color: 0x2f6b3a, roughness: 0.9 }));
-    stem.position.y = 0.09;
+    const species = i % 4;
+    const scale = 0.85 + Math.random() * 0.4;
+    flower.scale.setScalar(scale);
+
+    // Curved stem via TubeGeometry
+    const stemCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0, 0, 0),
+      new THREE.Vector3((Math.random() - 0.5) * 0.04, 0.12, (Math.random() - 0.5) * 0.04),
+      new THREE.Vector3((Math.random() - 0.5) * 0.06, 0.22, (Math.random() - 0.5) * 0.06),
+    ]);
+    const stem = new THREE.Mesh(new THREE.TubeGeometry(stemCurve, 8, 0.012, 6, false), stemMat);
+    stem.castShadow = true;
     flower.add(stem);
 
-    // Petals
-    const color = flowerColors[i % flowerColors.length];
-    const pMat = petalMat.clone();
-    pMat.color.setHex(color);
-    for (let p = 0; p < 5; p++) {
-      const petal = new THREE.Mesh(petalGeo, pMat);
-      const a = (p / 5) * Math.PI * 2;
-      petal.position.set(Math.cos(a) * 0.04, 0.18, Math.sin(a) * 0.04);
-      petal.rotation.y = a;
-      petal.rotation.x = 0.3;
-      flower.add(petal);
+    // Leaves along stem
+    for (let l = 0; l < 2; l++) {
+      const leafGeo = new THREE.PlaneGeometry(0.06, 0.025);
+      const leaf = new THREE.Mesh(leafGeo, leafMat);
+      const ly = 0.08 + l * 0.08;
+      leaf.position.set((l % 2 === 0 ? 0.03 : -0.03), ly, 0);
+      leaf.rotation.z = (l % 2 === 0 ? 0.7 : -0.7);
+      leaf.rotation.x = 0.2;
+      flower.add(leaf);
     }
 
-    // Center
-    const center = new THREE.Mesh(centerGeo, centerMat);
-    center.position.y = 0.18;
-    flower.add(center);
+    const color = flowerColors[i % flowerColors.length];
 
-    // Leaves
-    const leafMat = new THREE.MeshStandardMaterial({ color: 0x2f6b3a, roughness: 0.85, side: THREE.DoubleSide });
-    const leaf = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 0.03), leafMat);
-    leaf.position.set(0.03, 0.06, 0);
-    leaf.rotation.z = 0.6;
-    flower.add(leaf);
+    if (species === 0) {
+      // Daisy: layered petals + yellow center + stamens
+      const petalMat = new THREE.MeshStandardMaterial({ color, roughness: 0.55, side: THREE.DoubleSide });
+      const petalGeo = new THREE.PlaneGeometry(0.09, 0.035);
+      for (let p = 0; p < 12; p++) {
+        const petal = new THREE.Mesh(petalGeo, petalMat);
+        const a = (p / 12) * Math.PI * 2;
+        petal.position.set(Math.cos(a) * 0.06, 0.24, Math.sin(a) * 0.06);
+        petal.rotation.y = a;
+        petal.rotation.x = 0.5;
+        petal.castShadow = true;
+        flower.add(petal);
+      }
+      for (let p = 0; p < 8; p++) {
+        const petal = new THREE.Mesh(new THREE.PlaneGeometry(0.06, 0.025), petalMat);
+        const a = (p / 8) * Math.PI * 2 + 0.4;
+        petal.position.set(Math.cos(a) * 0.04, 0.24, Math.sin(a) * 0.04);
+        petal.rotation.y = a;
+        petal.rotation.x = 0.6;
+        flower.add(petal);
+      }
+      const center = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), new THREE.MeshStandardMaterial({ color: 0xfbbf24, roughness: 0.4 }));
+      center.position.y = 0.24;
+      flower.add(center);
+      for (let s = 0; s < 6; s++) {
+        const stamen = new THREE.Mesh(new THREE.CylinderGeometry(0.003, 0.003, 0.03, 4), new THREE.MeshStandardMaterial({ color: 0x92400e, roughness: 0.6 }));
+        const a = (s / 6) * Math.PI * 2;
+        stamen.position.set(Math.cos(a) * 0.025, 0.26, Math.sin(a) * 0.025);
+        flower.add(stamen);
+      }
+    } else if (species === 1) {
+      // Rose: spiral layered petals + calyx
+      const roseMat = new THREE.MeshStandardMaterial({ color, roughness: 0.5, side: THREE.DoubleSide });
+      const calyxMat = new THREE.MeshStandardMaterial({ color: 0x2f6b3a, roughness: 0.8 });
+      for (let c = 0; c < 5; c++) {
+        const sepal = new THREE.Mesh(new THREE.PlaneGeometry(0.04, 0.07), calyxMat);
+        const a = (c / 5) * Math.PI * 2;
+        sepal.position.set(Math.cos(a) * 0.03, 0.2, Math.sin(a) * 0.03);
+        sepal.rotation.y = a;
+        sepal.rotation.x = 0.8;
+        flower.add(sepal);
+      }
+      for (let layer = 0; layer < 4; layer++) {
+        const r = 0.03 + layer * 0.015;
+        const petalCount = 5 + layer * 2;
+        for (let p = 0; p < petalCount; p++) {
+          const petal = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 0.04), roseMat);
+          const a = (p / petalCount) * Math.PI * 2 + layer * 0.3;
+          petal.position.set(Math.cos(a) * r, 0.22 + layer * 0.015, Math.sin(a) * r);
+          petal.rotation.y = a;
+          petal.rotation.x = 0.4 + layer * 0.15;
+          petal.scale.setScalar(1 - layer * 0.12);
+          flower.add(petal);
+        }
+      }
+      const center = new THREE.Mesh(new THREE.SphereGeometry(0.025, 8, 6), roseMat);
+      center.position.y = 0.24;
+      flower.add(center);
+    } else if (species === 2) {
+      // Tulip: cup-shaped petals
+      const tulipMat = new THREE.MeshStandardMaterial({ color, roughness: 0.45, side: THREE.DoubleSide });
+      for (let p = 0; p < 6; p++) {
+        const petal = new THREE.Mesh(new THREE.PlaneGeometry(0.06, 0.09), tulipMat);
+        const a = (p / 6) * Math.PI * 2;
+        petal.position.set(Math.cos(a) * 0.04, 0.26, Math.sin(a) * 0.04);
+        petal.rotation.y = a;
+        petal.rotation.x = 0.25;
+        petal.castShadow = true;
+        flower.add(petal);
+      }
+      for (let p = 0; p < 3; p++) {
+        const petal = new THREE.Mesh(new THREE.PlaneGeometry(0.04, 0.07), tulipMat);
+        const a = (p / 3) * Math.PI * 2 + 0.5;
+        petal.position.set(Math.cos(a) * 0.02, 0.27, Math.sin(a) * 0.02);
+        petal.rotation.y = a;
+        petal.rotation.x = 0.15;
+        flower.add(petal);
+      }
+      const center = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.02, 0.06, 6), new THREE.MeshStandardMaterial({ color: 0xfbbf24, roughness: 0.5 }));
+      center.position.y = 0.25;
+      flower.add(center);
+    } else {
+      // Lavender: tall spike of small flowers
+      const lavenderMat = new THREE.MeshStandardMaterial({ color: 0x8b5cf6, roughness: 0.6 });
+      const spikeHeight = 0.18;
+      const spike = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.01, spikeHeight, 6), stemMat);
+      spike.position.y = 0.22 + spikeHeight / 2;
+      flower.add(spike);
+      for (let f = 0; f < 14; f++) {
+        const y = 0.24 + f * 0.013;
+        for (let r = 0; r < 3; r++) {
+          const a = (r / 3) * Math.PI * 2 + f * 0.5;
+          const small = new THREE.Mesh(new THREE.SphereGeometry(0.012, 6, 4), lavenderMat);
+          small.position.set(Math.cos(a) * 0.025, y, Math.sin(a) * 0.025);
+          flower.add(small);
+        }
+      }
+      for (let l = 0; l < 3; l++) {
+        const leaf = new THREE.Mesh(new THREE.PlaneGeometry(0.04, 0.015), leafMat);
+        leaf.position.set((l % 2 === 0 ? 0.02 : -0.02), 0.1 + l * 0.04, 0);
+        leaf.rotation.z = (l % 2 === 0 ? 0.8 : -0.7);
+        flower.add(leaf);
+      }
+    }
 
     group.add(flower);
   });
