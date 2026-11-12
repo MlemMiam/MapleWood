@@ -179,6 +179,26 @@ export function buildCourtyard(ctx: WorldBuildContext): THREE.Group {
     fountainGroup.add(jetMesh);
     waterJets.push(jetMesh);
   }
+  // Secondary smaller jets around the central spout
+  for (let a = 0; a < 8; a++) {
+    const angle = (a * Math.PI) / 4;
+    const cosA = Math.cos(angle);
+    const sinA = Math.sin(angle);
+    const jetCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(cosA * 0.15, 1.7, sinA * 0.15),
+      new THREE.Vector3(cosA * 0.5, 1.95, sinA * 0.5),
+      new THREE.Vector3(cosA * 0.9, 1.4, sinA * 0.9),
+      new THREE.Vector3(cosA * 1.2, 0.62, sinA * 1.2),
+    ]);
+    const jetMesh = new THREE.Mesh(new THREE.TubeGeometry(jetCurve, 10, 0.016, 5, false), mats.water);
+    fountainGroup.add(jetMesh);
+    waterJets.push(jetMesh);
+  }
+  // Basin rim molding detail
+  const rimMolding = new THREE.Mesh(new THREE.TorusGeometry(2.7, 0.06, 8, 40), mats.concreteDark);
+  rimMolding.rotation.x = Math.PI / 2;
+  rimMolding.position.y = 0.72;
+  fountainGroup.add(rimMolding);
 
   fountainGroup.add(fountainStone, waterDisc, topWaterDisc, spout);
   group.add(fountainGroup);
@@ -501,15 +521,40 @@ export function buildCourtyard(ctx: WorldBuildContext): THREE.Group {
     createBench(group, physics, mats, spot.x, 0.04, spot.z, yaw);
   }
 
+  // Additional benches along the east-west promenade and beneath courtyard trees
+  const extraBenchSpots: Array<{ x: number; z: number; rotY: number }> = [
+    { x: -18, z: 14, rotY: 0 },
+    { x: 18, z: 14, rotY: 0 },
+    { x: -12, z: 6, rotY: Math.PI / 2 },
+    { x: 12, z: 6, rotY: -Math.PI / 2 },
+    { x: -12, z: 22, rotY: Math.PI / 2 },
+    { x: 12, z: 22, rotY: -Math.PI / 2 },
+    { x: 0, z: 8, rotY: 0 },
+    { x: 0, z: 20, rotY: Math.PI },
+  ];
+  extraBenchSpots.forEach((b) => {
+    createBench(group, physics, mats, b.x, 0.05, b.z, b.rotY);
+  });
+
   // Courtyard & Campus Perimeter Oak Trees (LatheGeometry root-flared trunk + branches + multi-lobe crown)
+  // Reorganized tree placement: aligned along main walkways, grouped at corners,
+  // and framing the campus perimeter for a more natural, readable layout.
   const treePositions: Array<[number, number, number]> = [
-    [-14, 0, 2],
-    [14, 0, 2],
-    [-15, 0, 20],
-    [15, 0, 20],
-    [-13, 0, 10],
-    [13, 0, 10],
-    // Exterior surrounding campus trees
+    // Courtyard: flanking the north-south promenade (pairs)
+    [-4.5, 0, 2],
+    [4.5, 0, 2],
+    [-4.5, 0, 10],
+    [4.5, 0, 10],
+    [-4.5, 0, 18],
+    [4.5, 0, 18],
+    // Courtyard: east/west lawn clusters
+    [-14, 0, 6],
+    [-14, 0, 14],
+    [-14, 0, 22],
+    [14, 0, 6],
+    [14, 0, 14],
+    [14, 0, 22],
+    // Campus perimeter framing
     [-58, 0, 24],
     [-64, 0, 32],
     [58, 0, 26],
@@ -550,31 +595,41 @@ export function buildCourtyard(ctx: WorldBuildContext): THREE.Group {
   const makeBranchGeo = (pts: THREE.Vector3[], radius: number) =>
     ensureNonIndexed(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 10, radius, 8, false));
 
+  // More detailed branching: 5 primary boughs + secondary twigs
   const branchA = makeBranchGeo(
-    [
-      new THREE.Vector3(0, 2.55, 0),
-      new THREE.Vector3(-0.45, 3.15, 0.22),
-      new THREE.Vector3(-1.05, 3.75, 0.42),
-    ],
+    [new THREE.Vector3(0, 2.55, 0), new THREE.Vector3(-0.45, 3.15, 0.22), new THREE.Vector3(-1.05, 3.75, 0.42)],
     0.13
   );
   const branchB = makeBranchGeo(
-    [
-      new THREE.Vector3(0, 2.65, 0),
-      new THREE.Vector3(0.48, 3.2, -0.18),
-      new THREE.Vector3(1.02, 3.85, -0.35),
-    ],
+    [new THREE.Vector3(0, 2.65, 0), new THREE.Vector3(0.48, 3.2, -0.18), new THREE.Vector3(1.02, 3.85, -0.35)],
     0.12
   );
   const branchC = makeBranchGeo(
-    [
-      new THREE.Vector3(0, 2.85, 0),
-      new THREE.Vector3(0.08, 3.55, 0.42),
-      new THREE.Vector3(0.16, 4.15, 0.85),
-    ],
+    [new THREE.Vector3(0, 2.85, 0), new THREE.Vector3(0.08, 3.55, 0.42), new THREE.Vector3(0.16, 4.15, 0.85)],
     0.11
   );
-  const trunkGeo = mergeGeometries([trunkBaseGeo, branchA, branchB, branchC]);
+  const branchD = makeBranchGeo(
+    [new THREE.Vector3(0, 2.7, 0), new THREE.Vector3(-0.3, 3.4, -0.5), new THREE.Vector3(-0.7, 4.0, -0.9)],
+    0.10
+  );
+  const branchE = makeBranchGeo(
+    [new THREE.Vector3(0, 2.6, 0), new THREE.Vector3(0.35, 3.35, 0.45), new THREE.Vector3(0.8, 3.95, 0.85)],
+    0.10
+  );
+  // Secondary twigs on branch tips
+  const twig1 = makeBranchGeo(
+    [new THREE.Vector3(-1.05, 3.75, 0.42), new THREE.Vector3(-1.35, 4.0, 0.55), new THREE.Vector3(-1.6, 4.15, 0.7)],
+    0.06
+  );
+  const twig2 = makeBranchGeo(
+    [new THREE.Vector3(1.02, 3.85, -0.35), new THREE.Vector3(1.3, 4.05, -0.45), new THREE.Vector3(1.55, 4.2, -0.55)],
+    0.06
+  );
+  const twig3 = makeBranchGeo(
+    [new THREE.Vector3(0.16, 4.15, 0.85), new THREE.Vector3(0.25, 4.45, 1.05), new THREE.Vector3(0.3, 4.7, 1.2)],
+    0.055
+  );
+  const trunkGeo = mergeGeometries([trunkBaseGeo, branchA, branchB, branchC, branchD, branchE, twig1, twig2, twig3]);
 
   // Smooth organically perturbed multi-lobe foliage crown (non-faceted)
   const makeOrganicLeafLobe = (radius: number, ox: number, oy: number, oz: number, seed: number) => {
@@ -604,6 +659,9 @@ export function buildCourtyard(ctx: WorldBuildContext): THREE.Group {
     makeOrganicLeafLobe(1.34, 1.08, 3.98, -0.38, 3.4),
     makeOrganicLeafLobe(1.26, 0.18, 4.12, 1.0, 4.7),
     makeOrganicLeafLobe(1.28, -0.15, 5.25, -0.12, 6.1),
+    makeOrganicLeafLobe(1.15, -0.6, 3.6, -0.9, 7.3),
+    makeOrganicLeafLobe(1.1, 0.7, 3.55, 0.95, 8.1),
+    makeOrganicLeafLobe(0.95, 0.05, 5.0, 0.4, 9.0),
   ]);
 
   const trunks = new THREE.InstancedMesh(trunkGeo, mats.bark, treePositions.length);
