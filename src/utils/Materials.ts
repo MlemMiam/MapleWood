@@ -64,67 +64,133 @@ function configureTexture(
   return tex;
 }
 
+function generateCyclicNormalMap(
+  sourceCtx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  maxAniso: number,
+  strength = 1.4,
+  repeatX = 1,
+  repeatY = 1
+): THREE.CanvasTexture {
+  const [nCanvas, nctx] = makeCanvas(w, h);
+  const src = sourceCtx.getImageData(0, 0, w, h).data;
+  const out = nctx.createImageData(w, h);
+  const dst = out.data;
+
+  const lumAt = (x: number, y: number): number => {
+    const wx = ((x % w) + w) % w;
+    const wy = ((y % h) + h) % h;
+    const idx = (wy * w + wx) * 4;
+    return (src[idx] * 0.299 + src[idx + 1] * 0.587 + src[idx + 2] * 0.114) / 255;
+  };
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      // 3x3 cyclic Sobel filter for smooth, non-blocky normal transitions
+      const tl = lumAt(x - 1, y - 1);
+      const t = lumAt(x, y - 1);
+      const tr = lumAt(x + 1, y - 1);
+      const l = lumAt(x - 1, y);
+      const r = lumAt(x + 1, y);
+      const bl = lumAt(x - 1, y + 1);
+      const b = lumAt(x, y + 1);
+      const br = lumAt(x + 1, y + 1);
+
+      const dx = (tr + 2 * r + br - (tl + 2 * l + bl)) * strength;
+      const dy = (bl + 2 * b + br - (tl + 2 * t + tr)) * strength;
+      const invLen = 1 / Math.hypot(dx, dy, 1);
+
+      const idx = (y * w + x) * 4;
+      dst[idx] = Math.round((-dx * invLen * 0.5 + 0.5) * 255);
+      dst[idx + 1] = Math.round((-dy * invLen * 0.5 + 0.5) * 255);
+      dst[idx + 2] = Math.round((invLen * 0.5 + 0.5) * 255);
+      dst[idx + 3] = 255;
+    }
+  }
+  nctx.putImageData(out, 0, 0);
+  return configureTexture(nCanvas, repeatX, repeatY, false, maxAniso);
+}
+
+function drawToroidalEllipse(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number
+): void {
+  for (const ox of [-w, 0, w]) {
+    if (cx + ox + rx < 0 || cx + ox - rx > w) continue;
+    for (const oy of [-h, 0, h]) {
+      if (cy + oy + ry < 0 || cy + oy - ry > h) continue;
+      ctx.beginPath();
+      ctx.ellipse(cx + ox, cy + oy, rx, ry, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
 function createBrickTextures(maxAniso: number) {
   const [canvas, ctx] = makeCanvas(512, 512);
   const [bumpCanvas, bumpCtx] = makeCanvas(512, 512);
 
-  // Mortar base
-  ctx.fillStyle = '#C6BEB5';
+  // Warm recessed mortar base
+  ctx.fillStyle = '#C2B9AE';
   ctx.fillRect(0, 0, 512, 512);
-  bumpCtx.fillStyle = '#404040';
+  bumpCtx.fillStyle = '#2E2E2E';
   bumpCtx.fillRect(0, 0, 512, 512);
 
   const rows = 16;
   const cols = 8;
   const brickH = 512 / rows;
   const brickW = 512 / cols;
-  const mortar = 3;
+  const mortar = 2.5;
 
   for (let r = 0; r < rows; r++) {
+    const isFlemish = r % 4 === 2;
     const offset = (r % 2) * (brickW * 0.5);
     for (let c = -1; c <= cols; c++) {
       const x = c * brickW + offset;
       const y = r * brickH;
-      const shade = ((r * 17 + c * 31) % 24) - 12;
-      const red = Math.min(255, Math.max(0, 139 + shade));
-      const green = Math.min(255, Math.max(0, 58 + Math.round(shade * 0.4)));
-      const blue = Math.min(255, Math.max(0, 58 + Math.round(shade * 0.4)));
-      ctx.fillStyle = `rgb(${red},${green},${blue})`;
-      ctx.fillRect(x + mortar, y + mortar, brickW - mortar * 2, brickH - mortar * 2);
+      const seed = ((r * 19 + ((c + cols) % cols) * 37) % 29) - 14;
+      const kilnWarmth = isFlemish && c % 2 === 0 ? -10 : 0;
+      const red = Math.min(255, Math.max(0, 142 + seed + kilnWarmth));
+      const green = Math.min(255, Math.max(0, 59 + Math.round((seed + kilnWarmth) * 0.44)));
+      const blue = Math.min(255, Math.max(0, 54 + Math.round((seed + kilnWarmth) * 0.38)));
 
-      // Subtle brick grain
-      ctx.fillStyle = 'rgba(0,0,0,0.08)';
-      ctx.fillRect(x + mortar, y + brickH - mortar - 3, brickW - mortar * 2, 3);
+      const bx = x + mortar;
+      const by = y + mortar;
+      const bw = brickW - mortar * 2;
+      const bh = brickH - mortar * 2;
 
-      bumpCtx.fillStyle = `rgb(${210 + shade}, ${210 + shade}, ${210 + shade})`;
-      bumpCtx.fillRect(x + mortar, y + mortar, brickW - mortar * 2, brickH - mortar * 2);
+      // Softly beveled brick face with kiln gradient
+      const bGrad = ctx.createLinearGradient(bx, by, bx, by + bh);
+      bGrad.addColorStop(0, `rgb(${Math.min(255, red + 10)},${Math.min(255, green + 6)},${Math.min(255, blue + 5)})`);
+      bGrad.addColorStop(0.75, `rgb(${red},${green},${blue})`);
+      bGrad.addColorStop(1, `rgb(${Math.max(0, red - 14)},${Math.max(0, green - 8)},${Math.max(0, blue - 8)})`);
+      ctx.fillStyle = bGrad;
+      ctx.fillRect(bx, by, bw, bh);
+
+      // Fine clay pores and mineral speckles inside each brick
+      for (let p = 0; p < 14; p++) {
+        const px = bx + 2 + hash01(r * 41 + c * 17 + p * 7.3) * (bw - 4);
+        const py = by + 2 + hash01(r * 23 + c * 53 + p * 11.1) * (bh - 4);
+        ctx.fillStyle = p % 2 === 0 ? 'rgba(28,14,10,0.12)' : 'rgba(245,215,195,0.09)';
+        ctx.fillRect(px, py, 2, 1.5);
+      }
+
+      // Smooth pillowed height profile on bump canvas for rounded brick edges
+      const hVal = 205 + seed;
+      bumpCtx.fillStyle = `rgb(${hVal - 28}, ${hVal - 28}, ${hVal - 28})`;
+      bumpCtx.fillRect(bx, by, bw, bh);
+      bumpCtx.fillStyle = `rgb(${hVal}, ${hVal}, ${hVal})`;
+      bumpCtx.fillRect(bx + 2, by + 2, bw - 4, bh - 4);
     }
   }
 
-  // Procedural normal map derived from bump for richer PBR surface detail
-  const normalCanvas = document.createElement('canvas');
-  normalCanvas.width = 512;
-  normalCanvas.height = 512;
-  const nctx = normalCanvas.getContext('2d')!;
-  const bumpData = bumpCtx.getImageData(0, 0, 512, 512);
-  const normalData = nctx.createImageData(512, 512);
-  for (let y = 0; y < 512; y++) {
-    for (let x = 0; x < 512; x++) {
-      const idx = (y * 512 + x) * 4;
-      const left = bumpData.data[((y * 512 + ((x - 1 + 512) % 512)) * 4)];
-      const right = bumpData.data[((y * 512 + ((x + 1) % 512)) * 4)];
-      const up = bumpData.data[(((y - 1 + 512) % 512) * 512 + x) * 4];
-      const down = bumpData.data[(((y + 1) % 512) * 512 + x) * 4];
-      const dx = (right - left) / 255;
-      const dy = (down - up) / 255;
-      normalData.data[idx] = Math.round((dx * 0.5 + 0.5) * 255);
-      normalData.data[idx + 1] = Math.round((dy * 0.5 + 0.5) * 255);
-      normalData.data[idx + 2] = 255;
-      normalData.data[idx + 3] = 255;
-    }
-  }
-  nctx.putImageData(normalData, 0, 0);
-  const normalTex = configureTexture(normalCanvas, 1, 1, false, maxAniso);
+  const normalTex = generateCyclicNormalMap(bumpCtx, 512, 512, maxAniso, 1.8);
 
   return {
     map: configureTexture(canvas, 1, 1, true, maxAniso),
@@ -132,119 +198,187 @@ function createBrickTextures(maxAniso: number) {
     normalMap: normalTex,
   };
 }
+
 function hash01(seed: number): number {
   const s = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
   return s - Math.floor(s);
 }
 
 function createConcreteTexture(maxAniso: number, baseHex: string, withPaverJoints = false) {
-  const [canvas, ctx] = makeCanvas(256, 256);
+  const size = 256;
+  const [canvas, ctx] = makeCanvas(size, size);
   ctx.fillStyle = baseHex;
-  ctx.fillRect(0, 0, 256, 256);
+  ctx.fillRect(0, 0, size, size);
 
-  for (let i = 0; i < 4200; i++) {
-    const x = Math.floor(hash01(i * 1.13 + 3.1) * 256);
-    const y = Math.floor(hash01(i * 2.71 + 9.7) * 256);
-    const size = hash01(i * 4.3) > 0.7 ? 2 : 1;
-    const alpha = 0.02 + hash01(i * 5.9) * 0.045;
+  // Seamless periodic mineral clouds (toroidal ellipses)
+  for (let i = 0; i < 140; i++) {
+    const cx = hash01(i * 3.17 + 1.9) * size;
+    const cy = hash01(i * 5.83 + 4.2) * size;
+    const rx = 8 + hash01(i * 7.11) * 18;
+    const ry = 6 + hash01(i * 9.43) * 14;
+    ctx.fillStyle = i % 2 === 0 ? 'rgba(255,255,255,0.032)' : 'rgba(30,34,40,0.032)';
+    drawToroidalEllipse(ctx, size, size, cx, cy, rx, ry);
+  }
+
+  // Fine mineral aggregate & travertine pores (wrapped toroidally)
+  for (let i = 0; i < 4600; i++) {
+    const x = Math.floor(hash01(i * 1.13 + 3.1) * size);
+    const y = Math.floor(hash01(i * 2.71 + 9.7) * size);
+    const s = hash01(i * 4.3) > 0.72 ? 2 : 1;
+    const alpha = 0.022 + hash01(i * 5.9) * 0.045;
     ctx.fillStyle = i % 2 === 0 ? `rgba(255,255,255,${alpha})` : `rgba(28,32,38,${alpha})`;
-    ctx.fillRect(x, y, size, size);
+    ctx.fillRect(x, y, s, s);
   }
 
   if (withPaverJoints) {
-    ctx.strokeStyle = 'rgba(40,45,52,0.16)';
-    ctx.lineWidth = 2;
-    for (const p of [64, 128, 192]) {
-      ctx.beginPath();
-      ctx.moveTo(0, p);
-      ctx.lineTo(256, p);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(p, 0);
-      ctx.lineTo(p, 256);
-      ctx.stroke();
+    // Dressed ashlar stone joints with subtle highlight bevel
+    for (const p of [0, 64, 128, 192]) {
+      ctx.fillStyle = 'rgba(38,44,52,0.17)';
+      ctx.fillRect(0, p, size, 2);
+      ctx.fillRect(p, 0, 2, size);
+      ctx.fillStyle = 'rgba(255,255,255,0.16)';
+      ctx.fillRect(0, (p + 2) % size, size, 1);
+      ctx.fillRect((p + 2) % size, 0, 1, size);
+    }
+  } else {
+    // Subtle horizontal limestone sedimentary veining (periodic sin wave)
+    for (let v = 0; v < 10; v++) {
+      const baseY = hash01(v * 13.7) * size;
+      const amp = 2 + hash01(v * 7.9) * 4;
+      const phase = hash01(v * 3.3) * Math.PI * 2;
+      ctx.fillStyle = v % 2 === 0 ? 'rgba(255,250,240,0.06)' : 'rgba(90,82,70,0.05)';
+      for (let x = 0; x < size; x += 2) {
+        const wy = ((Math.round(baseY + Math.sin((x / size) * Math.PI * 2 + phase) * amp) % size) + size) % size;
+        ctx.fillRect(x, wy, 2, 1.5);
+      }
     }
   }
 
-  const nCanvas = document.createElement('canvas');
-  nCanvas.width = 256;
-  nCanvas.height = 256;
-  const nctx = nCanvas.getContext('2d')!;
-  const imgData = ctx.getImageData(0, 0, 256, 256);
-  const out = nctx.createImageData(256, 256);
-  for (let y = 0; y < 256; y++) {
-    for (let x = 0; x < 256; x++) {
-      const i = (y * 256 + x) * 4;
-      const l = imgData.data[((y * 256 + ((x - 1 + 256) % 256)) * 4)];
-      const r = imgData.data[((y * 256 + ((x + 1) % 256)) * 4)];
-      const u = imgData.data[(((y - 1 + 256) % 256) * 256 + x) * 4];
-      const d = imgData.data[(((y + 1) % 256) * 256 + x) * 4];
-      const dx = (r - l) / 255;
-      const dy = (d - u) / 255;
-      out.data[i] = Math.round((dx * 0.5 + 0.5) * 255);
-      out.data[i + 1] = Math.round((dy * 0.5 + 0.5) * 255);
-      out.data[i + 2] = 255;
-      out.data[i + 3] = 255;
-    }
-  }
-  nctx.putImageData(out, 0, 0);
   const colorTex = configureTexture(canvas, 1, 1, true, maxAniso);
-  const normalTex = configureTexture(nCanvas, 1, 1, false, maxAniso);
+  const normalTex = generateCyclicNormalMap(ctx, size, size, maxAniso, withPaverJoints ? 1.5 : 1.1);
   return { map: colorTex, normalMap: normalTex };
 }
 
 function createLinoleumTexture(maxAniso: number) {
-  const [canvas, ctx] = makeCanvas(256, 256);
+  const size = 256;
+  const [canvas, ctx] = makeCanvas(size, size);
   const tile = 64;
   for (let y = 0; y < 4; y++) {
     for (let x = 0; x < 4; x++) {
       const dark = (x + y) % 2 === 1;
-      ctx.fillStyle = dark ? '#343A46' : '#E8E8E8';
-      ctx.fillRect(x * tile, y * tile, tile, tile);
-
-      // Subtle speckle
-      ctx.fillStyle = dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
-      for (let s = 0; s < 16; s++) {
-        ctx.fillRect(x * tile + ((s * 19) % 58) + 2, y * tile + ((s * 29) % 58) + 2, 2, 2);
+      const tx = x * tile;
+      const ty = y * tile;
+      const grad = ctx.createLinearGradient(tx, ty, tx + tile, ty + tile);
+      if (dark) {
+        grad.addColorStop(0, '#363D4B');
+        grad.addColorStop(1, '#2C323E');
+      } else {
+        grad.addColorStop(0, '#EFECE6');
+        grad.addColorStop(1, '#E2DDD5');
       }
+      ctx.fillStyle = grad;
+      ctx.fillRect(tx, ty, tile, tile);
+
+      // Terrazzo marble flecks inside each tile
+      for (let s = 0; s < 36; s++) {
+        const fx = tx + 3 + (hash01(x * 13 + y * 29 + s * 3.7) * (tile - 6));
+        const fy = ty + 3 + (hash01(x * 31 + y * 17 + s * 7.1) * (tile - 6));
+        ctx.fillStyle =
+          s % 3 === 0
+            ? dark
+              ? 'rgba(255,255,255,0.09)'
+              : 'rgba(255,255,255,0.35)'
+            : dark
+              ? 'rgba(15,20,28,0.18)'
+              : 'rgba(120,114,104,0.14)';
+        ctx.fillRect(fx, fy, 2, 2);
+      }
+
+      // Fine recessed tile grout line + micro-bevel
+      ctx.fillStyle = 'rgba(20,24,30,0.22)';
+      ctx.fillRect(tx, ty, tile, 1.5);
+      ctx.fillRect(tx, ty, 1.5, tile);
     }
   }
-  return configureTexture(canvas, 1, 1, true, maxAniso);
+  return {
+    map: configureTexture(canvas, 1, 1, true, maxAniso),
+    normalMap: generateCyclicNormalMap(ctx, size, size, maxAniso, 0.9),
+  };
 }
 
 function createWoodTexture(maxAniso: number, lightHex: string, grainHex: string) {
-  const [canvas, ctx] = makeCanvas(256, 256);
+  const size = 256;
+  const [canvas, ctx] = makeCanvas(size, size);
   ctx.fillStyle = lightHex;
-  ctx.fillRect(0, 0, 256, 256);
-  ctx.fillStyle = grainHex;
-  for (let y = 0; y < 256; y += 32) {
-    ctx.fillRect(0, y, 256, 2);
-    for (let g = 0; g < 18; g++) {
-      ctx.globalAlpha = 0.14;
-      ctx.fillRect((g * 37) % 256, y + ((g * 7) % 26) + 3, 44, 1.5);
+  ctx.fillRect(0, 0, size, size);
+
+  // Seamless periodic wood plank bands & organic cathedral grain waves
+  const plankCount = 8;
+  const plankH = size / plankCount;
+  for (let p = 0; p < plankCount; p++) {
+    const py = p * plankH;
+    const toneDelta = ((p * 7) % 3) - 1;
+    if (toneDelta !== 0) {
+      ctx.fillStyle = toneDelta > 0 ? 'rgba(255,245,230,0.06)' : 'rgba(40,22,10,0.05)';
+      ctx.fillRect(0, py, size, plankH);
+    }
+
+    // Plank joint seam
+    ctx.fillStyle = grainHex;
+    ctx.globalAlpha = 0.38;
+    ctx.fillRect(0, py, size, 1.5);
+
+    // Continuous sinusoidal wood grain fibers (strictly periodic over X = 0..256)
+    for (let f = 0; f < 10; f++) {
+      const fyBase = py + 3 + (f / 10) * (plankH - 5);
+      const amp = 0.8 + hash01(p * 19 + f * 7) * 1.8;
+      const freq = (1 + (f % 3)) * ((Math.PI * 2) / size);
+      const phase = hash01(p * 31 + f * 11) * Math.PI * 2;
+      ctx.globalAlpha = 0.08 + (f % 3) * 0.04;
+      for (let x = 0; x < size; x += 2) {
+        const y = fyBase + Math.sin(x * freq + phase) * amp;
+        ctx.fillRect(x, y, 2, 1.2);
+      }
     }
   }
   ctx.globalAlpha = 1;
-  return configureTexture(canvas, 1, 1, true, maxAniso);
+  return {
+    map: configureTexture(canvas, 1, 1, true, maxAniso),
+    normalMap: generateCyclicNormalMap(ctx, size, size, maxAniso, 1.0),
+  };
 }
 
 function createGymCourtTexture(maxAniso: number) {
   const [canvas, ctx] = makeCanvas(1024, 512);
-  ctx.fillStyle = '#B88352';
+  ctx.fillStyle = '#BA8552';
   ctx.fillRect(0, 0, 1024, 512);
 
-  // Parquet planks
+  // Detailed maple hardwood strips with staggered butt-joints and grain
   for (let y = 0; y < 512; y += 16) {
-    const shade = ((y / 16) % 3) * 6 - 6;
-    ctx.fillStyle = `rgb(${165 + shade}, ${118 + shade}, ${76 + shade})`;
-    ctx.fillRect(0, y, 1024, 15);
-    ctx.fillStyle = 'rgba(0,0,0,0.12)';
+    const rowIdx = y / 16;
+    const stagger = (rowIdx * 137) % 160;
+    for (let x = -stagger; x < 1024; x += 160) {
+      const shade = ((rowIdx * 13 + Math.floor((x + 200) / 160) * 7) % 5) * 4 - 8;
+      ctx.fillStyle = `rgb(${182 + shade}, ${130 + shade}, ${80 + Math.round(shade * 0.7)})`;
+      ctx.fillRect(x, y, 159, 15);
+      ctx.fillStyle = 'rgba(70,40,18,0.16)';
+      ctx.fillRect(x, y + 4, 159, 1);
+      ctx.fillRect(x, y + 10, 159, 1);
+      ctx.fillStyle = 'rgba(45,25,10,0.28)';
+      ctx.fillRect(x + 158, y, 1.5, 15);
+    }
+    ctx.fillStyle = 'rgba(40,22,10,0.22)';
     ctx.fillRect(0, y + 15, 1024, 1);
   }
 
-  // Court border & lines in Maplewood Navy & Gold
+  // Painted perimeter apron border in Maplewood Navy
   ctx.strokeStyle = '#1F3864';
-  ctx.lineWidth = 8;
+  ctx.lineWidth = 22;
+  ctx.strokeRect(34, 24, 956, 464);
+
+  // Crisp gold inner court boundary line
+  ctx.strokeStyle = '#D4AF37';
+  ctx.lineWidth = 5;
   ctx.strokeRect(48, 36, 928, 440);
 
   // Center line
@@ -254,9 +388,9 @@ function createGymCourtTexture(maxAniso: number) {
   ctx.stroke();
 
   // Center circle & Maplewood Eagles emblem
-  ctx.fillStyle = 'rgba(31, 56, 100, 0.85)';
+  ctx.fillStyle = 'rgba(31, 56, 100, 0.92)';
   ctx.beginPath();
-  ctx.arc(512, 256, 62, 0, Math.PI * 2);
+  ctx.arc(512, 256, 66, 0, Math.PI * 2);
   ctx.fill();
   ctx.strokeStyle = '#D4AF37';
   ctx.lineWidth = 5;
@@ -268,11 +402,23 @@ function createGymCourtTexture(maxAniso: number) {
   ctx.textBaseline = 'middle';
   ctx.fillText('EAGLES', 512, 256);
 
-  // Key areas & 3-point arcs
+  // Shaded paint keys & 3-point arcs
+  ctx.fillStyle = 'rgba(31, 56, 100, 0.78)';
+  ctx.fillRect(48, 176, 160, 160);
+  ctx.fillRect(816, 176, 160, 160);
+
   ctx.strokeStyle = '#FFFFFF';
   ctx.lineWidth = 5;
   ctx.strokeRect(48, 176, 160, 160);
   ctx.strokeRect(816, 176, 160, 160);
+
+  // Free-throw circles
+  ctx.beginPath();
+  ctx.arc(208, 256, 54, -Math.PI * 0.5, Math.PI * 0.5);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(816, 256, 54, Math.PI * 0.5, Math.PI * 1.5);
+  ctx.stroke();
 
   ctx.beginPath();
   ctx.arc(110, 256, 175, -Math.PI * 0.44, Math.PI * 0.44);
@@ -385,72 +531,126 @@ function createProjectedShadowTexture(
 }
 
 function createGrassTexture(maxAniso: number) {
-  const [canvas, ctx] = makeCanvas(256, 256);
+  const size = 256;
+  const [canvas, ctx] = makeCanvas(size, size);
   ctx.fillStyle = '#4A7C3F';
-  ctx.fillRect(0, 0, 256, 256);
-  for (let i = 0; i < 4600; i++) {
-    const x = Math.floor(hash01(i * 1.9 + 1.4) * 256);
-    const y = Math.floor(hash01(i * 3.7 + 6.2) * 256);
-    ctx.fillStyle = i % 3 === 0 ? '#558B48' : i % 3 === 1 ? '#3F6C35' : '#4E8242';
-    ctx.fillRect(x, y, 2, 4);
+  ctx.fillRect(0, 0, size, size);
+
+  // Seamless toroidal turf patches for natural lawn variation without grid seams
+  for (let p = 0; p < 160; p++) {
+    const cx = hash01(p * 2.9 + 0.7) * size;
+    const cy = hash01(p * 5.3 + 1.3) * size;
+    const rx = 10 + hash01(p * 7.7) * 20;
+    const ry = 10 + hash01(p * 11.3) * 20;
+    ctx.fillStyle = p % 2 === 0 ? 'rgba(96, 152, 74, 0.08)' : 'rgba(52, 96, 44, 0.08)';
+    drawToroidalEllipse(ctx, size, size, cx, cy, rx, ry);
   }
-  return configureTexture(canvas, 1, 1, true, maxAniso);
+
+  // Fine individual grass blades wrapped modulo 256
+  for (let i = 0; i < 5200; i++) {
+    const x = Math.floor(hash01(i * 1.9 + 1.4) * size);
+    const y = Math.floor(hash01(i * 3.7 + 6.2) * size);
+    ctx.fillStyle =
+      i % 4 === 0 ? '#5B944C' : i % 4 === 1 ? '#3D6A33' : i % 4 === 2 ? '#4E8242' : '#659E54';
+    ctx.fillRect(x, y, 1.5, 3);
+    if (y + 3 > size) {
+      ctx.fillRect(x, 0, 1.5, y + 3 - size);
+    }
+  }
+  return {
+    map: configureTexture(canvas, 1, 1, true, maxAniso),
+    normalMap: generateCyclicNormalMap(ctx, size, size, maxAniso, 1.15),
+  };
 }
 
 function createAsphaltTexture(maxAniso: number) {
-  const [canvas, ctx] = makeCanvas(256, 256);
-  ctx.fillStyle = '#383A40';
-  ctx.fillRect(0, 0, 256, 256);
-  for (let i = 0; i < 4800; i++) {
-    const x = Math.floor(hash01(i * 2.3 + 4.1) * 256);
-    const y = Math.floor(hash01(i * 4.9 + 8.3) * 256);
-    const alpha = 0.03 + hash01(i * 7.1) * 0.06;
-    ctx.fillStyle = i % 2 === 0 ? `rgba(220,226,232,${alpha})` : `rgba(12,14,18,${alpha * 1.4})`;
+  const size = 256;
+  const [canvas, ctx] = makeCanvas(size, size);
+  ctx.fillStyle = '#363940';
+  ctx.fillRect(0, 0, size, size);
+
+  // Toroidal weathered aggregate patches
+  for (let p = 0; p < 90; p++) {
+    const cx = hash01(p * 4.1 + 2.2) * size;
+    const cy = hash01(p * 6.7 + 3.8) * size;
+    const r = 8 + hash01(p * 8.9) * 16;
+    ctx.fillStyle = p % 2 === 0 ? 'rgba(255,255,255,0.025)' : 'rgba(12,14,18,0.035)';
+    drawToroidalEllipse(ctx, size, size, cx, cy, r, r);
+  }
+
+  for (let i = 0; i < 5400; i++) {
+    const x = Math.floor(hash01(i * 2.3 + 4.1) * size);
+    const y = Math.floor(hash01(i * 4.9 + 8.3) * size);
+    const alpha = 0.035 + hash01(i * 7.1) * 0.065;
+    ctx.fillStyle = i % 3 === 0 ? `rgba(220,226,232,${alpha})` : `rgba(12,14,18,${alpha * 1.35})`;
     ctx.fillRect(x, y, 2, 2);
   }
-  return configureTexture(canvas, 1, 1, true, maxAniso);
+  return {
+    map: configureTexture(canvas, 1, 1, true, maxAniso),
+    normalMap: generateCyclicNormalMap(ctx, size, size, maxAniso, 1.4),
+  };
 }
 
 function createBarkTextures(maxAniso: number) {
-  const [canvas, ctx] = makeCanvas(256, 256);
-  const [bumpCanvas, bumpCtx] = makeCanvas(256, 256);
+  const size = 256;
+  const [canvas, ctx] = makeCanvas(size, size);
+  const [bumpCanvas, bumpCtx] = makeCanvas(size, size);
   ctx.fillStyle = '#5B4031';
-  ctx.fillRect(0, 0, 256, 256);
-  bumpCtx.fillStyle = '#707070';
-  bumpCtx.fillRect(0, 0, 256, 256);
+  ctx.fillRect(0, 0, size, size);
+  bumpCtx.fillStyle = '#787878';
+  bumpCtx.fillRect(0, 0, size, size);
 
-  for (let i = 0; i < 220; i++) {
-    const x = Math.floor(hash01(i * 3.1) * 256);
-    const y = Math.floor(hash01(i * 5.7) * 256);
-    const w = 2 + Math.floor(hash01(i * 7.3) * 5);
-    const h = 18 + Math.floor(hash01(i * 11.1) * 44);
+  // Seamless vertical bark fissures wrapped modulo 256 on both X and Y
+  for (let i = 0; i < 280; i++) {
+    const x = Math.floor(hash01(i * 3.1) * size);
+    const y = Math.floor(hash01(i * 5.7) * size);
+    const w = 2 + Math.floor(hash01(i * 7.3) * 4);
+    const h = 20 + Math.floor(hash01(i * 11.1) * 48);
     const dark = i % 2 === 0;
-    ctx.fillStyle = dark ? 'rgba(38,24,18,0.45)' : 'rgba(125,92,68,0.28)';
-    ctx.fillRect(x, y, w, h);
-    bumpCtx.fillStyle = dark ? '#353535' : '#b8b8b8';
-    bumpCtx.fillRect(x, y, w, h);
+    const colorFill = dark ? 'rgba(34,21,15,0.46)' : 'rgba(132,98,72,0.3)';
+    const bumpFill = dark ? '#303030' : '#C2C2C2';
+
+    for (const oy of [-size, 0, size]) {
+      if (y + oy + h < 0 || y + oy > size) continue;
+      ctx.fillStyle = colorFill;
+      ctx.fillRect(x, y + oy, w, h);
+      bumpCtx.fillStyle = bumpFill;
+      bumpCtx.fillRect(x, y + oy, w, h);
+    }
   }
   return {
     map: configureTexture(canvas, 2, 2, true, maxAniso),
     bumpMap: configureTexture(bumpCanvas, 2, 2, false, maxAniso),
+    normalMap: generateCyclicNormalMap(bumpCtx, size, size, maxAniso, 1.6, 2, 2),
   };
 }
 
 function createFoliageTexture(maxAniso: number) {
-  const [canvas, ctx] = makeCanvas(256, 256);
+  const size = 256;
+  const [canvas, ctx] = makeCanvas(size, size);
   ctx.fillStyle = '#478440';
-  ctx.fillRect(0, 0, 256, 256);
-  for (let i = 0; i < 1600; i++) {
-    const x = Math.floor(hash01(i * 1.7 + 0.5) * 256);
-    const y = Math.floor(hash01(i * 4.1 + 2.9) * 256);
-    const r = 2 + hash01(i * 6.3) * 4;
+  ctx.fillRect(0, 0, size, size);
+
+  // Seamless overlapping leaf clusters (toroidal wrapping on X & Y)
+  for (let i = 0; i < 1800; i++) {
+    const cx = hash01(i * 1.7 + 0.5) * size;
+    const cy = hash01(i * 4.1 + 2.9) * size;
+    const rx = 2.5 + hash01(i * 6.3) * 4.2;
+    const ry = 1.8 + hash01(i * 8.1) * 3.2;
     ctx.fillStyle =
-      i % 3 === 0 ? 'rgba(116,178,76,0.32)' : i % 3 === 1 ? 'rgba(42,88,38,0.38)' : 'rgba(84,142,64,0.32)';
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fill();
+      i % 4 === 0
+        ? 'rgba(122,186,82,0.34)'
+        : i % 4 === 1
+          ? 'rgba(38,84,34,0.38)'
+          : i % 4 === 2
+            ? 'rgba(88,148,66,0.32)'
+            : 'rgba(142,202,96,0.22)';
+    drawToroidalEllipse(ctx, size, size, cx, cy, rx, ry);
   }
-  return configureTexture(canvas, 2, 2, true, maxAniso);
+  return {
+    map: configureTexture(canvas, 2, 2, true, maxAniso),
+    normalMap: generateCyclicNormalMap(ctx, size, size, maxAniso, 1.35, 2, 2),
+  };
 }
 
 export function createSignTexture(
@@ -900,28 +1100,39 @@ export function createMaterialLibrary(
   textures.push(limestoneTex.map, limestoneTex.normalMap);
 
   const linoTex = createLinoleumTexture(maxAniso);
-  linoTex.repeat.set(16, 3);
-  textures.push(linoTex);
+  linoTex.map.repeat.set(16, 3);
+  linoTex.normalMap.repeat.set(16, 3);
+  textures.push(linoTex.map, linoTex.normalMap);
 
   const woodDeskTex = createWoodTexture(maxAniso, '#C89B6E', '#8F6239');
-  textures.push(woodDeskTex);
+  textures.push(woodDeskTex.map, woodDeskTex.normalMap);
+
+  const woodDarkTex = createWoodTexture(maxAniso, '#6B462B', '#3E2514');
+  textures.push(woodDarkTex.map, woodDarkTex.normalMap);
 
   const gymTex = createGymCourtTexture(maxAniso);
   textures.push(gymTex);
 
   const grassTex = createGrassTexture(maxAniso);
-  grassTex.repeat.set(24, 24);
-  textures.push(grassTex);
+  grassTex.map.repeat.set(28, 28);
+  grassTex.normalMap.repeat.set(28, 28);
+  textures.push(grassTex.map, grassTex.normalMap);
 
   const asphaltTex = createAsphaltTexture(maxAniso);
-  asphaltTex.repeat.set(16, 16);
-  textures.push(asphaltTex);
+  asphaltTex.map.repeat.set(18, 18);
+  asphaltTex.normalMap.repeat.set(18, 18);
+  textures.push(asphaltTex.map, asphaltTex.normalMap);
 
   const barkTex = createBarkTextures(maxAniso);
-  textures.push(barkTex.map, barkTex.bumpMap);
+  textures.push(barkTex.map, barkTex.bumpMap, barkTex.normalMap);
 
   const foliageTex = createFoliageTexture(maxAniso);
-  textures.push(foliageTex);
+  textures.push(foliageTex.map, foliageTex.normalMap);
+
+  const plasterTex = createConcreteTexture(maxAniso, '#EAE6DC', false);
+  plasterTex.map.repeat.set(8, 2);
+  plasterTex.normalMap.repeat.set(8, 2);
+  textures.push(plasterTex.map, plasterTex.normalMap);
 
   const shadowContactTex = createProjectedShadowTexture('contact', maxAniso);
   const shadowCanopyTex = createProjectedShadowTexture('canopy', maxAniso);
@@ -934,8 +1145,8 @@ export function createMaterialLibrary(
     bumpMap: brickTex.bumpMap,
     bumpScale: 0.045,
     normalMap: brickTex.normalMap,
-    normalScale: new THREE.Vector2(0.5, 0.5),
-    roughness: 0.82,
+    normalScale: new THREE.Vector2(0.55, 0.55),
+    roughness: 0.8,
     metalness: 0.05,
   });
 
@@ -944,7 +1155,7 @@ export function createMaterialLibrary(
     map: gymBrickMap,
     bumpMap: gymBrickBump,
     bumpScale: 0.045,
-    roughness: 0.85,
+    roughness: 0.84,
     metalness: 0.05,
   });
 
@@ -952,14 +1163,16 @@ export function createMaterialLibrary(
     color: 0xffffff,
     map: concreteTex.map,
     normalMap: concreteTex.normalMap,
-    normalScale: new THREE.Vector2(0.4, 0.4),
-    roughness: 0.84,
+    normalScale: new THREE.Vector2(0.45, 0.45),
+    roughness: 0.82,
     metalness: 0.04,
   });
 
   const concreteDark = new THREE.MeshStandardMaterial({
     color: 0x767b83,
-    roughness: 0.88,
+    normalMap: concreteTex.normalMap,
+    normalScale: new THREE.Vector2(0.28, 0.28),
+    roughness: 0.86,
     metalness: 0.06,
   });
 
@@ -967,73 +1180,91 @@ export function createMaterialLibrary(
     color: 0xffffff,
     map: limestoneTex.map,
     normalMap: limestoneTex.normalMap,
-    normalScale: new THREE.Vector2(0.35, 0.35),
-    roughness: 0.72,
+    normalScale: new THREE.Vector2(0.38, 0.38),
+    roughness: 0.7,
     metalness: 0.04,
   });
 
   const roof = new THREE.MeshStandardMaterial({
     color: 0x5c6169,
-    roughness: 0.92,
+    normalMap: asphaltTex.normalMap,
+    normalScale: new THREE.Vector2(0.25, 0.25),
+    roughness: 0.9,
     metalness: 0.05,
   });
 
   const linoleum = new THREE.MeshStandardMaterial({
     color: 0xffffff,
-    map: linoTex,
-    roughness: 0.42,
-    metalness: 0.05,
+    map: linoTex.map,
+    normalMap: linoTex.normalMap,
+    normalScale: new THREE.Vector2(0.25, 0.25),
+    roughness: 0.36,
+    metalness: 0.06,
   });
 
   const plasterWall = new THREE.MeshStandardMaterial({
-    color: 0xeae6dc,
-    roughness: 0.85,
+    color: 0xffffff,
+    map: plasterTex.map,
+    normalMap: plasterTex.normalMap,
+    normalScale: new THREE.Vector2(0.18, 0.18),
+    roughness: 0.82,
     metalness: 0.02,
   });
 
   const lockerMetal = new THREE.MeshStandardMaterial({
     color: 0x1f3864,
-    roughness: 0.36,
-    metalness: 0.62,
+    roughness: 0.34,
+    metalness: 0.65,
   });
 
   const lockerTrim = new THREE.MeshStandardMaterial({
     color: 0xd4af37,
-    roughness: 0.3,
-    metalness: 0.78,
+    roughness: 0.28,
+    metalness: 0.8,
   });
 
   const woodDesk = new THREE.MeshStandardMaterial({
     color: 0xffffff,
-    map: woodDeskTex,
-    roughness: 0.62,
-    metalness: 0.04,
+    map: woodDeskTex.map,
+    normalMap: woodDeskTex.normalMap,
+    normalScale: new THREE.Vector2(0.3, 0.3),
+    roughness: 0.56,
+    metalness: 0.05,
   });
 
   const woodDark = new THREE.MeshStandardMaterial({
-    color: 0x5a3b24,
-    roughness: 0.58,
+    color: 0xffffff,
+    map: woodDarkTex.map,
+    normalMap: woodDarkTex.normalMap,
+    normalScale: new THREE.Vector2(0.32, 0.32),
+    roughness: 0.52,
     metalness: 0.05,
   });
 
   const gymParquet = new THREE.MeshStandardMaterial({
     color: 0xffffff,
     map: gymTex,
-    roughness: 0.32,
-    metalness: 0.06,
+    normalMap: woodDeskTex.normalMap,
+    normalScale: new THREE.Vector2(0.18, 0.18),
+    roughness: 0.28,
+    metalness: 0.07,
   });
 
   const grass = new THREE.MeshStandardMaterial({
     color: 0xffffff,
-    map: grassTex,
-    roughness: 0.95,
+    map: grassTex.map,
+    normalMap: grassTex.normalMap,
+    normalScale: new THREE.Vector2(0.38, 0.38),
+    roughness: 0.92,
     metalness: 0.0,
   });
 
   const asphalt = new THREE.MeshStandardMaterial({
     color: 0xffffff,
-    map: asphaltTex,
-    roughness: 0.9,
+    map: asphaltTex.map,
+    normalMap: asphaltTex.normalMap,
+    normalScale: new THREE.Vector2(0.42, 0.42),
+    roughness: 0.88,
     metalness: 0.04,
   });
 
@@ -1056,14 +1287,14 @@ export function createMaterialLibrary(
 
   const gold = new THREE.MeshStandardMaterial({
     color: 0xd4af37,
-    roughness: 0.24,
+    roughness: 0.22,
     metalness: 0.88,
   });
 
   const navy = new THREE.MeshStandardMaterial({
     color: 0x1f3864,
-    roughness: 0.52,
-    metalness: 0.15,
+    roughness: 0.5,
+    metalness: 0.16,
   });
 
   const neonCeiling = new THREE.MeshStandardMaterial({
@@ -1082,19 +1313,19 @@ export function createMaterialLibrary(
 
   const whiteboard = new THREE.MeshStandardMaterial({
     color: 0xf8fafc,
-    roughness: 0.22,
-    metalness: 0.05,
+    roughness: 0.2,
+    metalness: 0.06,
   });
 
   const chalkboard = new THREE.MeshStandardMaterial({
     color: 0x1f4032,
-    roughness: 0.85,
+    roughness: 0.82,
     metalness: 0.02,
   });
 
   const terracotta = new THREE.MeshStandardMaterial({
     color: 0x9e4738,
-    roughness: 0.8,
+    roughness: 0.78,
     metalness: 0.05,
   });
 
@@ -1103,14 +1334,18 @@ export function createMaterialLibrary(
     map: barkTex.map,
     bumpMap: barkTex.bumpMap,
     bumpScale: 0.06,
-    roughness: 0.94,
+    normalMap: barkTex.normalMap,
+    normalScale: new THREE.Vector2(0.55, 0.55),
+    roughness: 0.92,
     metalness: 0.0,
   });
 
   const foliage = new THREE.MeshStandardMaterial({
     color: 0xffffff,
-    map: foliageTex,
-    roughness: 0.82,
+    map: foliageTex.map,
+    normalMap: foliageTex.normalMap,
+    normalScale: new THREE.Vector2(0.45, 0.45),
+    roughness: 0.8,
     metalness: 0.0,
   });
 

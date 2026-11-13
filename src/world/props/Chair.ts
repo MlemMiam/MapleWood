@@ -13,7 +13,7 @@ export interface ChairTransform {
 const ensureNonIndexed = (g: THREE.BufferGeometry) => (g.index ? g.toNonIndexed() : g);
 
 /**
- * Builds instanced classroom & cafeteria chairs (contoured seat + backrest + 4 tubular chrome legs).
+ * Builds instanced classroom & cafeteria chairs (contoured waterfall seat + curved lumbar backrest + tubular chrome frame).
  */
 export function buildInstancedChairs(
   parent: THREE.Group,
@@ -22,23 +22,43 @@ export function buildInstancedChairs(
 ): void {
   if (chairs.length === 0) return;
 
-  const seatGeo = new RoundedBoxGeometry(0.42, 0.045, 0.42, 2, 0.018);
-  const backGeo = new RoundedBoxGeometry(0.4, 0.36, 0.04, 2, 0.016);
+  // Contoured seat pan with rolled waterfall front edge
+  const seatPan = ensureNonIndexed(new RoundedBoxGeometry(0.42, 0.036, 0.4, 2, 0.016));
+  const waterfallLip = ensureNonIndexed(new THREE.CylinderGeometry(0.022, 0.022, 0.4, 8));
+  waterfallLip.rotateZ(Math.PI / 2);
+  waterfallLip.translate(0, -0.006, 0.19);
+  const seatGeo = mergeGeometries([seatPan, waterfallLip]);
+
+  // Ergonomic curved lumbar backrest
+  const backGeo = new RoundedBoxGeometry(0.4, 0.34, 0.038, 3, 0.016);
+  const backPos = backGeo.attributes.position;
+  for (let i = 0; i < backPos.count; i++) {
+    const vx = backPos.getX(i);
+    const vy = backPos.getY(i);
+    const vz = backPos.getZ(i);
+    // Gentle horizontal wrap + vertical lumbar arch
+    const wrapZ = (vx * vx) * 0.28 - Math.cos(vy * 6.0) * 0.012;
+    backPos.setZ(i, vz + wrapZ);
+  }
+  backGeo.computeVertexNormals();
 
   const legParts: THREE.BufferGeometry[] = [];
-  for (const [lx, lz] of [
-    [-0.17, -0.17],
-    [0.17, -0.17],
-    [-0.17, 0.17],
-    [0.17, 0.17],
-  ]) {
-    const leg = ensureNonIndexed(new THREE.CylinderGeometry(0.014, 0.012, 0.44, 8));
-    leg.translate(lx, 0.22, lz);
-    legParts.push(leg);
+  for (const sx of [-0.17, 0.17]) {
+    // Sled-style splayed tubular front & rear legs + upright spine tubes
+    const frontLeg = ensureNonIndexed(new THREE.CylinderGeometry(0.013, 0.011, 0.45, 8));
+    frontLeg.rotateX(-0.08);
+    frontLeg.translate(sx, 0.22, 0.16);
+    const rearLeg = ensureNonIndexed(new THREE.CylinderGeometry(0.013, 0.011, 0.45, 8));
+    rearLeg.rotateX(0.1);
+    rearLeg.translate(sx, 0.22, -0.16);
+    const spineTube = ensureNonIndexed(new THREE.CylinderGeometry(0.012, 0.012, 0.26, 8));
+    spineTube.rotateX(-0.08);
+    spineTube.translate(sx * 0.72, 0.54, -0.19);
+    legParts.push(frontLeg, rearLeg, spineTube);
   }
-  const backRail = ensureNonIndexed(new THREE.CylinderGeometry(0.012, 0.012, 0.34, 8));
+  const backRail = ensureNonIndexed(new THREE.CylinderGeometry(0.012, 0.012, 0.32, 8));
   backRail.rotateZ(Math.PI / 2);
-  backRail.translate(0, 0.4, -0.17);
+  backRail.translate(0, 0.42, -0.17);
   legParts.push(backRail);
   const legsGeo = mergeGeometries(legParts);
 

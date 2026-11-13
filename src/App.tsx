@@ -105,6 +105,7 @@ export default function App() {
     if (next === 'paused') {
       audio?.pauseLoops();
     } else if (next === 'playing') {
+      audio?.startAmbient();
       audio?.resumeLoops();
     }
   }, []);
@@ -425,6 +426,11 @@ export default function App() {
             hudAccum += frameDt;
             if (hudAccum >= 0.1) {
               hudAccum = 0;
+              audio.updateFountainSpatialAudio(
+                player.position.x,
+                player.position.z,
+                currentRoom?.type === 'exterior'
+              );
               setHudPos({
                 x: player.position.x,
                 z: player.position.z,

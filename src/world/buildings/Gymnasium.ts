@@ -1,8 +1,11 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
   addBuildingParapetAndHVAC,
   addFacadeDetailing,
   buildWallWithOpenings,
+  createClassicalEntrancePortico,
   createExitSign,
   createExteriorPoster,
 } from '../../utils/Geometry';
@@ -58,10 +61,29 @@ export function buildGymnasium(ctx: WorldBuildContext): THREE.Group {
     hvacCount: 3,
   });
 
-  // Steel roof trusses for realistic gym ceiling
+  // Open-web steel Warren roof trusses for realistic gym ceiling
+  const ensureNonIndexedGym = (g: THREE.BufferGeometry) => (g.index ? g.toNonIndexed() : g);
+  const trussParts: THREE.BufferGeometry[] = [];
+  const topChord = ensureNonIndexedGym(new THREE.BoxGeometry(39.4, 0.14, 0.28));
+  topChord.translate(0, 0.3, 0);
+  const botChord = ensureNonIndexedGym(new THREE.BoxGeometry(39.4, 0.14, 0.28));
+  botChord.translate(0, -0.3, 0);
+  trussParts.push(topChord, botChord);
+  for (let wx = -18; wx <= 18; wx += 3) {
+    const vert = ensureNonIndexedGym(new THREE.BoxGeometry(0.1, 0.6, 0.2));
+    vert.translate(wx, 0, 0);
+    trussParts.push(vert);
+    if (wx < 18) {
+      const diag = ensureNonIndexedGym(new THREE.BoxGeometry(0.08, 0.85, 0.16));
+      diag.rotateZ(wx % 6 === 0 ? 1.12 : -1.12);
+      diag.translate(wx + 1.5, 0, 0);
+      trussParts.push(diag);
+    }
+  }
+  const singleTrussGeo = mergeGeometries(trussParts);
   for (const tz of [-51, -46, -41, -36]) {
-    const truss = new THREE.Mesh(new THREE.BoxGeometry(39.4, 0.45, 0.35), mats.concreteDark);
-    truss.position.set(0, floorY + wallH - 0.4, tz);
+    const truss = new THREE.Mesh(singleTrussGeo, mats.concreteDark);
+    truss.position.set(0, floorY + wallH - 0.5, tz);
     group.add(truss);
   }
 
@@ -184,6 +206,31 @@ export function buildGymnasium(ctx: WorldBuildContext): THREE.Group {
     });
   }
 
+  // Classical fluted-column & molded-pediment porticos at Gymnasium entrances
+  createClassicalEntrancePortico(group, physics, mats, {
+    x: 0,
+    y: floorY,
+    z: -56,
+    rotY: Math.PI,
+    spanWidth: 4.3,
+    columnHeight: 4.1,
+    depth: 0.85,
+    columnRadius: 0.22,
+    pedimentHeight: 0.92,
+  });
+  createClassicalEntrancePortico(group, physics, mats, {
+    x: 0,
+    y: floorY,
+    z: -31,
+    rotY: 0,
+    spanWidth: 3.8,
+    columnHeight: 3.35,
+    depth: 0.24,
+    columnRadius: 0.16,
+    pedimentHeight: 0.62,
+    addColumnColliders: false,
+  });
+
   // Gym Double Doors (South & North)
   doors.push(
     createDoor(group, physics, mats, interactions, {
@@ -234,12 +281,12 @@ export function buildGymnasium(ctx: WorldBuildContext): THREE.Group {
     })
   );
 
-  // Telescopic Bleachers along North-West & North-East sides (leaving center court clear!)
+  // Telescopic Bleachers along North-West & North-East sides with Chrome Side Safety Railings
   for (const side of [-1, 1]) {
     const bx = side * 17.4;
     for (let tier = 0; tier < 4; tier++) {
       const seat = new THREE.Mesh(
-        new THREE.BoxGeometry(0.85, 0.35, 16),
+        new RoundedBoxGeometry(0.85, 0.35, 16, 2, 0.02),
         tier % 2 === 0 ? mats.navy : mats.woodDesk
       );
       seat.position.set(bx - side * tier * 0.72, floorY + 0.35 + tier * 0.42, -43.5);
@@ -247,29 +294,53 @@ export function buildGymnasium(ctx: WorldBuildContext): THREE.Group {
       seat.receiveShadow = true;
       group.add(seat);
     }
+    for (const rz of [-51.4, -35.6]) {
+      const railCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(bx + side * 0.3, floorY + 0.4, rz),
+        new THREE.Vector3(bx + side * 0.3, floorY + 1.15, rz),
+        new THREE.Vector3(bx - side * 2.45, floorY + 2.35, rz),
+        new THREE.Vector3(bx - side * 2.45, floorY + 1.6, rz),
+      ]);
+      const rail = new THREE.Mesh(new THREE.TubeGeometry(railCurve, 12, 0.026, 7, false), mats.chrome);
+      group.add(rail);
+    }
     physics.addStaticBox(bx - side * 1.1, floorY + 1.0, -43.5, 1.6, 1.0, 8.0);
   }
 
-  // Basketball Hoops (West & East Court Ends at X = -12.5 and X = +12.5, Z = -43.5)
+  // Basketball Hoops (West & East Court Ends at X = -12.5 and X = +12.5, Z = -43.5) with H-Brace & Net
+  const netMat = new THREE.MeshStandardMaterial({
+    color: 0xf8fafc,
+    roughness: 0.75,
+    wireframe: true,
+  });
   for (const dir of [-1, 1]) {
     const hx = dir * 12.6;
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.14, 3.8, 10), mats.navy);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.14, 3.8, 12), mats.navy);
     pole.position.set(hx + dir * 0.8, floorY + 1.9, -43.5);
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.14, 0.14), mats.navy);
+    const arm = new THREE.Mesh(new RoundedBoxGeometry(1.1, 0.14, 0.14, 2, 0.02), mats.navy);
     arm.position.set(hx + dir * 0.3, floorY + 3.45, -43.5);
+    const diagBrace = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 1.15, 8), mats.chrome);
+    diagBrace.position.set(hx + dir * 0.42, floorY + 3.12, -43.5);
+    diagBrace.rotation.z = dir * 0.78;
+    const backboardFrame = new THREE.Mesh(new RoundedBoxGeometry(0.09, 1.16, 1.86, 2, 0.02), mats.chrome);
+    backboardFrame.position.set(hx + dir * 0.02, floorY + 3.45, -43.5);
     const backboard = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.1, 1.8), mats.tintedGlass);
     backboard.position.set(hx, floorY + 3.45, -43.5);
+    const targetSquare = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.38, 0.56), mats.whiteboard);
+    targetSquare.position.set(hx - dir * 0.01, floorY + 3.28, -43.5);
     const rim = new THREE.Mesh(new THREE.TorusGeometry(0.26, 0.025, 8, 18), mats.terracotta);
     rim.rotation.x = Math.PI / 2;
     rim.position.set(hx - dir * 0.34, floorY + 3.05, -43.5);
-    group.add(pole, arm, backboard, rim);
+    const net = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.16, 0.42, 12, 4, true), netMat);
+    net.position.set(hx - dir * 0.34, floorY + 2.83, -43.5);
+    group.add(pole, arm, diagBrace, backboardFrame, backboard, targetSquare, rim, net);
     physics.addStaticBox(hx + dir * 0.8, floorY + 1.9, -43.5, 0.2, 1.9, 0.2);
 
     // Interactive Basketball Rack near East Hoop
     if (dir === 1) {
-      const ball = new THREE.Mesh(new THREE.SphereGeometry(0.14, 14, 14), mats.terracotta);
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(0.14, 16, 14), mats.terracotta);
       ball.position.set(10.5, floorY + 0.55, -43.5);
-      const rack = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.25, 0.45, 10), mats.chrome);
+      const rack = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.25, 0.45, 12), mats.chrome);
       rack.position.set(10.5, floorY + 0.225, -43.5);
       group.add(ball, rack);
 

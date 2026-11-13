@@ -1,8 +1,11 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
   addBuildingParapetAndHVAC,
   addFacadeDetailing,
   buildWallWithOpenings,
+  createClassicalEntrancePortico,
   createExitSign,
   createExteriorNoticeBoard,
   createExteriorPoster,
@@ -191,6 +194,31 @@ export function buildLibrary(ctx: WorldBuildContext): THREE.Group {
     skipPlinthRange: [-1.6, 1.6],
   });
 
+  // Classical fluted-column & molded-pediment porticos at Library entrances
+  createClassicalEntrancePortico(group, physics, mats, {
+    x: 22,
+    y: floorY,
+    z: 14,
+    rotY: -Math.PI / 2,
+    spanWidth: 3.45,
+    columnHeight: 3.35,
+    depth: 0.72,
+    columnRadius: 0.17,
+    pedimentHeight: 0.76,
+  });
+  createClassicalEntrancePortico(group, physics, mats, {
+    x: 36,
+    y: floorY,
+    z: 4,
+    rotY: Math.PI,
+    spanWidth: 3.1,
+    columnHeight: 3.25,
+    depth: 0.42,
+    columnRadius: 0.16,
+    pedimentHeight: 0.68,
+    addColumnColliders: false,
+  });
+
   doors.push(
     createDoor(group, physics, mats, interactions, {
       id: 'lib-west-courtyard',
@@ -255,14 +283,31 @@ export function buildLibrary(ctx: WorldBuildContext): THREE.Group {
     }
   }
 
-  // Study Tables + Media Computers
+  // Study Tables + Media Computers + Classic Green Library Reading Lamps
+  const ensureNonIndexedLib = (g: THREE.BufferGeometry) => (g.index ? g.toNonIndexed() : g);
+  const libTableTopGeo = new RoundedBoxGeometry(3.2, 0.06, 1.22, 2, 0.02);
+  const libLegParts: THREE.BufferGeometry[] = [];
+  for (const lx of [-1.42, 1.42]) {
+    for (const lz of [-0.46, 0.46]) {
+      const leg = ensureNonIndexedLib(new THREE.CylinderGeometry(0.036, 0.028, 0.74, 10));
+      leg.translate(lx, 0.37, lz);
+      libLegParts.push(leg);
+    }
+  }
+  const stretcher = ensureNonIndexedLib(new THREE.CylinderGeometry(0.022, 0.022, 2.84, 8));
+  stretcher.rotateZ(Math.PI / 2);
+  stretcher.translate(0, 0.18, 0);
+  libLegParts.push(stretcher);
+  const libLegsGeo = mergeGeometries(libLegParts);
+
   const chairs: ChairTransform[] = [];
   for (const tz of [8.5, 17.5]) {
-    const table = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.06, 1.2), mats.woodDark);
+    const table = new THREE.Mesh(libTableTopGeo, mats.woodDark);
     table.position.set(29.5, floorY + 0.76, tz);
     table.castShadow = true;
-    const legs = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.72, 0.9), mats.chrome);
-    legs.position.set(29.5, floorY + 0.36, tz);
+    table.receiveShadow = true;
+    const legs = new THREE.Mesh(libLegsGeo, mats.chrome);
+    legs.position.set(29.5, floorY, tz);
     group.add(table, legs);
     physics.addStaticBox(29.5, floorY + 0.39, tz, 1.6, 0.39, 0.6);
 
@@ -274,9 +319,11 @@ export function buildLibrary(ctx: WorldBuildContext): THREE.Group {
     );
 
     if (tz === 8.5) {
-      const pc = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.32, 0.06), mats.navy);
+      const pc = new THREE.Mesh(new RoundedBoxGeometry(0.48, 0.32, 0.05, 2, 0.01), mats.navy);
       pc.position.set(29.5, floorY + 0.96, tz);
-      group.add(pc);
+      const pcStand = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.08, 0.08, 8), mats.chrome);
+      pcStand.position.set(29.5, floorY + 0.82, tz);
+      group.add(pc, pcStand);
       interactions.register({
         id: 'lib-computer',
         label: 'consulter le catalogue sur PC',
@@ -285,6 +332,16 @@ export function buildLibrary(ctx: WorldBuildContext): THREE.Group {
         worldPosition: new THREE.Vector3(29.5, floorY + 0.96, tz),
         onInteract: () => callbacks.onUseComputer('Centre de Médias — Bibliothèque'),
       });
+    } else {
+      // Classic green banker's reading lamp on the second study table
+      const lampStem = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.06, 0.24, 10), mats.gold);
+      lampStem.position.set(29.5, floorY + 0.9, tz);
+      const lampShade = new THREE.Mesh(
+        new THREE.ConeGeometry(0.12, 0.1, 12),
+        new THREE.MeshStandardMaterial({ color: 0x15803d, emissive: 0x14532d, emissiveIntensity: 0.4, roughness: 0.25 })
+      );
+      lampShade.position.set(29.5, floorY + 1.03, tz);
+      group.add(lampStem, lampShade);
     }
   }
   buildInstancedChairs(group, mats, chairs);

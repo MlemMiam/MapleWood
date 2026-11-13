@@ -1,8 +1,11 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
   addBuildingParapetAndHVAC,
   addFacadeDetailing,
   buildWallWithOpenings,
+  createClassicalEntrancePortico,
   createExitSign,
   createExteriorNoticeBoard,
   createExteriorPoster,
@@ -192,6 +195,31 @@ export function buildCafeteria(ctx: WorldBuildContext): THREE.Group {
     skipPlinthRange: [-1.6, 1.6],
   });
 
+  // Classical fluted-column & molded-pediment porticos at Cafeteria entrances
+  createClassicalEntrancePortico(group, physics, mats, {
+    x: -22,
+    y: floorY,
+    z: 14,
+    rotY: Math.PI / 2,
+    spanWidth: 3.45,
+    columnHeight: 3.35,
+    depth: 0.72,
+    columnRadius: 0.17,
+    pedimentHeight: 0.76,
+  });
+  createClassicalEntrancePortico(group, physics, mats, {
+    x: -36,
+    y: floorY,
+    z: 4,
+    rotY: Math.PI,
+    spanWidth: 3.1,
+    columnHeight: 3.25,
+    depth: 0.42,
+    columnRadius: 0.16,
+    pedimentHeight: 0.68,
+    addColumnColliders: false,
+  });
+
   // Doors
   doors.push(
     createDoor(group, physics, mats, interactions, {
@@ -260,16 +288,33 @@ export function buildCafeteria(ctx: WorldBuildContext): THREE.Group {
   });
 
   // Dining Tables & Instanced Chairs (clear aisle around X = -35.2)
+  const ensureNonIndexedCafe = (g: THREE.BufferGeometry) => (g.index ? g.toNonIndexed() : g);
+  const cafeTableTopGeo = new RoundedBoxGeometry(2.4, 0.055, 1.1, 2, 0.02);
+  const cafePedParts: THREE.BufferGeometry[] = [];
+  for (const px of [-0.72, 0.72]) {
+    const col = ensureNonIndexedCafe(new THREE.CylinderGeometry(0.045, 0.045, 0.7, 10));
+    col.translate(px, 0.36, 0);
+    const baseDisc = ensureNonIndexedCafe(new THREE.CylinderGeometry(0.24, 0.28, 0.03, 12));
+    baseDisc.translate(px, 0.015, 0);
+    cafePedParts.push(col, baseDisc);
+  }
+  const tieBar = ensureNonIndexedCafe(new THREE.CylinderGeometry(0.022, 0.022, 1.44, 8));
+  tieBar.rotateZ(Math.PI / 2);
+  tieBar.translate(0, 0.14, 0);
+  cafePedParts.push(tieBar);
+  const cafePedGeo = mergeGeometries(cafePedParts);
+
   const chairs: ChairTransform[] = [];
   for (let row = 0; row < 3; row++) {
     for (let col = 0; col < 3; col++) {
       const tx = -42.8 + col * 5.2;
       const tz = 9.0 + row * 5.0;
-      const table = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.06, 1.1), mats.woodDesk);
+      const table = new THREE.Mesh(cafeTableTopGeo, mats.woodDesk);
       table.position.set(tx, floorY + 0.76, tz);
       table.castShadow = true;
-      const ped = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.72, 0.45), mats.chrome);
-      ped.position.set(tx, floorY + 0.36, tz);
+      table.receiveShadow = true;
+      const ped = new THREE.Mesh(cafePedGeo, mats.chrome);
+      ped.position.set(tx, floorY, tz);
       group.add(table, ped);
       physics.addStaticBox(tx, floorY + 0.39, tz, 1.2, 0.39, 0.55);
 

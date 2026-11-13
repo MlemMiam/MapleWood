@@ -92,8 +92,8 @@ export class GameRenderer {
     this.sunLight = new THREE.DirectionalLight(0xfff0d4, 0.68);
     this.sunLight.position.set(50, 80, 30);
     this.sunLight.castShadow = !this.isSoftwareGl;
-    this.sunLight.shadow.mapSize.width = 2048;
-    this.sunLight.shadow.mapSize.height = 2048;
+    this.sunLight.shadow.mapSize.width = 1024;
+    this.sunLight.shadow.mapSize.height = 1024;
     this.sunLight.shadow.camera.near = 10;
     this.sunLight.shadow.camera.far = 230;
     const d = 85;
@@ -114,7 +114,7 @@ export class GameRenderer {
   }
 
   private titleMode = false;
-  private currentQuality: GraphicsQuality = 'high';
+  private currentQuality: GraphicsQuality = 'medium';
 
   public setTitleMode(enabled: boolean): void {
     if (this.titleMode === enabled) return;
@@ -133,6 +133,15 @@ export class GameRenderer {
   public setQuality(quality: GraphicsQuality): void {
     this.currentQuality = quality;
     if (this.isSoftwareGl) return;
+
+    const targetMapSize = quality === 'high' ? 2048 : 1024;
+    if (this.sunLight.shadow.mapSize.width !== targetMapSize) {
+      this.sunLight.shadow.mapSize.set(targetMapSize, targetMapSize);
+      if (this.sunLight.shadow.map) {
+        this.sunLight.shadow.map.dispose();
+        this.sunLight.shadow.map = null;
+      }
+    }
 
     if (quality === 'low') {
       this.renderer.setPixelRatio(1);

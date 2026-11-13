@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
   addBuildingParapetAndHVAC,
   addFacadeDetailing,
+  buildFlutedColumnGeo,
   buildWallWithOpenings,
   createExitSign,
   createExteriorNoticeBoard,
@@ -54,68 +56,155 @@ export function buildMainBuilding(ctx: WorldBuildContext): THREE.Group {
   // Architectural Entrance Sign mounted cleanly on front portico fascia (unobstructed by columns)
   const signTex = createSignTexture('MAPLEWOOD HIGH SCHOOL', 'LES AIGLES DE MAPLEWOOD · EST. 1994');
   const signMesh = new THREE.Mesh(
-    new THREE.BoxGeometry(7.6, 1.15, 0.2),
+    new RoundedBoxGeometry(7.6, 1.15, 0.2, 2, 0.03),
     new THREE.MeshStandardMaterial({ map: signTex, roughness: 0.4, metalness: 0.2 })
   );
   signMesh.position.set(0, floorY + wallH + 0.48, -3.52);
   signMesh.castShadow = true;
   group.add(signMesh);
 
-  // Portico columns with molded LatheGeometry bases & capitals
-  const colProfile = [
-    new THREE.Vector2(0.0, 0.0),
-    new THREE.Vector2(0.46, 0.0),
-    new THREE.Vector2(0.46, 0.18),
-    new THREE.Vector2(0.36, 0.32),
-    new THREE.Vector2(0.31, 0.48),
-    new THREE.Vector2(0.27, wallH - 0.55),
-    new THREE.Vector2(0.34, wallH - 0.35),
-    new THREE.Vector2(0.45, wallH - 0.18),
-    new THREE.Vector2(0.45, wallH),
-    new THREE.Vector2(0.0, wallH),
-  ];
-  const porticoColGeo = new THREE.LatheGeometry(colProfile, 18);
+  // Grand Entrance Portico with 16-Flute Classical Columns, Fluted Doorway Pilasters, Dentil Entablature & Molded Pediment
+  const ensureNonIndexedCol = (g: THREE.BufferGeometry) => (g.index ? g.toNonIndexed() : g);
+  const porticoColGeo = buildFlutedColumnGeo(wallH, 0.27, 16);
+  const porticoLimestoneParts: THREE.BufferGeometry[] = [];
+  const porticoDarkParts: THREE.BufferGeometry[] = [];
+
   for (const cx of [-4.2, 4.2]) {
-    const col = new THREE.Mesh(porticoColGeo, mats.concrete);
-    col.position.set(cx, floorY, -4.3);
-    col.castShadow = true;
-    col.receiveShadow = true;
-    group.add(col);
+    const cGeo = porticoColGeo.clone();
+    cGeo.translate(cx, floorY, -4.3);
+    porticoLimestoneParts.push(cGeo);
     physics.addStaticBox(cx, floorY + wallH * 0.5, -4.3, 0.34, wallH * 0.5, 0.34);
   }
-  const porticoRoof = new THREE.Mesh(new THREE.BoxGeometry(9.6, 0.28, 2.7), mats.concreteDark);
+  // Engaged fluted pilasters framing the main double entrance doors on the South wall
+  for (const px of [-1.72, 1.72]) {
+    const pil = ensureNonIndexedCol(new RoundedBoxGeometry(0.32, wallH - 0.15, 0.18, 2, 0.02));
+    pil.translate(px, floorY + (wallH - 0.15) * 0.5, -5.82);
+    porticoLimestoneParts.push(pil);
+    for (let pf = -2; pf <= 2; pf++) {
+      const pRib = ensureNonIndexedCol(new THREE.CylinderGeometry(0.014, 0.016, wallH - 0.75, 5));
+      pRib.translate(px + pf * 0.052, floorY + (wallH - 0.15) * 0.5, -5.73);
+      porticoLimestoneParts.push(pRib);
+    }
+  }
+
+  // Stepped architrave & dentil frieze under the portico entablature
+  const porticoArchitrave = ensureNonIndexedCol(new RoundedBoxGeometry(9.3, 0.14, 2.55, 2, 0.02));
+  porticoArchitrave.translate(0, floorY + wallH - 0.28, -4.7);
+  porticoLimestoneParts.push(porticoArchitrave);
+  for (let dx = -4.4; dx <= 4.4; dx += 0.32) {
+    const dent = ensureNonIndexedCol(new THREE.BoxGeometry(0.14, 0.085, 0.1));
+    dent.translate(dx, floorY + wallH + 1.0, -3.38);
+    porticoLimestoneParts.push(dent);
+  }
+
+  const porticoRoof = new THREE.Mesh(new RoundedBoxGeometry(9.6, 0.28, 2.7, 2, 0.03), mats.concreteDark);
   porticoRoof.position.set(0, floorY + wallH - 0.1, -4.7);
   porticoRoof.castShadow = true;
   group.add(porticoRoof);
 
-  // Beveled triangular pediment crowning the entrance sign
+  // Molded Triangular Pediment (Fronton mouluré) crowning the entrance sign
+  const pedBaseY = floorY + wallH + 1.04;
   const pedShape = new THREE.Shape();
-  pedShape.moveTo(-4.3, 0);
-  pedShape.lineTo(0, 0.95);
-  pedShape.lineTo(4.3, 0);
+  pedShape.moveTo(-4.45, 0);
+  pedShape.lineTo(0, 1.08);
+  pedShape.lineTo(4.45, 0);
   pedShape.closePath();
-  const pedGeo = new THREE.ExtrudeGeometry(pedShape, {
-    depth: 0.35,
-    bevelEnabled: true,
-    bevelThickness: 0.05,
-    bevelSize: 0.04,
-    bevelSegments: 2,
-  });
-  const pediment = new THREE.Mesh(pedGeo, mats.limestone);
-  pediment.position.set(0, floorY + wallH + 1.04, -3.72);
-  pediment.castShadow = true;
-  group.add(pediment);
+  const pedGeo = ensureNonIndexedCol(
+    new THREE.ExtrudeGeometry(pedShape, {
+      depth: 0.35,
+      bevelEnabled: true,
+      bevelThickness: 0.05,
+      bevelSize: 0.04,
+      bevelSegments: 2,
+    })
+  );
+  pedGeo.translate(0, pedBaseY, -3.72);
+  porticoLimestoneParts.push(pedGeo);
 
-  // Pediment Tympanum Crest Medallion
-  const medallionRim = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.045, 10, 20), mats.gold);
-  medallionRim.position.set(0, floorY + wallH + 1.48, -3.3);
+  // Recessed Tympanum panel inside the pediment
+  const tympShape = new THREE.Shape();
+  tympShape.moveTo(-3.55, 0.09);
+  tympShape.lineTo(0, 0.86);
+  tympShape.lineTo(3.55, 0.09);
+  tympShape.closePath();
+  const tympGeo = ensureNonIndexedCol(
+    new THREE.ExtrudeGeometry(tympShape, {
+      depth: 0.06,
+      bevelEnabled: true,
+      bevelThickness: 0.015,
+      bevelSize: 0.015,
+      bevelSegments: 1,
+    })
+  );
+  tympGeo.translate(0, pedBaseY, -3.39);
+  porticoDarkParts.push(tympGeo);
+
+  // Projecting Molded Raking Cornices (Corniches rampantes moulurées + denticules rampants)
+  const rakingLen = Math.hypot(4.62, 1.12);
+  const rakingAng = Math.atan2(1.08, 4.45);
+  for (const side of [-1, 1]) {
+    const rakingCornice = ensureNonIndexedCol(
+      new RoundedBoxGeometry(rakingLen, 0.12, 0.56, 2, 0.025)
+    );
+    rakingCornice.rotateZ(-side * rakingAng);
+    rakingCornice.translate(side * 2.24, pedBaseY + 0.58, -3.54);
+    porticoLimestoneParts.push(rakingCornice);
+  }
+
+  // Classical Acroteria ornaments at the apex and eaves of the pediment
+  const goldOrnamentParts: THREE.BufferGeometry[] = [];
+  for (const [ax, ay] of [
+    [0, pedBaseY + 1.18],
+    [-4.42, pedBaseY + 0.12],
+    [4.42, pedBaseY + 0.12],
+  ]) {
+    const acroBase = ensureNonIndexedCol(new RoundedBoxGeometry(0.28, 0.12, 0.28, 2, 0.02));
+    acroBase.translate(ax, ay, -3.52);
+    porticoDarkParts.push(acroBase);
+    const acroPalmette = ensureNonIndexedCol(new THREE.ConeGeometry(0.12, 0.26, 8));
+    acroPalmette.translate(ax, ay + 0.17, -3.52);
+    goldOrnamentParts.push(acroPalmette);
+  }
+
+  // Pediment Tympanum Crest Medallion with sculpted sunburst relief rays & flanking laurel scrolls
+  const medY = floorY + wallH + 1.48;
   const medallionDisc = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.05, 20), mats.navy);
   medallionDisc.rotation.x = Math.PI / 2;
-  medallionDisc.position.set(0, floorY + wallH + 1.48, -3.32);
-  const medallionStar = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.06, 5), mats.gold);
-  medallionStar.rotation.x = Math.PI / 2;
-  medallionStar.position.set(0, floorY + wallH + 1.48, -3.29);
-  group.add(medallionRim, medallionDisc, medallionStar);
+  medallionDisc.position.set(0, medY, -3.31);
+
+  const medRim = ensureNonIndexedCol(new THREE.TorusGeometry(0.32, 0.045, 10, 20));
+  medRim.translate(0, medY, -3.29);
+  const medStar = ensureNonIndexedCol(new THREE.CylinderGeometry(0.16, 0.16, 0.06, 5));
+  medStar.rotateX(Math.PI / 2);
+  medStar.translate(0, medY, -3.28);
+  goldOrnamentParts.push(medRim, medStar);
+
+  for (let r = 0; r < 12; r++) {
+    const ang = (r / 12) * Math.PI * 2;
+    const ray = ensureNonIndexedCol(new THREE.ConeGeometry(0.025, 0.22, 5));
+    ray.rotateZ(-ang);
+    ray.translate(Math.sin(ang) * 0.38, medY + Math.cos(ang) * 0.38, -3.31);
+    goldOrnamentParts.push(ray);
+  }
+  for (const side of [-1, 1]) {
+    for (let w = 0; w < 4; w++) {
+      const wingRelief = ensureNonIndexedCol(
+        new RoundedBoxGeometry(0.55 - w * 0.09, 0.05, 0.04, 2, 0.01)
+      );
+      wingRelief.rotateZ(-side * (0.12 + w * 0.06));
+      wingRelief.translate(side * (0.72 + w * 0.14), medY - 0.04 - w * 0.05, -3.31);
+      goldOrnamentParts.push(wingRelief);
+    }
+  }
+
+  const porticoLimestoneMesh = new THREE.Mesh(mergeGeometries(porticoLimestoneParts), mats.limestone);
+  porticoLimestoneMesh.castShadow = true;
+  porticoLimestoneMesh.receiveShadow = true;
+  const porticoDarkMesh = new THREE.Mesh(mergeGeometries(porticoDarkParts), mats.concreteDark);
+  porticoDarkMesh.castShadow = true;
+  const porticoGoldMesh = new THREE.Mesh(mergeGeometries(goldOrnamentParts), mats.gold);
+  porticoGoldMesh.castShadow = true;
+  group.add(porticoLimestoneMesh, porticoDarkMesh, medallionDisc, porticoGoldMesh);
 
   // Hanging Campus Banners & Exterior Wall Lantern Sconces + Portico Handrails
   const bannerTex = createSignTexture('AIGLES', '1994', '#1F3864', '#D4AF37');
@@ -713,37 +802,6 @@ export function buildMainBuilding(ctx: WorldBuildContext): THREE.Group {
       worldPosition: new THREE.Vector3(rx, floorY + 0.9, -22.5),
       onInteract: callbacks.onUseSink,
     });
-  }
-
-  // Exterior architectural details: gutters, downspouts, ventilation grilles
-  const gutterMat = mats.chrome;
-  const downspoutMat = mats.concreteDark;
-  const ventMat = mats.limestone;
-
-  for (const z of [-6, -23]) {
-    // Horizontal gutter along roof edge
-    const gutter = new THREE.Mesh(new THREE.BoxGeometry(64.4, 0.12, 0.18), gutterMat);
-    gutter.position.set(0, floorY + wallH + 0.2, z + (z === -6 ? 0.1 : -0.1));
-    gutter.castShadow = true;
-    group.add(gutter);
-  }
-
-  // Downspouts at intervals
-  for (const x of [-28, -14, 0, 14, 28]) {
-    for (const z of [-6, -23]) {
-      const ds = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, wallH + 0.2, 8), downspoutMat);
-      ds.position.set(x, floorY + (wallH + 0.2) / 2, z + (z === -6 ? 0.18 : -0.18));
-      ds.castShadow = true;
-      group.add(ds);
-      physics.addStaticBox(x, floorY + (wallH + 0.2) / 2, z + (z === -6 ? 0.18 : -0.18), 0.08, (wallH + 0.2) / 2, 0.08);
-    }
-  }
-
-  // Ventilation grilles on south facade
-  for (const x of [-24, -8, 8, 24]) {
-    const vent = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.4, 0.05), ventMat);
-    vent.position.set(x, floorY + 1.2, -5.95);
-    group.add(vent);
   }
 
   // Register solid wall meshes for camera spring-arm collision

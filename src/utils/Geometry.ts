@@ -857,3 +857,300 @@ export function createExteriorPoster(
 
   return group;
 }
+
+/**
+ * Builds a single merged BufferGeometry for a classical fluted column (Attic base + tapered shaft +
+ * 16 vertical flutes/arrises + necking + Ionic volutes + molded abacus capital).
+ */
+export function buildFlutedColumnGeo(
+  colHeight: number,
+  radius = 0.24,
+  fluteCount = 16
+): THREE.BufferGeometry {
+  const r = radius;
+  const profile = [
+    new THREE.Vector2(0.0, 0.0),
+    new THREE.Vector2(r * 1.68, 0.0),
+    new THREE.Vector2(r * 1.68, 0.14),
+    new THREE.Vector2(r * 1.52, 0.2),
+    new THREE.Vector2(r * 1.32, 0.27),
+    new THREE.Vector2(r * 1.44, 0.34),
+    new THREE.Vector2(r * 1.12, 0.42),
+    new THREE.Vector2(r * 0.96, colHeight - 0.42),
+    new THREE.Vector2(r * 1.18, colHeight - 0.32),
+    new THREE.Vector2(r * 1.48, colHeight - 0.18),
+    new THREE.Vector2(r * 1.62, colHeight - 0.1),
+    new THREE.Vector2(r * 1.62, colHeight),
+    new THREE.Vector2(0.0, colHeight),
+  ];
+
+  const parts: THREE.BufferGeometry[] = [
+    ensureNonIndexed(new THREE.LatheGeometry(profile, 20)),
+  ];
+
+  // Square Attic plinth block at the bottom and square abacus slab at the top
+  const plinth = ensureNonIndexed(
+    new RoundedBoxGeometry(r * 3.45, 0.14, r * 3.45, 2, 0.02)
+  );
+  plinth.translate(0, 0.07, 0);
+  const abacus = ensureNonIndexed(
+    new RoundedBoxGeometry(r * 3.35, 0.11, r * 3.35, 2, 0.02)
+  );
+  abacus.translate(0, colHeight - 0.055, 0);
+  parts.push(plinth, abacus);
+
+  // Vertical classical fluting ribs along the shaft
+  const shaftH = Math.max(0.6, colHeight - 0.86);
+  const shaftMidY = 0.43 + shaftH * 0.5;
+  const ribR = (2 * Math.PI * r * 0.95) / (fluteCount * 2.35);
+  for (let f = 0; f < fluteCount; f++) {
+    const ang = (f / fluteCount) * Math.PI * 2;
+    const fluteRib = ensureNonIndexed(
+      new THREE.CylinderGeometry(ribR * 0.88, ribR, shaftH, 6)
+    );
+    fluteRib.translate(
+      Math.cos(ang) * (r * 0.98),
+      shaftMidY,
+      Math.sin(ang) * (r * 0.98)
+    );
+    parts.push(fluteRib);
+  }
+
+  // Paired Ionic volute bolsters at the capital
+  for (const vx of [-r * 1.25, r * 1.25]) {
+    const volute = ensureNonIndexed(
+      new THREE.CylinderGeometry(r * 0.38, r * 0.38, r * 2.3, 12)
+    );
+    volute.rotateX(Math.PI / 2);
+    volute.translate(vx, colHeight - 0.19, 0);
+    parts.push(volute);
+  }
+
+  return mergeGeometries(parts);
+}
+
+/**
+ * Creates a classical entrance portico with fluted columns, engaged pilasters,
+ * a dentil entablature, and a richly molded triangular pediment with recessed tympanum & acroteria.
+ */
+export function createClassicalEntrancePortico(
+  parent: THREE.Group,
+  physics: PhysicsWorld,
+  mats: MaterialLibrary,
+  opts: {
+    x: number;
+    y: number;
+    z: number;
+    rotY?: number;
+    spanWidth?: number;
+    columnHeight?: number;
+    depth?: number;
+    columnRadius?: number;
+    pedimentHeight?: number;
+    addColumnColliders?: boolean;
+  }
+): THREE.Group {
+  const {
+    x,
+    y,
+    z,
+    rotY = 0,
+    spanWidth = 3.5,
+    columnHeight = 3.35,
+    depth = 0.72,
+    columnRadius = 0.19,
+    pedimentHeight = 0.78,
+    addColumnColliders = true,
+  } = opts;
+
+  const group = new THREE.Group();
+  group.position.set(x, y, z);
+  group.rotation.y = rotY;
+
+  const limestoneParts: THREE.BufferGeometry[] = [];
+  const darkStoneParts: THREE.BufferGeometry[] = [];
+  const goldParts: THREE.BufferGeometry[] = [];
+
+  const colGeo = buildFlutedColumnGeo(columnHeight, columnRadius, 16);
+  const halfSpan = spanWidth * 0.5;
+
+  for (const side of [-1, 1]) {
+    // Free-standing fluted column at front of portico
+    const cFront = colGeo.clone();
+    cFront.translate(side * halfSpan, 0, depth);
+    limestoneParts.push(cFront);
+
+    // Fluted wall-engaged half-column / pilaster against facade
+    const pilaster = ensureNonIndexed(
+      new RoundedBoxGeometry(columnRadius * 2.1, columnHeight, columnRadius * 1.1, 2, 0.02)
+    );
+    pilaster.translate(side * halfSpan, columnHeight * 0.5, 0.08);
+    limestoneParts.push(pilaster);
+    for (let pf = -2; pf <= 2; pf++) {
+      const pRib = ensureNonIndexed(
+        new THREE.CylinderGeometry(0.014, 0.016, columnHeight - 0.7, 5)
+      );
+      pRib.translate(side * halfSpan + pf * columnRadius * 0.36, columnHeight * 0.5, 0.14);
+      limestoneParts.push(pRib);
+    }
+
+    if (addColumnColliders) {
+      const cosR = Math.cos(rotY);
+      const sinR = Math.sin(rotY);
+      const lx = side * halfSpan;
+      const lz = depth;
+      const wx = x + lx * cosR + lz * sinR;
+      const wz = z - lx * sinR + lz * cosR;
+      physics.addStaticBox(
+        wx,
+        y + columnHeight * 0.5,
+        wz,
+        columnRadius * 1.1,
+        columnHeight * 0.5,
+        columnRadius * 1.1
+      );
+    }
+  }
+
+  // Entablature: stepped architrave + frieze + dentil row + cornice slab
+  const totalW = spanWidth + columnRadius * 3.8;
+  const totalD = depth + columnRadius * 2.2;
+  const centerZ = totalD * 0.5 - 0.04;
+
+  const architrave = ensureNonIndexed(
+    new RoundedBoxGeometry(totalW, 0.14, totalD, 2, 0.02)
+  );
+  architrave.translate(0, columnHeight + 0.07, centerZ);
+  limestoneParts.push(architrave);
+
+  const frieze = ensureNonIndexed(
+    new RoundedBoxGeometry(totalW - 0.08, 0.22, totalD - 0.06, 2, 0.02)
+  );
+  frieze.translate(0, columnHeight + 0.25, centerZ);
+  darkStoneParts.push(frieze);
+
+  // Classical dentil molding blocks along front & sides of entablature
+  const dentilY = columnHeight + 0.39;
+  const dentilCount = Math.max(6, Math.floor(totalW / 0.26));
+  for (let i = 0; i <= dentilCount; i++) {
+    const dx = -totalW * 0.46 + (i / dentilCount) * (totalW * 0.92);
+    const dentil = ensureNonIndexed(new THREE.BoxGeometry(0.11, 0.075, 0.09));
+    dentil.translate(dx, dentilY, centerZ + totalD * 0.5 - 0.02);
+    limestoneParts.push(dentil);
+  }
+
+  const cornice = ensureNonIndexed(
+    new RoundedBoxGeometry(totalW + 0.28, 0.11, totalD + 0.24, 2, 0.025)
+  );
+  cornice.translate(0, columnHeight + 0.46, centerZ + 0.02);
+  limestoneParts.push(cornice);
+
+  // Molded Triangular Pediment (Outer frame + recessed Tympanum + projecting Raking Cornices)
+  const pedBaseY = columnHeight + 0.51;
+  const pedHalfW = totalW * 0.5 + 0.12;
+
+  const pedOuterShape = new THREE.Shape();
+  pedOuterShape.moveTo(-pedHalfW, 0);
+  pedOuterShape.lineTo(0, pedimentHeight);
+  pedOuterShape.lineTo(pedHalfW, 0);
+  pedOuterShape.closePath();
+
+  const pedOuterGeo = ensureNonIndexed(
+    new THREE.ExtrudeGeometry(pedOuterShape, {
+      depth: totalD * 0.88,
+      bevelEnabled: true,
+      bevelThickness: 0.035,
+      bevelSize: 0.03,
+      bevelSegments: 2,
+    })
+  );
+  pedOuterGeo.translate(0, pedBaseY, 0.04);
+  limestoneParts.push(pedOuterGeo);
+
+  // Recessed Tympanum triangle on the front face
+  const tympHalfW = pedHalfW * 0.76;
+  const tympH = pedimentHeight * 0.72;
+  const tympShape = new THREE.Shape();
+  tympShape.moveTo(-tympHalfW, 0.07);
+  tympShape.lineTo(0, tympH + 0.04);
+  tympShape.lineTo(tympHalfW, 0.07);
+  tympShape.closePath();
+
+  const tympGeo = ensureNonIndexed(
+    new THREE.ExtrudeGeometry(tympShape, {
+      depth: 0.06,
+      bevelEnabled: true,
+      bevelThickness: 0.015,
+      bevelSize: 0.015,
+      bevelSegments: 1,
+    })
+  );
+  tympGeo.translate(0, pedBaseY, totalD * 0.88 + 0.03);
+  darkStoneParts.push(tympGeo);
+
+  // Projecting Molded Raking Cornices (Corniches rampantes moulurées) along both gable slopes
+  const slopeLen = Math.hypot(pedHalfW + 0.12, pedimentHeight + 0.06);
+  const slopeAng = Math.atan2(pedimentHeight, pedHalfW);
+  for (const side of [-1, 1]) {
+    const rakingCornice = ensureNonIndexed(
+      new RoundedBoxGeometry(slopeLen, 0.1, totalD + 0.22, 2, 0.025)
+    );
+    rakingCornice.rotateZ(-side * slopeAng);
+    rakingCornice.translate(
+      side * (pedHalfW * 0.5),
+      pedBaseY + pedimentHeight * 0.5 + 0.04,
+      centerZ + 0.04
+    );
+    limestoneParts.push(rakingCornice);
+  }
+
+  // Sculpted Tympanum Relief Medallion, Laurel Wreath & Acroteria Ornaments
+  const frontFaceZ = totalD * 0.88 + 0.1;
+  const medY = pedBaseY + pedimentHeight * 0.36;
+  const wreath = ensureNonIndexed(new THREE.TorusGeometry(0.16, 0.028, 8, 16));
+  wreath.translate(0, medY, frontFaceZ);
+  const boss = ensureNonIndexed(new THREE.SphereGeometry(0.09, 10, 8));
+  boss.scale(1, 1, 0.45);
+  boss.translate(0, medY, frontFaceZ);
+  goldParts.push(wreath, boss);
+
+  // Flanking relief scroll ribbons inside the tympanum
+  for (const side of [-1, 1]) {
+    const scroll = ensureNonIndexed(new RoundedBoxGeometry(0.32, 0.045, 0.03, 2, 0.01));
+    scroll.rotateZ(-side * 0.22);
+    scroll.translate(side * 0.34, medY - 0.04, frontFaceZ - 0.01);
+    goldParts.push(scroll);
+  }
+
+  // Classical Acroteria at apex and eaves
+  for (const [ax, ay] of [
+    [0, pedBaseY + pedimentHeight + 0.1],
+    [-pedHalfW + 0.06, pedBaseY + 0.08],
+    [pedHalfW - 0.06, pedBaseY + 0.08],
+  ]) {
+    const plinthAcro = ensureNonIndexed(
+      new RoundedBoxGeometry(0.2, 0.09, 0.2, 2, 0.015)
+    );
+    plinthAcro.translate(ax, ay, frontFaceZ - 0.12);
+    darkStoneParts.push(plinthAcro);
+
+    const palmette = ensureNonIndexed(new THREE.ConeGeometry(0.085, 0.2, 8));
+    palmette.translate(ax, ay + 0.14, frontFaceZ - 0.12);
+    goldParts.push(palmette);
+  }
+
+  const limestoneMesh = new THREE.Mesh(mergeGeometries(limestoneParts), mats.limestone);
+  limestoneMesh.castShadow = true;
+  limestoneMesh.receiveShadow = true;
+
+  const darkStoneMesh = new THREE.Mesh(mergeGeometries(darkStoneParts), mats.concreteDark);
+  darkStoneMesh.castShadow = true;
+
+  const goldMesh = new THREE.Mesh(mergeGeometries(goldParts), mats.gold);
+  goldMesh.castShadow = true;
+
+  group.add(limestoneMesh, darkStoneMesh, goldMesh);
+  parent.add(group);
+  return group;
+}
+

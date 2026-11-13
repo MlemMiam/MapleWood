@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
   addBuildingParapetAndHVAC,
   addFacadeDetailing,
@@ -228,6 +229,7 @@ export function buildScienceWing(ctx: WorldBuildContext): THREE.Group {
 
   // --- Chemistry Lab (X = 32..44, Z = -23..-15.75) ---
   // Lab Island Bench shifted North so teleport/walkway center (38, -19.375) is unobstructed
+  const ensureNonIndexedSci = (g: THREE.BufferGeometry) => (g.index ? g.toNonIndexed() : g);
   const chemBench = new THREE.Mesh(new RoundedBoxGeometry(5.6, 0.88, 1.3, 2, 0.03), mats.concreteDark);
   chemBench.position.set(38.2, floorY + 0.44, -21.05);
   chemBench.castShadow = true;
@@ -235,6 +237,41 @@ export function buildScienceWing(ctx: WorldBuildContext): THREE.Group {
   chemTop.position.set(38.2, floorY + 0.9, -21.05);
   group.add(chemBench, chemTop);
   physics.addStaticBox(38.2, floorY + 0.46, -21.05, 2.85, 0.46, 0.7);
+
+  // Sculpted Gooseneck Lab Faucets & Bunsen Burners on Chemistry Bench
+  const faucetCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0, 0, 0),
+    new THREE.Vector3(0, 0.24, 0),
+    new THREE.Vector3(0.06, 0.32, 0),
+    new THREE.Vector3(0.14, 0.29, 0),
+    new THREE.Vector3(0.16, 0.2, 0),
+  ]);
+  const faucetTubeGeo = ensureNonIndexedSci(new THREE.TubeGeometry(faucetCurve, 12, 0.012, 7, false));
+  const chemChromeParts: THREE.BufferGeometry[] = [];
+  for (const fx of [36.0, 40.4]) {
+    const spout = faucetTubeGeo.clone();
+    spout.translate(fx, floorY + 0.92, -21.05);
+    const valveL = ensureNonIndexedSci(new THREE.CylinderGeometry(0.018, 0.018, 0.03, 6));
+    valveL.translate(fx, floorY + 0.94, -20.97);
+    const valveR = ensureNonIndexedSci(new THREE.CylinderGeometry(0.018, 0.018, 0.03, 6));
+    valveR.translate(fx, floorY + 0.94, -21.13);
+    chemChromeParts.push(spout, valveL, valveR);
+  }
+  for (const bx of [37.0, 39.3]) {
+    const burnerBase = ensureNonIndexedSci(new THREE.CylinderGeometry(0.045, 0.06, 0.02, 10));
+    burnerBase.translate(bx, floorY + 0.94, -20.82);
+    const burnerTube = ensureNonIndexedSci(new THREE.CylinderGeometry(0.01, 0.012, 0.14, 8));
+    burnerTube.translate(bx, floorY + 1.01, -20.82);
+    chemChromeParts.push(burnerBase, burnerTube);
+
+    const flame = new THREE.Mesh(
+      new THREE.ConeGeometry(0.018, 0.06, 8),
+      new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0284c7, emissiveIntensity: 0.9, roughness: 0.2 })
+    );
+    flame.position.set(bx, floorY + 1.11, -20.82);
+    group.add(flame);
+  }
+  group.add(new THREE.Mesh(mergeGeometries(chemChromeParts), mats.chrome));
 
   // Sculpted LatheGeometry Erlenmeyer flasks with colored chemical reagents
   const flaskProfile = [
@@ -279,29 +316,63 @@ export function buildScienceWing(ctx: WorldBuildContext): THREE.Group {
   // --- Biology Lab (X = 32..43, Z = -12.25..-6) ---
   const bioBench = new THREE.Mesh(new RoundedBoxGeometry(4.8, 0.88, 1.2, 2, 0.03), mats.concreteDark);
   bioBench.position.set(37.5, floorY + 0.44, -7.7);
-  group.add(bioBench);
+  const bioTop = new THREE.Mesh(new RoundedBoxGeometry(4.9, 0.05, 1.28, 2, 0.02), mats.woodDark);
+  bioTop.position.set(37.5, floorY + 0.89, -7.7);
+  group.add(bioBench, bioTop);
   physics.addStaticBox(37.5, floorY + 0.44, -7.7, 2.4, 0.44, 0.6);
 
-  // Microscopes & Aquarium
+  // Sculpted Binocular Microscopes (horseshoe base, curved C-arm, stage, revolving turret & angled dual oculars)
+  const scopeArmCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0, 0.04, -0.06),
+    new THREE.Vector3(0, 0.14, -0.11),
+    new THREE.Vector3(0, 0.26, -0.08),
+    new THREE.Vector3(0, 0.3, -0.01),
+  ]);
+  const scopeArmGeo = ensureNonIndexedSci(new THREE.TubeGeometry(scopeArmCurve, 10, 0.02, 7, false));
   for (const mx of [36.2, 38.6]) {
-    const scopeBase = new THREE.Mesh(new RoundedBoxGeometry(0.22, 0.08, 0.26, 2, 0.02), mats.chrome);
-    scopeBase.position.set(mx, floorY + 0.92, -7.7);
-    const scopeArm = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.28, 8), mats.concreteDark);
-    scopeArm.position.set(mx, floorY + 1.08, -7.75);
-    group.add(scopeBase, scopeArm);
+    const scopeGroup = new THREE.Group();
+    scopeGroup.position.set(mx, floorY + 0.91, -7.7);
+
+    const scopeBase = new THREE.Mesh(new RoundedBoxGeometry(0.22, 0.045, 0.26, 2, 0.015), mats.chrome);
+    scopeBase.position.y = 0.022;
+    const scopeStage = new THREE.Mesh(new RoundedBoxGeometry(0.14, 0.016, 0.14, 2, 0.005), mats.concreteDark);
+    scopeStage.position.set(0, 0.14, 0.01);
+    const scopeArm = new THREE.Mesh(scopeArmGeo, mats.plasterWall);
+    const turret = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.02, 0.045, 8), mats.chrome);
+    turret.position.set(0, 0.22, 0.01);
+
+    for (const ex of [-0.022, 0.022]) {
+      const ocular = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.013, 0.09, 8), mats.concreteDark);
+      ocular.position.set(ex, 0.34, 0.03);
+      ocular.rotation.x = 0.52;
+      scopeGroup.add(ocular);
+    }
+
+    scopeGroup.add(scopeBase, scopeStage, scopeArm, turret);
+    group.add(scopeGroup);
   }
 
+  // Sculpted Biology Terrarium / Aquarium with Cabinet Base, Water, Rock Reef & Aquatic Kelp
+  const aqCabinet = new THREE.Mesh(new RoundedBoxGeometry(1.44, 0.76, 0.58, 2, 0.02), mats.woodDark);
+  aqCabinet.position.set(33.5, floorY + 0.38, -6.7);
   const aquarium = new THREE.Mesh(
     new RoundedBoxGeometry(1.4, 0.7, 0.55, 2, 0.03),
     new THREE.MeshStandardMaterial({
       color: 0x38bdf8,
       emissive: 0x0ea5e9,
-      emissiveIntensity: 0.35,
-      roughness: 0.2,
+      emissiveIntensity: 0.32,
+      roughness: 0.18,
+      transparent: true,
+      opacity: 0.78,
     })
   );
-  aquarium.position.set(33.5, floorY + 1.1, -6.7);
-  group.add(aquarium);
+  aquarium.position.set(33.5, floorY + 1.11, -6.7);
+  const aqRock = new THREE.Mesh(new THREE.IcosahedronGeometry(0.16, 1), mats.concreteDark);
+  aqRock.scale.set(1.4, 0.8, 1.0);
+  aqRock.position.set(33.25, floorY + 0.86, -6.7);
+  const aqKelp = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.42, 6), mats.foliage);
+  aqKelp.position.set(33.75, floorY + 0.98, -6.7);
+  group.add(aqCabinet, aquarium, aqRock, aqKelp);
 
   // Quest Item: Leo's Lost Blue Biology Notebook on Bio Lab Bench!
   const notebookGroup = new THREE.Group();
