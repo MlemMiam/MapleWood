@@ -24,6 +24,7 @@ export class InputManager {
   private bindings: KeyBindings;
   private canvas: HTMLCanvasElement;
   private prevGamepadButtons: boolean[] = [];
+  private lastPointerUnlockTime = 0;
   public pointerLocked = false;
 
   constructor(canvas: HTMLCanvasElement, bindings: KeyBindings) {
@@ -47,14 +48,30 @@ export class InputManager {
 
   public requestPointerLock(): void {
     if (document.body.dataset.state !== 'playing') return;
-    if (document.pointerLockElement !== this.canvas) {
-      this.canvas.requestPointerLock?.();
+    if (document.pointerLockElement === this.canvas) return;
+    // Respect browser security cooldown (~1.5s) after exiting pointer lock
+    if (performance.now() - this.lastPointerUnlockTime < 1500) return;
+
+    try {
+      const lockPromise = this.canvas.requestPointerLock?.() as unknown as Promise<void> | undefined;
+      if (lockPromise && typeof lockPromise.catch === 'function') {
+        lockPromise.catch(() => {
+          this.lastPointerUnlockTime = performance.now();
+        });
+      }
+    } catch {
+      this.lastPointerUnlockTime = performance.now();
     }
   }
 
   public exitPointerLock(): void {
     if (document.pointerLockElement) {
-      document.exitPointerLock?.();
+      this.lastPointerUnlockTime = performance.now();
+      try {
+        document.exitPointerLock?.();
+      } catch {
+        // Ignore exitPointerLock errors
+      }
     }
   }
 
@@ -100,7 +117,11 @@ export class InputManager {
   };
 
   private onPointerLockChange = (): void => {
+    const wasLocked = this.pointerLocked;
     this.pointerLocked = document.pointerLockElement === this.canvas;
+    if (wasLocked && !this.pointerLocked) {
+      this.lastPointerUnlockTime = performance.now();
+    }
   };
 
   private onMouseDown = (e: MouseEvent): void => {

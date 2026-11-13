@@ -125,4 +125,24 @@ export class CameraController {
     );
     camera.lookAt(0, 3.2, -8);
   }
+
+  public updateIntroCutsceneCamera(
+    camera: THREE.PerspectiveCamera,
+    floriePos: THREE.Vector3,
+    introTime: number
+  ): void {
+    const tNorm = Math.min(1, Math.max(0, introTime / 9.2));
+    const smoothT = tNorm * tNorm * (3 - 2 * tNorm);
+
+    const camX = THREE.MathUtils.lerp(-0.28, 0.22, smoothT) + Math.sin(introTime * 1.2) * 0.04;
+    const camY = THREE.MathUtils.lerp(1.42, 1.48, smoothT);
+    const camZ = floriePos.z + THREE.MathUtils.lerp(2.15, 1.82, smoothT);
+
+    camera.position.set(camX, camY, camZ);
+
+    const lookX = floriePos.x * 0.5;
+    const lookY = THREE.MathUtils.lerp(1.42, 1.56, smoothT);
+    const lookZ = floriePos.z - 2.4;
+    camera.lookAt(lookX, lookY, lookZ);
+  }
 }

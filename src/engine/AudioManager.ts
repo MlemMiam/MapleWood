@@ -178,6 +178,204 @@ function synthFountainWaterLoop(): string {
   return encodeWavDataUri(data, sr);
 }
 
+/**
+ * Synthesizes an upbeat 7.5-second J-Pop / Slice-of-Life Anime Opening theme loop:
+ * - Bright bell/celesta lead melody over warm maj7/7th anime chords (Fmaj7 - G7 - Em7 - Am7)
+ * - Bouncy synth bassline and light rhythmic hi-hat pulse
+ */
+function synthAnimeOpeningMusicLoop(): string {
+  const sr = 22050;
+  const beatDur = 60 / 128; // 128 BPM (0.46875s per beat)
+  const totalBeats = 16; // 4 bars of 4/4 = 7.5 seconds
+  const duration = totalBeats * beatDur;
+  const len = Math.floor(sr * duration);
+  const data = new Float32Array(len);
+
+  // 4-bar anime progression: Fmaj7 | G7 | Em7 | Am7 (4 beats each)
+  const chords = [
+    [349.23, 440.0, 523.25, 659.25], // Fmaj7
+    [392.0, 493.88, 587.33, 698.46], // G7
+    [329.63, 392.0, 493.88, 587.33], // Em7
+    [440.0, 523.25, 659.25, 783.99], // Am7
+  ];
+  const bassNotes = [174.61, 196.0, 164.81, 220.0];
+
+  // Bright pentatonic anime melody (in eighth notes, 32 steps)
+  const melodyHz = [
+    659.25, 783.99, 880.0, 1046.5, 880.0, 783.99, 659.25, 523.25,
+    587.33, 659.25, 783.99, 880.0, 783.99, 659.25, 587.33, 0,
+    659.25, 783.99, 987.77, 1046.5, 987.77, 783.99, 659.25, 587.33,
+    523.25, 659.25, 880.0, 1046.5, 1174.66, 1046.5, 880.0, 783.99,
+  ];
+
+  for (let i = 0; i < len; i++) {
+    const t = i / sr;
+    const beatFloat = t / beatDur;
+    const barIdx = Math.min(3, Math.floor(beatFloat / 4));
+    const eighthIdx = Math.min(31, Math.floor(beatFloat * 2));
+    const eighthPhase = (beatFloat * 2) % 1;
+    const beatPhase = beatFloat % 1;
+
+    // 1) Warm electric-piano chord pad
+    const chord = chords[barIdx];
+    let pad = 0;
+    const chordEnv = 0.65 + 0.35 * Math.exp(-beatPhase * 3.5);
+    for (let c = 0; c < chord.length; c++) {
+      pad += Math.sin(2 * Math.PI * chord[c] * t) * 0.048;
+    }
+    pad *= chordEnv;
+
+    // 2) Bouncy octave bassline
+    const bassFreq = bassNotes[barIdx] * (beatPhase > 0.5 ? 2 : 1);
+    const bassEnv = Math.exp(-((beatPhase * 2) % 1) * 5.2);
+    const bass =
+      (Math.sin(2 * Math.PI * bassFreq * t) + 0.3 * Math.sin(4 * Math.PI * bassFreq * t)) *
+      bassEnv *
+      0.11;
+
+    // 3) Sparkling anime bell/celesta lead melody
+    const noteFreq = melodyHz[eighthIdx];
+    let lead = 0;
+    if (noteFreq > 0) {
+      const noteTime = eighthPhase * (beatDur * 0.5);
+      const env = Math.exp(-noteTime * 7.5);
+      lead =
+        (Math.sin(2 * Math.PI * noteFreq * t) * 0.7 +
+          Math.sin(2 * Math.PI * noteFreq * 2 * t) * 0.25 +
+          Math.sin(2 * Math.PI * noteFreq * 3 * t) * 0.08) *
+        env *
+        0.16;
+    }
+
+    // 4) Crisp anime hi-hat / tambourine pulse on eighth notes
+    const hatEnv = Math.exp(-eighthPhase * 28);
+    const pseudoNoise = Math.sin(i * 12.9898) * 43758.5453;
+    const white = (pseudoNoise - Math.floor(pseudoNoise)) * 2 - 1;
+    const hat = white * hatEnv * 0.035;
+
+    data[i] = Math.max(-0.95, Math.min(0.95, pad + bass + lead + hat));
+  }
+
+  return encodeWavDataUri(data, sr);
+}
+
+/**
+ * Synthesizes an anime "kira-kira" (sparkle) chime when Florie beams with a big smile.
+ */
+function synthAnimeSparkle(): string {
+  const sr = 22050;
+  const dur = 0.72;
+  const len = Math.floor(sr * dur);
+  const data = new Float32Array(len);
+  const notes = [1046.5, 1318.5, 1567.98, 2093.0, 2637.0, 3135.96];
+
+  for (let i = 0; i < len; i++) {
+    const t = i / sr;
+    let sum = 0;
+    for (let n = 0; n < notes.length; n++) {
+      const onset = n * 0.075;
+      if (t >= onset) {
+        const dt = t - onset;
+        const env = Math.exp(-dt * 11);
+        sum +=
+          (Math.sin(2 * Math.PI * notes[n] * dt) +
+            0.35 * Math.sin(2 * Math.PI * notes[n] * 2 * dt)) *
+          env *
+          0.16;
+      }
+    }
+    data[i] = sum;
+  }
+  return encodeWavDataUri(data, sr);
+}
+
+/**
+ * Synthesizes a light anime hand-wave whoosh + cheerful bell accent.
+ */
+function synthAnimeWaveWhoosh(): string {
+  const sr = 22050;
+  const dur = 0.42;
+  const len = Math.floor(sr * dur);
+  const data = new Float32Array(len);
+
+  for (let i = 0; i < len; i++) {
+    const t = i / sr;
+    const env = Math.sin((t / dur) * Math.PI) * Math.exp(-t * 4.5);
+    const sweepFreq = 380 + 540 * Math.sin((t / dur) * Math.PI);
+    const chime = Math.sin(2 * Math.PI * 1174.66 * t) * Math.exp(-t * 12) * 0.22;
+    const airy = Math.sin(2 * Math.PI * sweepFreq * t) * env * 0.24;
+    data[i] = airy + chime;
+  }
+  return encodeWavDataUri(data, sr);
+}
+
+/**
+ * Synthesizes an upbeat twin-note anime "Follow me! / Suis-moi !" beckon chime.
+ */
+function synthAnimeBeckonChime(): string {
+  const sr = 22050;
+  const dur = 0.55;
+  const len = Math.floor(sr * dur);
+  const data = new Float32Array(len);
+
+  for (let i = 0; i < len; i++) {
+    const t = i / sr;
+    let s = 0;
+    if (t < 0.22) {
+      const env = Math.exp(-t * 12);
+      s += Math.sin(2 * Math.PI * 880.0 * t) * env * 0.32;
+    }
+    if (t >= 0.16) {
+      const dt = t - 0.16;
+      const env = Math.exp(-dt * 8.5);
+      s +=
+        (Math.sin(2 * Math.PI * 1318.5 * dt) + 0.3 * Math.sin(2 * Math.PI * 2637.0 * dt)) *
+        env *
+        0.34;
+    }
+    data[i] = s;
+  }
+  return encodeWavDataUri(data, sr);
+}
+
+/**
+ * Synthesizes a cheerful feminine anime vocal inflection burst (formant-filtered harmonic syllables)
+ * so Florie always has an immediate, lively female anime voice cue alongside speech synthesis.
+ */
+function synthAnimeFemaleVoiceCue(variant: 0 | 1): string {
+  const sr = 22050;
+  const dur = variant === 0 ? 0.68 : 0.62;
+  const len = Math.floor(sr * dur);
+  const data = new Float32Array(len);
+
+  for (let i = 0; i < len; i++) {
+    const t = i / sr;
+    const f0 =
+      variant === 0
+        ? t < 0.28
+          ? 330 + t * 180
+          : 390 + Math.sin((t - 0.28) * 9) * 55
+        : t < 0.25
+          ? 350 + t * 220
+          : 440 - (t - 0.25) * 110;
+
+    const sylEnv =
+      t < 0.26
+        ? Math.sin((t / 0.26) * Math.PI)
+        : t > 0.3
+          ? Math.sin(((t - 0.3) / (dur - 0.3)) * Math.PI) * Math.exp(-(t - 0.3) * 3.2)
+          : 0;
+
+    const wave =
+      Math.sin(2 * Math.PI * f0 * t) * 0.55 +
+      Math.sin(2 * Math.PI * f0 * 2 * t) * 0.32 +
+      Math.sin(2 * Math.PI * f0 * 3 * t) * 0.14;
+
+    data[i] = wave * sylEnv * 0.28;
+  }
+  return encodeWavDataUri(data, sr);
+}
+
 export class AudioManager {
   private footstepHard: Howl;
   private footstepGrass: Howl;
@@ -185,8 +383,15 @@ export class AudioManager {
   private dingSfx: Howl;
   private ambientLoop: Howl;
   private fountainLoop: Howl;
+  private animeMusicLoop: Howl;
+  private animeSparkleSfx: Howl;
+  private animeWaveSfx: Howl;
+  private animeBeckonSfx: Howl;
+  private florieVoiceCue0: Howl;
+  private florieVoiceCue1: Howl;
   private startedAmbient = false;
   private lastFountainVol = 0;
+  private activeVoiceHowl: Howl | null = null;
 
   constructor(initialVolume = 0.65) {
     Howler.volume(initialVolume);
@@ -204,18 +409,122 @@ export class AudioManager {
       loop: true,
       volume: 0.24,
     });
+    this.animeMusicLoop = new Howl({
+      src: [synthAnimeOpeningMusicLoop()],
+      loop: true,
+      volume: 0.36,
+    });
+    this.animeSparkleSfx = new Howl({
+      src: [synthAnimeSparkle()],
+      volume: 0.48,
+    });
+    this.animeWaveSfx = new Howl({
+      src: [synthAnimeWaveWhoosh()],
+      volume: 0.42,
+    });
+    this.animeBeckonSfx = new Howl({
+      src: [synthAnimeBeckonChime()],
+      volume: 0.46,
+    });
+    this.florieVoiceCue0 = new Howl({
+      src: [synthAnimeFemaleVoiceCue(0)],
+      volume: 0.42,
+    });
+    this.florieVoiceCue1 = new Howl({
+      src: [synthAnimeFemaleVoiceCue(1)],
+      volume: 0.42,
+    });
   }
 
   public setVolume(v: number): void {
     Howler.volume(Math.max(0, Math.min(1, v)));
   }
 
+  public startAnimeIntroMusic(): void {
+    try {
+      if (this.ambientLoop.playing()) {
+        this.ambientLoop.pause();
+      }
+      if (!this.animeMusicLoop.playing()) {
+        this.animeMusicLoop.seek(0);
+        this.animeMusicLoop.play();
+      }
+      if (!this.fountainLoop.playing()) {
+        this.fountainLoop.volume(0.14);
+        this.fountainLoop.play();
+      }
+    } catch {
+      // Autoplay blocked until interaction
+    }
+  }
+
+  public stopAnimeIntroMusic(): void {
+    if (this.animeMusicLoop.playing()) {
+      this.animeMusicLoop.stop();
+    }
+    if (this.activeVoiceHowl) {
+      this.activeVoiceHowl.stop();
+      this.activeVoiceHowl = null;
+    }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+  }
+
+  public playAnimeIntroSfx(type: 'sparkle' | 'wave' | 'beckon'): void {
+    if (type === 'sparkle') {
+      this.animeSparkleSfx.play();
+    } else if (type === 'wave') {
+      this.animeWaveSfx.play();
+    } else if (type === 'beckon') {
+      this.animeBeckonSfx.play();
+    }
+  }
+
+  public playFlorieVoiceLine(lineIndex: 0 | 1, text: string): void {
+    if (lineIndex === 0) {
+      this.florieVoiceCue0.play();
+    } else {
+      this.florieVoiceCue1.play();
+    }
+
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.lang = 'fr-FR';
+        utter.pitch = 1.38;
+        utter.rate = 1.08;
+        utter.volume = 0.9;
+
+        const voices = window.speechSynthesis.getVoices();
+        const frVoices = voices.filter((v) => v.lang.toLowerCase().startsWith('fr'));
+        const femaleVoice =
+          frVoices.find((v) =>
+            /amelie|amélie|audrey|aurélie|aurelie|marie|hortense|julie|eloise|éloïse|denise|vivienne|female|femme|google français/i.test(
+              v.name
+            )
+          ) || frVoices[0];
+        if (femaleVoice) {
+          utter.voice = femaleVoice;
+        }
+        window.speechSynthesis.speak(utter);
+      } catch {
+        // Ignore speech synthesis errors on unsupported platforms
+      }
+    }
+  }
+
   public startAmbient(): void {
-    if (this.startedAmbient) return;
+    this.stopAnimeIntroMusic();
     this.startedAmbient = true;
     try {
-      this.ambientLoop.play();
-      this.fountainLoop.play();
+      if (!this.ambientLoop.playing()) {
+        this.ambientLoop.play();
+      }
+      if (!this.fountainLoop.playing()) {
+        this.fountainLoop.play();
+      }
     } catch {
       // Autoplay blocked until next interaction
     }
@@ -228,6 +537,9 @@ export class AudioManager {
     if (this.fountainLoop.playing()) {
       this.fountainLoop.pause();
     }
+    if (this.animeMusicLoop.playing()) {
+      this.animeMusicLoop.pause();
+    }
   }
 
   public resumeLoops(): void {
@@ -239,9 +551,6 @@ export class AudioManager {
     }
   }
 
-  /**
-   * Spatial 3D distance attenuation for the central courtyard fountain at (X = 0, Z = 15.5).
-   */
   public updateFountainSpatialAudio(
     playerX: number,
     playerZ: number,
@@ -255,7 +564,6 @@ export class AudioManager {
     let targetVol = 0;
     if (dist < maxRange) {
       const norm = Math.max(0, 1 - dist / maxRange);
-      // Smooth quadratic proximity curve peaking at 0.46 near the basin rim
       const indoorFactor = isExterior ? 1.0 : 0.22;
       targetVol = Math.min(0.46, (norm * norm * 0.44 + norm * 0.06) * indoorFactor);
     }
@@ -280,11 +588,18 @@ export class AudioManager {
   }
 
   public dispose(): void {
+    this.stopAnimeIntroMusic();
     this.footstepHard.unload();
     this.footstepGrass.unload();
     this.doorSfx.unload();
     this.dingSfx.unload();
     this.ambientLoop.unload();
     this.fountainLoop.unload();
+    this.animeMusicLoop.unload();
+    this.animeSparkleSfx.unload();
+    this.animeWaveSfx.unload();
+    this.animeBeckonSfx.unload();
+    this.florieVoiceCue0.unload();
+    this.florieVoiceCue1.unload();
   }
 }

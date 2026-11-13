@@ -1,5 +1,5 @@
 import React from 'react';
-import { Map, Pause, Volume2, VolumeX } from 'lucide-react';
+import { Map, Pause, Sparkles, Upload, Volume2, VolumeX } from 'lucide-react';
 import { Minimap, type MinimapNpcMarker } from './Minimap';
 import type { QuestState } from '../interaction/QuestLogic';
 import type { Language } from '../engine/InputBindings';
@@ -18,9 +18,12 @@ interface HUDProps {
   questState: QuestState;
   muted: boolean;
   language: Language;
+  vrmFileName?: string | null;
   onToggleMute: () => void;
   onOpenMap: () => void;
   onOpenPause: () => void;
+  onImportVrm?: () => void;
+  onPlayIntro?: () => void;
 }
 
 function getCompassLabel(yawRad: number): string {
@@ -43,9 +46,12 @@ export const HUD: React.FC<HUDProps> = ({
   questState,
   muted,
   language,
+  vrmFileName,
   onToggleMute,
   onOpenMap,
   onOpenPause,
+  onImportVrm,
+  onPlayIntro,
 }) => {
   const activeQuests = Object.values(questState.quests).filter((q) => q.status === 'active');
   const completedCount = Object.values(questState.quests).filter((q) => q.status === 'completed').length;
@@ -126,6 +132,40 @@ export const HUD: React.FC<HUDProps> = ({
             >
               {muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
             </button>
+            {onPlayIntro && (
+              <button
+                type="button"
+                tabIndex={-1}
+                aria-label="Rejouer la cinématique d'ouverture anime de Florie"
+                title="Rejouer la cinématique d'ouverture anime de Florie"
+                onClick={(e) => {
+                  e.currentTarget.blur();
+                  onPlayIntro();
+                }}
+                className="h-9 px-2.5 flex items-center gap-1.5 rounded-md border border-[#D4AF37]/65 text-xs font-medium text-[#D4AF37] hover:border-[#D4AF37] transition-colors cursor-pointer whitespace-nowrap"
+                style={{ backgroundColor: 'rgba(15, 23, 42, 0.90)' }}
+              >
+                <Sparkles size={14} />
+                <span>Cinématique</span>
+              </button>
+            )}
+            {onImportVrm && (
+              <button
+                type="button"
+                tabIndex={-1}
+                aria-label="Charger le fichier VRM de Florie (.vrm)"
+                title="Charger ou remplacer le fichier VRM de Florie (.vrm)"
+                onClick={(e) => {
+                  e.currentTarget.blur();
+                  onImportVrm();
+                }}
+                className="h-9 px-2.5 flex items-center gap-1.5 rounded-md border border-[#D4AF37]/65 text-xs font-medium text-[#D4AF37] hover:border-[#D4AF37] transition-colors cursor-pointer whitespace-nowrap"
+                style={{ backgroundColor: 'rgba(15, 23, 42, 0.90)' }}
+              >
+                <Upload size={14} />
+                <span>{vrmFileName ? `VRM : ${vrmFileName}` : 'VRM : Florie'}</span>
+              </button>
+            )}
             <button
               type="button"
               tabIndex={-1}
@@ -192,11 +232,13 @@ export const HUD: React.FC<HUDProps> = ({
       {/* Bottom Row: Stamina Bar & Minimal Hint */}
       <div className="flex items-end justify-between gap-4">
         <div
-          className="px-3 py-2 rounded-lg border border-slate-700/80 w-48"
+          className="px-3 py-2 rounded-lg border border-slate-700/80 w-56"
           style={{ backgroundColor: 'rgba(15, 23, 42, 0.85)' }}
         >
           <div className="flex items-center justify-between text-[11px] text-slate-300 mb-1">
-            <span>{t(language, 'stamina')}</span>
+            <span>
+              <strong className="text-[#D4AF37] font-semibold">Florie (VRM)</strong> · {t(language, 'stamina')}
+            </span>
             <span className="font-mono-tabular text-white">{Math.round(stamina)}%</span>
           </div>
           <div className="h-1.5 w-full bg-slate-800 rounded-sm overflow-hidden">
@@ -214,7 +256,7 @@ export const HUD: React.FC<HUDProps> = ({
           className="hidden md:block px-3 py-1.5 rounded-md text-[11px] text-slate-300"
           style={{ backgroundColor: 'rgba(15, 23, 42, 0.78)' }}
         >
-          Clic gauche sur la vue pour verrouiller la souris · Molette zoom · F3 debug
+          Clic gauche sur la vue pour verrouiller la souris · Molette zoom · ZQSD/WASD Déplacer
         </div>
       </div>
     </div>

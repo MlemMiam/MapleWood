@@ -39,8 +39,11 @@ import { type MinimapNpcMarker } from './ui/Minimap';
 import { type ActiveModalContent, DialogueUI } from './interaction/DialogueUI';
 import { CampusMapModal } from './ui/CampusMapModal';
 import { SettingsMenu } from './ui/SettingsMenu';
+import { FLORIE_INTRO_LINES, IntroCutsceneOverlay } from './ui/IntroCutsceneOverlay';
 
-type GamePhase = 'loading' | 'title' | 'playing' | 'paused' | 'map' | 'dialogue';
+type GamePhase = 'loading' | 'title' | 'intro' | 'playing' | 'paused' | 'map' | 'dialogue';
+
+const INTRO_DURATION = 9.5;
 
 const LOADING_TIPS = [
   'Utilisez la touche E près des portes, casiers, tableaux et ordinateurs pour interagir.',
@@ -69,12 +72,23 @@ export default function App() {
   const [npcMarkers, setNpcMarkers] = useState<MinimapNpcMarker[]>([]);
   const [questState, setQuestState] = useState<QuestState>(() => createInitialQuestState());
   const [activeModal, setActiveModal] = useState<ActiveModalContent | null>(null);
+  const [vrmFileName, setVrmFileName] = useState<string | null>('Florie.vrm');
+  const [introTime, setIntroTime] = useState(0);
+  const vrmInputRef = useRef<HTMLInputElement | null>(null);
 
   // Refs synced for the 60Hz loop so HUD state updates never recreate the WebGL canvas
   const phaseRef = useRef<GamePhase>('loading');
   const settingsRef = useRef<GameSettings>(settings);
   const questRef = useRef<QuestState>(questState);
   const activeNpcIdRef = useRef<string | null>(null);
+  const introElapsedRef = useRef(0);
+  const introStageFlagsRef = useRef({
+    sparkle0: false,
+    wave1: false,
+    wave2: false,
+    beckon: false,
+    wave3: false,
+  });
 
   const titleFrameCounter = useRef(0);
 
@@ -96,7 +110,13 @@ export default function App() {
     document.body.dataset.state =
       next === 'dialogue' || next === 'map' ? 'playing' : next;
     const { input, audio, renderer } = engineRefs.current;
-    if (next === 'paused' || next === 'dialogue' || next === 'map' || next === 'title') {
+    if (
+      next === 'paused' ||
+      next === 'dialogue' ||
+      next === 'map' ||
+      next === 'title' ||
+      next === 'intro'
+    ) {
       input?.exitPointerLock();
       input?.clearAll();
     }
@@ -104,6 +124,8 @@ export default function App() {
     renderer?.setTitleMode(next === 'title');
     if (next === 'paused') {
       audio?.pauseLoops();
+    } else if (next === 'intro') {
+      audio?.startAnimeIntroMusic();
     } else if (next === 'playing') {
       audio?.startAmbient();
       audio?.resumeLoops();
@@ -263,7 +285,10 @@ export default function App() {
 
       setLoadProgress(88);
 
-      const player = new Player(gameRenderer.scene, physics, CAMPUS_DATA.spawn);
+      const player = new Player(gameRenderer.scene, physics, CAMPUS_DATA.spawn, (loadedLabel) => {
+        setVrmFileName(loadedLabel);
+      });
+      await player.readyPromise;
       cameraCtrl.resetToPlayer(player.position, CAMPUS_DATA.spawn.yaw);
 
       const npcs = spawnCampusNPCs(gameRenderer.scene, interactions, (npcData: NPCData) => {
@@ -313,7 +338,6 @@ export default function App() {
       // Support ?autostart=1 for automated testing & quick launch
       const params = new URLSearchParams(window.location.search);
       const autostart = params.get('autostart') === '1';
-      updatePhase(autostart ? 'playing' : 'title');
 
       // Click on canvas locks pointer when playing
       const onCanvasClick = () => {
@@ -474,8 +498,19 @@ export default function App() {
         }
       };
 
-      cameraCtrl.updateTitleTour(gameRenderer.camera, 0);
+      if (autostart) {
+        cameraCtrl.updateThirdPerson(
+          gameRenderer.camera,
+          player.position,
+          world.cameraColliders,
+          0.016,
+          settingsRef.current.reducedMotion
+        );
+      } else {
+        cameraCtrl.updateTitleTour(gameRenderer.camera, 0);
+      }
       gameRenderer.renderFrame();
+      updatePhase(autostart ? 'playing' : 'title');
 
       if (gameRenderer.isSoftwareGl) {
         frameId = gameRenderer.afterDraw(tick);
@@ -612,8 +647,58 @@ export default function App() {
     });
   }, []);
 
+  const handleLoadVrmFile = useCallback(
+    async (file: File) => {
+      const player = engineRefs.current.player;
+      if (!player) return;
+      try {
+        const buffer = await file.arrayBuffer();
+        const label = await player.applyVrmBuffer(buffer, file.name, true);
+        setVrmFileName(label);
+        showToast(`Modèle VRM de Florie chargé : ${label}`);
+      } catch {
+        showToast('Fichier VRM invalide. Veuillez sélectionner un fichier .vrm ou .glb valide.');
+      }
+    },
+    [showToast]
+  );
+
+  useEffect(() => {
+    const onDragOver = (e: DragEvent) => {
+      e.preventDefault();
+    };
+    const onDrop = (e: DragEvent) => {
+      e.preventDefault();
+      const file = e.dataTransfer?.files?.[0];
+      if (file && /\.(vrm|glb)$/i.test(file.name)) {
+        void handleLoadVrmFile(file);
+      }
+    };
+    window.addEventListener('dragover', onDragOver);
+    window.addEventListener('drop', onDrop);
+    return () => {
+      window.removeEventListener('dragover', onDragOver);
+      window.removeEventListener('drop', onDrop);
+    };
+  }, [handleLoadVrmFile]);
+
   return (
     <div className="relative w-full h-full overflow-hidden">
+      {/* Hidden File Input for 1-click VRM Import */}
+      <input
+        ref={vrmInputRef}
+        type="file"
+        accept=".vrm,.glb"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) {
+            void handleLoadVrmFile(file);
+            e.target.value = '';
+          }
+        }}
+      />
+
       {/* Isolated WebGL Viewport Container */}
       <div id="canvas-container" ref={mountRef} className="fixed inset-0 z-0" />
 
@@ -639,9 +724,11 @@ export default function App() {
           questState={questState}
           muted={muted}
           language={settings.language}
+          vrmFileName={vrmFileName}
           onToggleMute={handleToggleMute}
           onOpenMap={() => updatePhase('map')}
           onOpenPause={() => updatePhase('paused')}
+          onImportVrm={() => vrmInputRef.current?.click()}
         />
       )}
 

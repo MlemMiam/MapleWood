@@ -7,8 +7,15 @@ import {
   type AnimState,
   type HumanoidRig,
   animateHumanoid,
-  createHumanoidRig,
+  animateHumanoidIntro,
+  createFlorieRig,
 } from './PlayerAnimations';
+import {
+  type FlorieVRMController,
+  discoverFlorieVrmBuffer,
+  parseFlorieVrmFromBuffer,
+  saveVrmBufferToCache,
+} from './FlorieVRM';
 
 const _desiredMove = new THREE.Vector3();
 
@@ -19,9 +26,13 @@ export class Player {
   public stamina = 100;
   public readonly maxStamina = 100;
   public isGrounded = true;
+  public vrmLabel: string | null = 'Florie.vrm';
+  public readonly readyPromise: Promise<void>;
 
   private body: RAPIER.RigidBody;
   private collider: RAPIER.Collider;
+  private vrmController: FlorieVRMController | null = null;
+  private onVrmLoaded?: (label: string) => void;
   private verticalVel = 0;
   private gaitPhase = 0;
   private lastStepIndex = 0;
@@ -36,18 +47,11 @@ export class Player {
   constructor(
     scene: THREE.Scene,
     physics: PhysicsWorld,
-    spawn: { x: number; y: number; z: number; yaw: number }
+    spawn: { x: number; y: number; z: number; yaw: number },
+    onVrmLoaded?: (label: string) => void
   ) {
-    this.rig = createHumanoidRig(
-      {
-        shirt: '#1F3864',
-        pants: '#1E293B',
-        skin: '#E6B89C',
-        hair: '#3B281E',
-        accent: '#D4AF37',
-      },
-      true
-    );
+    this.onVrmLoaded = onVrmLoaded;
+    this.rig = createFlorieRig();
     this.position.set(spawn.x, spawn.y, spawn.z);
     this.yaw = spawn.yaw;
     this.rig.root.position.copy(this.position);
@@ -57,6 +61,45 @@ export class Player {
     const phys = physics.createPlayerBody(spawn.x, spawn.y, spawn.z);
     this.body = phys.body;
     this.collider = phys.collider;
+
+    // Automatically discover & load Florie.vrm by default at startup
+    this.readyPromise = this.autoLoadFlorieVrm();
+  }
+
+  private async autoLoadFlorieVrm(): Promise<void> {
+    const found = await discoverFlorieVrmBuffer();
+    if (!found) return;
+    try {
+      await this.applyVrmBuffer(found.buffer, found.label, false);
+    } catch {
+      // Keep sculpted Florie protagonist rig if the VRM buffer fails to parse
+    }
+  }
+
+  public async applyVrmBuffer(
+    buffer: ArrayBuffer,
+    fileName = 'Florie.vrm',
+    persistToCache = true
+  ): Promise<string> {
+    const controller = await parseFlorieVrmFromBuffer(buffer, fileName);
+
+    // Remove previous VRM container if replacing
+    if (this.vrmController) {
+      this.rig.root.remove(this.vrmController.container);
+    }
+
+    // Hide fallback procedural Florie body while VRM is active
+    this.rig.bodyGroup.visible = false;
+    this.vrmController = controller;
+    this.vrmLabel = controller.sourceLabel;
+    this.rig.root.add(controller.container);
+
+    if (persistToCache) {
+      await saveVrmBufferToCache(buffer, fileName);
+    }
+
+    this.onVrmLoaded?.(controller.sourceLabel);
+    return controller.sourceLabel;
   }
 
   public triggerInteractAnim(): void {
@@ -179,16 +222,44 @@ export class Player {
       animState = 'jump';
     } else if (moving && horizDist > 0.002) {
       animState = wantsSprint ? 'run' : 'walk';
-      this.gaitPhase += horizDist * (wantsSprint ? 2.4 : 3.2);
+      this.gaitPhase += horizDist * (wantsSprint ? 2.15 : 2.65);
       const stepIndex = Math.floor(this.gaitPhase / Math.PI);
       if (stepIndex !== this.lastStepIndex) {
         this.lastStepIndex = stepIndex;
         audio.playFootstep(isExteriorGrass ? 'grass' : 'hard');
       }
-    } else {
-      this.gaitPhase += dt * 1.4;
     }
 
-    animateHumanoid(this.rig, animState, this.gaitPhase, this.interactTimer, dt);
+    if (this.vrmController) {
+      this.vrmController.update(animState, this.gaitPhase, this.interactTimer, dt);
+    } else {
+      animateHumanoid(this.rig, animState, this.gaitPhase, this.interactTimer, dt);
+    }
+  }
+
+  public updateIntroCutscene(introTime: number, dt: number): void {
+    const isBeckonPhase = introTime >= 4.8;
+    const targetZ = isBeckonPhase
+      ? THREE.MathUtils.lerp(4.4, 3.85, Math.min(1, (introTime - 4.8) / 3.8))
+      : 4.4;
+    const targetYaw = isBeckonPhase ? Math.PI - 0.36 : Math.PI;
+
+    this.position.set(0, 0, targetZ);
+    const damp = 1 - Math.exp(-8 * dt);
+    this.yaw = THREE.MathUtils.lerp(this.yaw, targetYaw, damp);
+
+    const bodyPos = { x: this.position.x, y: this.position.y + 0.875, z: this.position.z };
+    this.body.setTranslation(bodyPos, true);
+    this.body.setNextKinematicTranslation(bodyPos);
+
+    this.rig.root.position.copy(this.position);
+    this.rig.root.rotation.y = this.yaw;
+
+    if (this.vrmController) {
+      this.vrmController.updateIntroCutscene(introTime, dt);
+    } else {
+      animateHumanoidIntro(this.rig, introTime, dt);
+    }
   }
 }
+
