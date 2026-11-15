@@ -6,16 +6,8 @@ import type { ClockUpdateRef } from '../utils/Geometry';
 import type { WorldBuildContext, WorldCallbacks } from './WorldContext';
 import type { InteractiveDoor } from './props/Door';
 import { buildMainBuilding } from './buildings/MainBuilding';
-import { buildAdminOffice } from './buildings/AdminOffice';
-import { buildScienceWing } from './buildings/ScienceWing';
-import { buildGymnasium } from './buildings/Gymnasium';
-import { buildCafeteria } from './buildings/Cafeteria';
-import { buildLibrary } from './buildings/Library';
 import { buildCourtyard } from './exterior/Courtyard';
-import { buildParkingLots } from './exterior/ParkingLot';
-import { buildSportsField } from './exterior/SportsField';
 import { buildFencing } from './exterior/Fencing';
-import { buildExteriorDetails } from './exterior/ExteriorDetails';
 export class CampusWorld {
   public readonly doors: InteractiveDoor[] = [];
   public readonly clocks: ClockUpdateRef[] = [];
@@ -23,6 +15,9 @@ export class CampusWorld {
   public readonly wingLights: Record<string, THREE.PointLight[]> = {};
   private animatedObjects: Array<(elapsed: number, dt: number) => void> = [];
   private lightsOn = true;
+  private clockTimer = 1.0;
+  private lightCullTimer = 0.25;
+  private allLights: Array<{ light: THREE.PointLight; x: number; z: number }> = [];
 
   constructor(
     scene: THREE.Scene,
@@ -46,15 +41,22 @@ export class CampusWorld {
 
     buildCourtyard(ctx);
     buildMainBuilding(ctx);
-    buildAdminOffice(ctx);
-    buildScienceWing(ctx);
-    buildGymnasium(ctx);
-    buildCafeteria(ctx);
-    buildLibrary(ctx);
-    buildParkingLots(ctx);
-    buildSportsField(ctx);
     buildFencing(ctx);
-    buildExteriorDetails(ctx);
+
+    // Collect all interior PointLights for distance culling so distant rooms
+    // don't burn GPU PBR fragment shader loops when outdoors or across campus.
+    const tmpWorld = new THREE.Vector3();
+    scene.updateMatrixWorld(true);
+    scene.traverse((obj) => {
+      if ((obj as THREE.PointLight).isPointLight) {
+        obj.getWorldPosition(tmpWorld);
+        this.allLights.push({
+          light: obj as THREE.PointLight,
+          x: tmpWorld.x,
+          z: tmpWorld.z,
+        });
+      }
+    });
   }
   public toggleWingLights(wing: string): boolean {
     this.lightsOn = !this.lightsOn;
@@ -65,23 +67,42 @@ export class CampusWorld {
     return this.lightsOn;
   }
 
-  public update(elapsed: number, dt: number): void {
+  public update(elapsed: number, dt: number, focusPos?: THREE.Vector3): void {
     for (const door of this.doors) {
-      door.update(dt);
+      door.update(dt, focusPos);
     }
     for (const fn of this.animatedObjects) {
       fn(elapsed, dt);
     }
 
-    // Real-time functional wall clocks
-    const now = new Date();
-    const minutes = now.getMinutes() + now.getSeconds() / 60;
-    const hours = (now.getHours() % 12) + minutes / 60;
-    const minAngle = -(minutes / 60) * Math.PI * 2;
-    const hourAngle = -(hours / 12) * Math.PI * 2;
-    for (const c of this.clocks) {
-      c.minuteHand.rotation.z = minAngle;
-      c.hourHand.rotation.z = hourAngle;
+    // Distance-cull interior PointLights (~4 Hz) to keep active shader light count minimal
+    if (focusPos && this.allLights.length > 0) {
+      this.lightCullTimer += dt;
+      if (this.lightCullTimer >= 0.25) {
+        this.lightCullTimer = 0;
+        const maxDistSq = 40 * 40;
+        for (let i = 0; i < this.allLights.length; i++) {
+          const entry = this.allLights[i];
+          const dx = entry.x - focusPos.x;
+          const dz = entry.z - focusPos.z;
+          entry.light.visible = dx * dx + dz * dz <= maxDistSq;
+        }
+      }
+    }
+
+    // Real-time functional wall clocks (updated once per second instead of every frame)
+    this.clockTimer += dt;
+    if (this.clockTimer >= 1.0) {
+      this.clockTimer = 0;
+      const now = new Date();
+      const minutes = now.getMinutes() + now.getSeconds() / 60;
+      const hours = (now.getHours() % 12) + minutes / 60;
+      const minAngle = -(minutes / 60) * Math.PI * 2;
+      const hourAngle = -(hours / 12) * Math.PI * 2;
+      for (const c of this.clocks) {
+        c.minuteHand.rotation.z = minAngle;
+        c.hourHand.rotation.z = hourAngle;
+      }
     }
   }
 }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { GameRenderer } from './engine/Renderer';
+import { GameRenderer, type TimePhase, type WeatherType } from './engine/Renderer';
 import { PhysicsWorld } from './engine/Physics';
 import { InputManager } from './engine/InputManager';
 import { CameraController } from './engine/CameraController';
@@ -16,6 +16,7 @@ import {
   type RoomDefinition,
   findRoomAtPosition,
 } from './utils/CampusLayout';
+import { isOnCarpet } from './world/buildings/MainBuilding';
 import { DebugOverlay } from './utils/Debug';
 import { InteractionSystem } from './interaction/InteractionSystem';
 import {
@@ -39,11 +40,50 @@ import { type MinimapNpcMarker } from './ui/Minimap';
 import { type ActiveModalContent, DialogueUI } from './interaction/DialogueUI';
 import { CampusMapModal } from './ui/CampusMapModal';
 import { SettingsMenu } from './ui/SettingsMenu';
-import { FLORIE_INTRO_LINES, IntroCutsceneOverlay } from './ui/IntroCutsceneOverlay';
+import { IntroCutsceneOverlay } from './ui/IntroCutsceneOverlay';
+import {
+  CutsceneGalleryModal,
+  type CutsceneGalleryId,
+} from './ui/CutsceneGalleryModal';
+import { PostCustomCutsceneOverlay } from './ui/PostCustomCutsceneOverlay';
+import {
+  POST_CUSTOM_CUTSCENE_DURATION,
+  PostCustomCutsceneDirector,
+  type CutsceneSubtitleState,
+} from './engine/PostCustomCutscene';
+import {
+  IntroPresentationAndChoiceModal,
+  type PlayerChoiceSelection,
+} from './ui/IntroPresentationAndChoiceModal';
+import { PlayerCustomizationModal } from './ui/PlayerCustomizationModal';
+import {
+  DEFAULT_PLAYER_HAIR_SELECTION,
+  type PlayerGender,
+  type PlayerHairSelection,
+} from './character/PlayerHairSystem';
+import {
+  DEFAULT_FEMALE_CLOTHES_SELECTION,
+  DEFAULT_PLAYER_DISPLAY_OPTIONS,
+  getDefaultClothesSelection,
+  type PlayerClothesSelection,
+  type PlayerDisplayOptions,
+} from './character/PlayerClothesSystem';
 
-type GamePhase = 'loading' | 'title' | 'intro' | 'playing' | 'paused' | 'map' | 'dialogue';
+type GamePhase =
+  | 'loading'
+  | 'title'
+  | 'intro'
+  | 'presentation2d'
+  | 'genderChoice'
+  | 'customization'
+  | 'postCustomCutscene'
+  | 'playerChoice'
+  | 'playing'
+  | 'paused'
+  | 'map'
+  | 'dialogue';
 
-const INTRO_DURATION = 9.5;
+const INTRO_DURATION = 11.65;
 
 const LOADING_TIPS = [
   'Utilisez la touche E près des portes, casiers, tableaux et ordinateurs pour interagir.',
@@ -74,12 +114,55 @@ export default function App() {
   const [activeModal, setActiveModal] = useState<ActiveModalContent | null>(null);
   const [vrmFileName, setVrmFileName] = useState<string | null>('Florie.vrm');
   const [introTime, setIntroTime] = useState(0);
+  const [cutsceneSub, setCutsceneSub] = useState<CutsceneSubtitleState | null>(null);
+  const [showCutsceneGallery, setShowCutsceneGallery] = useState(false);
+  const postCutsceneElapsedRef = useRef(0);
+  const postCutsceneDirectorRef = useRef<PostCustomCutsceneDirector | null>(null);
+  const galleryReturnRef = useRef<{ x: number; y: number; z: number; yaw: number } | null>(null);
+  const [playerGender, setPlayerGender] = useState<PlayerGender>('female');
+  const [hairSelection, setHairSelection] = useState<PlayerHairSelection>(
+    DEFAULT_PLAYER_HAIR_SELECTION
+  );
+  const [clothesSelection, setClothesSelection] = useState<PlayerClothesSelection>(
+    DEFAULT_FEMALE_CLOTHES_SELECTION
+  );
+  const [displayOptions, setDisplayOptions] = useState<PlayerDisplayOptions>(
+    DEFAULT_PLAYER_DISPLAY_OPTIONS
+  );
+  const hasCompletedIntroChoiceRef = useRef<boolean>(false);
+  const hasPlayedPostCustomCutsceneRef = useRef<boolean>(false);
+  const npcVoiceAudioRef = useRef<HTMLAudioElement | null>(null);
+  const npcAudioCtxRef = useRef<AudioContext | null>(null);
+  const npcAnalyserRef = useRef<AnalyserNode | null>(null);
+  const npcAnalyserDataRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
+
+  const playNpcVoiceUrl = useCallback((_url?: string) => {
+    if (npcVoiceAudioRef.current) {
+      npcVoiceAudioRef.current.pause();
+      npcVoiceAudioRef.current.currentTime = 0;
+    }
+  }, []);
+
+  const handleCharacterBlip = useCallback((ch: string, speaker: string) => {
+    const s = speaker.toLowerCase();
+    const voice =
+      s.includes('parker') || s.includes('helen')
+        ? 'helen'
+        : s.includes('florie')
+          ? 'florie'
+          : 'student';
+    engineRefs.current.audio?.playCharacterBlip(ch, voice);
+  }, []);
+  const [weather, setWeather] = useState<WeatherType>('sunny');
+  const [timePhase, setTimePhase] = useState<TimePhase>('morning');
   const vrmInputRef = useRef<HTMLInputElement | null>(null);
 
   // Refs synced for the 60Hz loop so HUD state updates never recreate the WebGL canvas
   const phaseRef = useRef<GamePhase>('loading');
   const settingsRef = useRef<GameSettings>(settings);
   const questRef = useRef<QuestState>(questState);
+  const lastWeatherRef = useRef<WeatherType>('sunny');
+  const lastTimePhaseRef = useRef<TimePhase>('morning');
   const activeNpcIdRef = useRef<string | null>(null);
   const introElapsedRef = useRef(0);
   const introStageFlagsRef = useRef({
@@ -88,6 +171,7 @@ export default function App() {
     wave2: false,
     beckon: false,
     wave3: false,
+    doorOpened: false,
   });
 
   const titleFrameCounter = useRef(0);
@@ -109,13 +193,21 @@ export default function App() {
     setPhase(next);
     document.body.dataset.state =
       next === 'dialogue' || next === 'map' ? 'playing' : next;
-    const { input, audio, renderer } = engineRefs.current;
+    const { input, audio, renderer, player } = engineRefs.current;
+    if (player) {
+      player.rig.root.visible = next !== 'title';
+    }
     if (
       next === 'paused' ||
       next === 'dialogue' ||
       next === 'map' ||
       next === 'title' ||
-      next === 'intro'
+      next === 'intro' ||
+      next === 'presentation2d' ||
+      next === 'genderChoice' ||
+      next === 'customization' ||
+      next === 'postCustomCutscene' ||
+      next === 'playerChoice'
     ) {
       input?.exitPointerLock();
       input?.clearAll();
@@ -126,6 +218,19 @@ export default function App() {
       audio?.pauseLoops();
     } else if (next === 'intro') {
       audio?.startAnimeIntroMusic();
+    } else if (next === 'genderChoice' || next === 'customization') {
+      audio?.startCustomizationMusic();
+      if (next === 'genderChoice') {
+        audio?.playAnimeIntroSfx('sparkle');
+      }
+    } else if (next === 'postCustomCutscene') {
+      audio?.startAnimeIntroMusic();
+    } else if (next === 'presentation2d') {
+      audio?.playAnimeIntroSfx('sparkle');
+    } else if (next === 'playerChoice') {
+      audio?.stopAnimeIntroMusic();
+      audio?.stopCustomizationMusic();
+      audio?.playAnimeIntroSfx('beckon');
     } else if (next === 'playing') {
       audio?.startAmbient();
       audio?.resumeLoops();
@@ -280,6 +385,13 @@ export default function App() {
             });
             updatePhase('dialogue');
           },
+          onSit: (x, y, z, yaw) => {
+            if (player.isSeated()) {
+              player.standUp();
+            } else {
+              player.sitAt(x, y, z, yaw);
+            }
+          },
         }
       );
 
@@ -294,6 +406,7 @@ export default function App() {
       const npcs = spawnCampusNPCs(gameRenderer.scene, interactions, (npcData: NPCData) => {
         audio.playInteractDing();
         activeNpcIdRef.current = npcData.id;
+        playNpcVoiceUrl(npcData.greetingAudioUrl);
 
         // Special dynamic replies for quest states
         let body = npcData.greeting;
@@ -351,6 +464,11 @@ export default function App() {
       let hudAccum = 0;
       let lastRoomId = 'courtyard';
       let lastPrompt: string | null = null;
+      let lastHudX = NaN;
+      let lastHudZ = NaN;
+      let lastHudYaw = NaN;
+      let lastHudStamina = NaN;
+      const lastNpcCoords = npcs.map(() => ({ x: NaN, z: NaN }));
 
       const tick = () => {
         if (disposed) return;
@@ -369,15 +487,132 @@ export default function App() {
         }
 
         if (curPhase === 'title') {
-          cameraCtrl.updateTitleTour(gameRenderer.camera, elapsed);
+          cameraCtrl.updateTitleTour(
+            gameRenderer.camera,
+            elapsed,
+            settingsRef.current.titleTravelingEnabled
+          );
+          gameRenderer.updateEnvironment(
+            dt,
+            false,
+            0,
+            4,
+            gameRenderer.camera.position,
+            true,
+            false
+          );
           // Throttle expensive world/NPC updates on title screen for smoother FPS
           titleFrameCounter.current = (titleFrameCounter.current + 1) % 3;
           if (titleFrameCounter.current === 0) {
-            world.update(elapsed, dt * 3);
+            world.update(elapsed, dt * 3, gameRenderer.camera.position);
             for (const npc of npcs) {
-              npc.update(dt * 3, player.position, false);
+              npc.update(dt * 3, gameRenderer.camera.position, false);
             }
           }
+        } else if (curPhase === 'intro') {
+          introElapsedRef.current += dt;
+          const t = introElapsedRef.current;
+          const flags = introStageFlagsRef.current;
+
+          if (!flags.sparkle0 && t >= 0.08) {
+            flags.sparkle0 = true;
+            audio.playAnimeIntroSfx('sparkle');
+          }
+          if (!flags.wave1 && t >= 0.55) {
+            flags.wave1 = true;
+            audio.playAnimeIntroSfx('wave');
+          }
+          if (!flags.beckon && t >= 6.25) {
+            flags.beckon = true;
+            audio.playAnimeIntroSfx('beckon');
+          }
+
+          cameraCtrl.updateIntroCutsceneCamera(gameRenderer.camera, player.position, t);
+          player.updateIntroCutscene(t, dt, gameRenderer.camera.position);
+          world.update(elapsed, dt, player.position);
+          for (const npc of npcs) {
+            npc.update(dt, player.position, false);
+          }
+
+          hudAccum += dt;
+          if (hudAccum >= 0.025) {
+            hudAccum = 0;
+            setIntroTime(t);
+          }
+
+          if (t >= INTRO_DURATION) {
+            const ret = galleryReturnRef.current;
+            if (ret) {
+              galleryReturnRef.current = null;
+              player.teleport(ret.x, ret.y, ret.z, ret.yaw);
+              cameraCtrl.resetToPlayer(player.position, ret.yaw);
+              updatePhase('playing');
+            } else {
+              updatePhase('genderChoice');
+            }
+          }
+        } else if (curPhase === 'postCustomCutscene') {
+          postCutsceneElapsedRef.current += dt;
+          const t = postCutsceneElapsedRef.current;
+          const director = postCutsceneDirectorRef.current;
+          // Keep entrance door open until both Florie and player have passed through the doorway (t >= 18.8)
+          world.update(elapsed, dt, t >= 18.8 ? player.position : undefined);
+          for (const npc of npcs) {
+            if (npc.data.id !== 'npc-receptionist') {
+              npc.update(dt, player.position, false);
+            }
+          }
+          if (director) {
+            const helenNpc = npcs.find((n) => n.data.id === 'npc-receptionist');
+            director.update(
+              t,
+              dt,
+              gameRenderer.camera,
+              player,
+              helenNpc,
+              curSettings.masterVolume,
+              () => {
+                if (world.doors[0] && !world.doors[0].isOpen()) {
+                  world.doors[0].toggle();
+                  audio.playDoor();
+                }
+              }
+            );
+            hudAccum += dt;
+            if (hudAccum >= 0.08) {
+              hudAccum = 0;
+              const nextSub = director.getSubtitle(t);
+              setCutsceneSub((prev) =>
+                prev?.speaker === nextSub?.speaker && prev?.text === nextSub?.text
+                  ? prev
+                  : nextSub
+              );
+            }
+          }
+          if (t >= POST_CUSTOM_CUTSCENE_DURATION) {
+            if (director) {
+              const helenNpc = npcs.find((n) => n.data.id === 'npc-receptionist');
+              director.dispose(player, helenNpc);
+              postCutsceneDirectorRef.current = null;
+            }
+            setCutsceneSub(null);
+            const ret = galleryReturnRef.current;
+            if (ret) {
+              galleryReturnRef.current = null;
+              player.teleport(ret.x, ret.y, ret.z, ret.yaw);
+              cameraCtrl.resetToPlayer(player.position, ret.yaw);
+              updatePhase('playing');
+            } else {
+              updatePhase('playerChoice');
+            }
+          }
+        } else if (
+          curPhase === 'presentation2d' ||
+          curPhase === 'genderChoice' ||
+          curPhase === 'customization' ||
+          curPhase === 'playerChoice'
+        ) {
+          // Full-screen modal active (e.g. 3D Hair Studio): skip background campus update & render
         } else if (curPhase === 'playing') {
           if (snap.pauseJustPressed) {
             updatePhase('paused');
@@ -392,7 +627,12 @@ export default function App() {
             );
 
             const currentRoom = findRoomAtPosition(player.position.x, player.position.z);
-            const onGrass = currentRoom?.type === 'exterior' && currentRoom.id === 'courtyard';
+            const footstepSurface: 'grass' | 'carpet' | 'hard' =
+              currentRoom?.type === 'exterior' && currentRoom.id === 'courtyard'
+                ? 'grass'
+                : isOnCarpet(player.position.x, player.position.z)
+                  ? 'carpet'
+                  : 'hard';
 
             // Sub-step physics & player locomotion in <= 40ms increments for stability at any framerate
             let remaining = frameDt;
@@ -400,13 +640,13 @@ export default function App() {
             while (remaining > 0.0001) {
               const stepDt = Math.min(remaining, 0.04);
               const stepSnap = firstStep ? snap : { ...snap, jumpJustPressed: false };
-              player.update(stepDt, stepSnap, cameraCtrl.yaw, physics, audio, onGrass);
+              player.update(stepDt, stepSnap, cameraCtrl.yaw, physics, audio, footstepSurface);
               physics.step(stepDt);
               firstStep = false;
               remaining -= stepDt;
             }
 
-            world.update(elapsed, frameDt);
+            world.update(elapsed, frameDt, player.position);
 
             for (const npc of npcs) {
               npc.update(frameDt, player.position, false);
@@ -420,7 +660,29 @@ export default function App() {
               curSettings.reducedMotion
             );
 
-            gameRenderer.updateDayCycle(frameDt, curSettings.dayCycleEnabled);
+            const questValues = Object.values(questRef.current.quests);
+            const completedQuests = questValues.filter((q) => q.status === 'completed').length;
+            const totalQuests = questValues.length;
+            const isOutdoors = !currentRoom || currentRoom.type === 'exterior';
+            gameRenderer.updateEnvironment(
+              frameDt,
+              curSettings.dayCycleEnabled,
+              completedQuests,
+              totalQuests,
+              player.position,
+              isOutdoors,
+              true
+            );
+            const curWeather = gameRenderer.getWeather();
+            if (curWeather !== lastWeatherRef.current) {
+              lastWeatherRef.current = curWeather;
+              setWeather(curWeather);
+            }
+            const curTimePhase = gameRenderer.getTimePhase();
+            if (curTimePhase !== lastTimePhaseRef.current) {
+              lastTimePhaseRef.current = curTimePhase;
+              setTimePhase(curTimePhase);
+            }
 
             const target = interactions.update(
               gameRenderer.camera,
@@ -438,7 +700,7 @@ export default function App() {
               interactions.triggerCurrent();
             }
 
-            // Room change detection & throttled HUD sync (~10 Hz)
+            // Room change detection & throttled HUD sync (~6.6 Hz)
             if (currentRoom && currentRoom.id !== lastRoomId) {
               lastRoomId = currentRoom.id;
               setZoneName(currentRoom.name);
@@ -448,38 +710,121 @@ export default function App() {
             }
 
             hudAccum += frameDt;
-            if (hudAccum >= 0.1) {
+            if (hudAccum >= 0.15) {
               hudAccum = 0;
               audio.updateFountainSpatialAudio(
                 player.position.x,
                 player.position.z,
                 currentRoom?.type === 'exterior'
               );
-              setHudPos({
-                x: player.position.x,
-                z: player.position.z,
-                yaw: cameraCtrl.yaw,
-                stamina: player.stamina,
-              });
-              setNpcMarkers(
-                npcs.map((n) => ({
-                  id: n.data.id,
-                  name: n.data.name,
-                  x: n.position.x,
-                  z: n.position.z,
-                }))
-              );
+              if (
+                Math.abs(player.position.x - lastHudX) > 0.02 ||
+                Math.abs(player.position.z - lastHudZ) > 0.02 ||
+                Math.abs(cameraCtrl.yaw - lastHudYaw) > 0.015 ||
+                Math.abs(player.stamina - lastHudStamina) > 0.25 ||
+                Number.isNaN(lastHudX)
+              ) {
+                lastHudX = player.position.x;
+                lastHudZ = player.position.z;
+                lastHudYaw = cameraCtrl.yaw;
+                lastHudStamina = player.stamina;
+                setHudPos({
+                  x: lastHudX,
+                  z: lastHudZ,
+                  yaw: lastHudYaw,
+                  stamina: lastHudStamina,
+                });
+              }
+
+              let npcMoved = false;
+              for (let i = 0; i < npcs.length; i++) {
+                const n = npcs[i];
+                const prev = lastNpcCoords[i];
+                if (
+                  Number.isNaN(prev.x) ||
+                  Math.abs(n.position.x - prev.x) > 0.08 ||
+                  Math.abs(n.position.z - prev.z) > 0.08
+                ) {
+                  npcMoved = true;
+                  break;
+                }
+              }
+              if (npcMoved) {
+                for (let i = 0; i < npcs.length; i++) {
+                  lastNpcCoords[i].x = npcs[i].position.x;
+                  lastNpcCoords[i].z = npcs[i].position.z;
+                }
+                setNpcMarkers(
+                  npcs.map((n) => ({
+                    id: n.data.id,
+                    name: n.data.name,
+                    x: n.position.x,
+                    z: n.position.z,
+                  }))
+                );
+              }
             }
           }
         } else if (curPhase === 'dialogue' || curPhase === 'map') {
           if (snap.pauseJustPressed) {
+            if (npcVoiceAudioRef.current) {
+              npcVoiceAudioRef.current.pause();
+              npcVoiceAudioRef.current = null;
+            }
             setActiveModal(null);
             activeNpcIdRef.current = null;
             updatePhase('playing');
-          } else {
-            world.update(elapsed, dt);
+          } else if (curPhase === 'dialogue') {
+            world.update(elapsed, dt, player.position);
+            let speechLevel = 0;
+            let speechTime = 0;
+            const voiceEl = npcVoiceAudioRef.current;
+            if (voiceEl && !voiceEl.paused && !voiceEl.ended) {
+              speechTime = voiceEl.currentTime;
+              const analyser = npcAnalyserRef.current;
+              const data = npcAnalyserDataRef.current;
+              if (analyser && data) {
+                analyser.getByteTimeDomainData(data);
+                let sumSq = 0;
+                for (let i = 0; i < data.length; i++) {
+                  const norm = (data[i] - 128) / 128;
+                  sumSq += norm * norm;
+                }
+                const rms = Math.sqrt(sumSq / data.length);
+                speechLevel = Math.min(1, rms * 4.8);
+              } else {
+                speechLevel = 0.45 + 0.35 * Math.sin(speechTime * 11);
+              }
+            }
+
+            const talkingNpc = activeNpcIdRef.current
+              ? npcs.find((n) => n.data.id === activeNpcIdRef.current)
+              : undefined;
+            if (talkingNpc) {
+              cameraCtrl.updateNpcCloseupCamera(
+                gameRenderer.camera,
+                talkingNpc.position,
+                talkingNpc.getYaw(),
+                Boolean(talkingNpc.data.seated),
+                dt,
+                settingsRef.current.reducedMotion
+              );
+            }
+
             for (const npc of npcs) {
-              npc.update(dt, player.position, npc.data.id === activeNpcIdRef.current);
+              const isTalking = npc.data.id === activeNpcIdRef.current;
+              npc.update(
+                dt,
+                player.position,
+                isTalking,
+                isTalking
+                  ? {
+                      lookAtPos: gameRenderer.camera.position,
+                      speechLevel,
+                      speechTime,
+                    }
+                  : undefined
+              );
             }
           }
         } else if (curPhase === 'paused') {
@@ -488,8 +833,18 @@ export default function App() {
           }
         }
 
-        gameRenderer.renderFrame();
-        debug.endFrame(gameRenderer.renderer, player.position);
+        const shouldRenderCampus =
+          curPhase === 'loading' ||
+          curPhase === 'title' ||
+          curPhase === 'intro' ||
+          curPhase === 'postCustomCutscene' ||
+          curPhase === 'playing' ||
+          curPhase === 'dialogue';
+
+        if (shouldRenderCampus) {
+          gameRenderer.renderFrame();
+          debug.endFrame(gameRenderer.renderer, player.position);
+        }
 
         if (gameRenderer.isSoftwareGl) {
           frameId = gameRenderer.afterDraw(tick);
@@ -507,7 +862,11 @@ export default function App() {
           settingsRef.current.reducedMotion
         );
       } else {
-        cameraCtrl.updateTitleTour(gameRenderer.camera, 0);
+        cameraCtrl.updateTitleTour(
+          gameRenderer.camera,
+          0,
+          settingsRef.current.titleTravelingEnabled
+        );
       }
       gameRenderer.renderFrame();
       updatePhase(autostart ? 'playing' : 'title');
@@ -542,18 +901,226 @@ export default function App() {
     };
   }, [applyQuestUpdate, showToast, updatePhase]);
 
-  const handleStartGame = useCallback(() => {
-    engineRefs.current.audio?.startAmbient();
+  const handleStartIntro = useCallback(() => {
+    introElapsedRef.current = 0;
+    introStageFlagsRef.current = {
+      sparkle0: false,
+      wave1: false,
+      wave2: false,
+      beckon: false,
+      wave3: false,
+      doorOpened: false,
+    };
+    setIntroTime(0);
+    const { player, cameraCtrl, renderer, world } = engineRefs.current;
+    if (world?.doors[0]?.isOpen()) {
+      world.doors[0].toggle();
+    }
+    if (player && cameraCtrl && renderer) {
+      player.restoreFlorieIntroAvatar();
+      cameraCtrl.updateIntroCutsceneCamera(renderer.camera, player.position, 0);
+      player.updateIntroCutscene(0, 0.016, renderer.camera.position);
+    }
+    updatePhase('intro');
+  }, [updatePhase]);
+
+  const handleFinishIntro = useCallback(() => {
+    const ret = galleryReturnRef.current;
+    if (ret) {
+      galleryReturnRef.current = null;
+      const { player, cameraCtrl } = engineRefs.current;
+      if (player && cameraCtrl) {
+        player.teleport(ret.x, ret.y, ret.z, ret.yaw);
+        void player.applyCustomPlayerAvatar(
+          playerGender,
+          hairSelection,
+          clothesSelection,
+          displayOptions
+        );
+        cameraCtrl.resetToPlayer(player.position, ret.yaw);
+      }
+      updatePhase('playing');
+    } else {
+      updatePhase('genderChoice');
+    }
+  }, [clothesSelection, displayOptions, hairSelection, playerGender, updatePhase]);
+
+  const handleQuickExplore = useCallback(() => {
+    hasCompletedIntroChoiceRef.current = true;
     const { player, cameraCtrl } = engineRefs.current;
     if (player && cameraCtrl) {
-      cameraCtrl.resetToPlayer(player.position, player.yaw);
+      player.teleport(
+        CAMPUS_DATA.spawn.x,
+        CAMPUS_DATA.spawn.y,
+        CAMPUS_DATA.spawn.z,
+        CAMPUS_DATA.spawn.yaw
+      );
+      cameraCtrl.resetToPlayer(player.position, CAMPUS_DATA.spawn.yaw);
     }
     updatePhase('playing');
   }, [updatePhase]);
 
+  const handleAdvanceToPlayerChoice = useCallback(() => {
+    updatePhase('genderChoice');
+  }, [updatePhase]);
+
+  const handleSelectGenderChoice = useCallback(
+    (chosenGender: PlayerGender) => {
+      if (chosenGender !== playerGender) {
+        setPlayerGender(chosenGender);
+        setClothesSelection(getDefaultClothesSelection(chosenGender));
+      }
+      updatePhase('customization');
+    },
+    [playerGender, updatePhase]
+  );
+
+  const handleFinishPostCustomCutscene = useCallback(() => {
+    const { player, npcs, cameraCtrl } = engineRefs.current;
+    if (postCutsceneDirectorRef.current && player) {
+      const helenNpc = npcs?.find((n) => n.data.id === 'npc-receptionist');
+      postCutsceneDirectorRef.current.dispose(player, helenNpc);
+      postCutsceneDirectorRef.current = null;
+    }
+    setCutsceneSub(null);
+    const ret = galleryReturnRef.current;
+    if (ret && player && cameraCtrl) {
+      galleryReturnRef.current = null;
+      player.teleport(ret.x, ret.y, ret.z, ret.yaw);
+      cameraCtrl.resetToPlayer(player.position, ret.yaw);
+      updatePhase('playing');
+    } else {
+      updatePhase('playerChoice');
+    }
+  }, [updatePhase]);
+
+  const handleOpenCutsceneGallery = useCallback(() => {
+    engineRefs.current.input?.exitPointerLock();
+    engineRefs.current.input?.clearAll();
+    setShowCutsceneGallery(true);
+  }, []);
+
+  const handlePlayCutsceneFromGallery = useCallback(
+    (id: CutsceneGalleryId) => {
+      const { player, renderer, world } = engineRefs.current;
+      setShowCutsceneGallery(false);
+      if (player) {
+        galleryReturnRef.current = {
+          x: player.position.x,
+          y: player.position.y,
+          z: player.position.z,
+          yaw: player.yaw,
+        };
+      }
+      if (id === 'intro') {
+        handleStartIntro();
+      } else if (id === 'postCustom' && renderer && player) {
+        if (world?.doors[0]?.isOpen()) {
+          world.doors[0].toggle();
+        }
+        postCutsceneElapsedRef.current = 0;
+        setCutsceneSub(null);
+        const director = new PostCustomCutsceneDirector(renderer.scene);
+        postCutsceneDirectorRef.current = director;
+        director.start();
+        updatePhase('postCustomCutscene');
+      }
+    },
+    [handleStartIntro, updatePhase]
+  );
+
+  const handleConfirmCustomization = useCallback(
+    async (
+      finalGender: PlayerGender,
+      finalHair: PlayerHairSelection,
+      finalClothes: PlayerClothesSelection,
+      finalDisplay: PlayerDisplayOptions
+    ) => {
+      setPlayerGender(finalGender);
+      setHairSelection(finalHair);
+      setClothesSelection(finalClothes);
+      setDisplayOptions(finalDisplay);
+
+      const { player, renderer, world } = engineRefs.current;
+      if (player) {
+        await player.applyCustomPlayerAvatar(
+          finalGender,
+          finalHair,
+          finalClothes,
+          finalDisplay
+        );
+      }
+
+      if (hasCompletedIntroChoiceRef.current && hasPlayedPostCustomCutsceneRef.current) {
+        updatePhase('playing');
+      } else if (renderer && player) {
+        hasPlayedPostCustomCutsceneRef.current = true;
+        if (world?.doors[0]?.isOpen()) {
+          world.doors[0].toggle();
+        }
+        postCutsceneElapsedRef.current = 0;
+        setCutsceneSub(null);
+        const director = new PostCustomCutsceneDirector(renderer.scene);
+        postCutsceneDirectorRef.current = director;
+        director.start();
+        updatePhase('postCustomCutscene');
+      } else {
+        updatePhase('playerChoice');
+      }
+    },
+    [updatePhase]
+  );
+
+  const handleConfirmPlayerChoice = useCallback(
+    (selection: PlayerChoiceSelection) => {
+      hasCompletedIntroChoiceRef.current = true;
+      engineRefs.current.audio?.startAmbient();
+      const { player, cameraCtrl, world } = engineRefs.current;
+      if (world?.doors[0] && !world.doors[0].isOpen()) {
+        world.doors[0].toggle();
+      }
+      if (player && cameraCtrl) {
+        player.teleport(
+          selection.spawn.x,
+          selection.spawn.y,
+          selection.spawn.z,
+          selection.spawn.yaw
+        );
+        cameraCtrl.resetToPlayer(player.position, selection.spawn.yaw);
+        const startRoom = findRoomAtPosition(selection.spawn.x, selection.spawn.z);
+        if (startRoom) {
+          setZoneName(startRoom.name);
+          setBuildingName(startRoom.building);
+          applyQuestUpdate((q) => recordRoomVisit(q, startRoom.id));
+        }
+      }
+      if (selection.archetype === 'scholar') {
+        applyQuestUpdate((q) => startQuest(q, 'quest-find-room'));
+      }
+      showToast(
+        `Bienvenue ${selection.firstName} ! Profil : ${selection.archetypeLabel} · Départ : ${selection.spawn.zoneLabel}`
+      );
+      updatePhase('playing');
+    },
+    [applyQuestUpdate, showToast, updatePhase]
+  );
+
+  const handleReplayIntroVoice = useCallback((phaseIndex: 0 | 1) => {
+    engineRefs.current.audio?.playFlorieVoiceLine(phaseIndex);
+  }, []);
+
+  const stopNpcVoiceAudio = useCallback(() => {
+    if (npcVoiceAudioRef.current) {
+      npcVoiceAudioRef.current.pause();
+      npcVoiceAudioRef.current.currentTime = 0;
+    }
+  }, []);
+
   const handleSelectDialogueChoice = useCallback(
     (choice: NPCChoiceData) => {
       let replyText = choice.reply;
+
+      playNpcVoiceUrl(choice.audioUrl);
 
       if (choice.action === 'start-quest-find-room') {
         applyQuestUpdate((q) => startQuest(q, 'quest-find-room'));
@@ -576,24 +1143,40 @@ export default function App() {
         return;
       }
 
+      const isHelenBye = choice.action === 'helen-bye';
+      const isHelenWho = choice.action === 'helen-who';
+      const isSchedule = choice.action === 'show-schedule';
+
       setActiveModal((prev) =>
         prev
           ? {
               ...prev,
               body: replyText,
-              choices: [],
+              choices: isHelenBye
+                ? []
+                : isHelenWho || isSchedule
+                  ? prev.choices
+                  : [],
+              scheduleImageUrl: isSchedule
+                ? '/assets/ui/emploi_du_temps_prototype.jpg'
+                : undefined,
             }
           : null
       );
     },
-    [applyQuestUpdate, showToast]
+    [applyQuestUpdate, showToast, stopNpcVoiceAudio]
   );
 
+  const handleDismissSchedule = useCallback(() => {
+    setActiveModal((prev) => (prev ? { ...prev, scheduleImageUrl: undefined } : null));
+  }, []);
+
   const handleCloseModal = useCallback(() => {
+    stopNpcVoiceAudio();
     setActiveModal(null);
     activeNpcIdRef.current = null;
     updatePhase('playing');
-  }, [updatePhase]);
+  }, [stopNpcVoiceAudio, updatePhase]);
 
   const handleBasketballComplete = useCallback(
     (score: number) => {
@@ -707,10 +1290,70 @@ export default function App() {
       )}
 
       {phase === 'title' && (
-        <TitleOverlay language={settings.language} onStart={handleStartGame} />
+        <TitleOverlay
+          settings={settings}
+          muted={muted}
+          onStartStory={handleStartIntro}
+          onQuickExplore={handleQuickExplore}
+          onUpdateSettings={setSettings}
+          onToggleMute={handleToggleMute}
+          onPlayHoverSfx={() => engineRefs.current.audio?.playUiHover()}
+          onPlayClickSfx={() => engineRefs.current.audio?.playUiClick()}
+          onPlayConfirmSfx={() => engineRefs.current.audio?.playUiConfirm()}
+        />
       )}
 
-      {(phase === 'playing' || phase === 'dialogue') && (
+      {phase === 'intro' && (
+        <IntroCutsceneOverlay
+          introTime={introTime}
+          duration={INTRO_DURATION}
+          onFinish={handleFinishIntro}
+          onReplay={handleStartIntro}
+          onReplayVoice={handleReplayIntroVoice}
+          onVoiceBlip={(ch) => engineRefs.current.audio?.playFlorieBlip(ch)}
+        />
+      )}
+
+      {phase === 'postCustomCutscene' && (
+        <PostCustomCutsceneOverlay
+          subtitle={cutsceneSub}
+          onSkip={handleFinishPostCustomCutscene}
+          onVoiceBlip={handleCharacterBlip}
+        />
+      )}
+
+      {(phase === 'presentation2d' || phase === 'playerChoice') && (
+        <IntroPresentationAndChoiceModal
+          mode={phase}
+          onAdvanceToChoice={handleAdvanceToPlayerChoice}
+          onConfirmChoice={handleConfirmPlayerChoice}
+        />
+      )}
+
+      {(phase === 'genderChoice' || phase === 'customization') && (
+        <PlayerCustomizationModal
+          step={phase}
+          initialGender={playerGender}
+          initialSelection={hairSelection}
+          initialClothesSelection={clothesSelection}
+          initialDisplayOptions={displayOptions}
+          onSelectGender={handleSelectGenderChoice}
+          onBackToGender={() => updatePhase('genderChoice')}
+          onConfirmCustomization={handleConfirmCustomization}
+          onPlayHover={() => engineRefs.current.audio?.playUiHover()}
+          onPlayClick={() => engineRefs.current.audio?.playUiClick()}
+          onPlayConfirm={() => engineRefs.current.audio?.playUiConfirm()}
+          onPlayClothEquip={() => engineRefs.current.audio?.playClothEquipSfx()}
+          onPlayAccessoryEquip={() =>
+            engineRefs.current.audio?.playAccessoryEquipSfx()
+          }
+          onPlayColorSwatch={() => engineRefs.current.audio?.playColorSwatchSfx()}
+          onStartMusic={() => engineRefs.current.audio?.startCustomizationMusic()}
+          onStopMusic={() => engineRefs.current.audio?.stopCustomizationMusic()}
+        />
+      )}
+
+      {phase === 'playing' && (
         <HUD
           zoneName={zoneName}
           buildingName={buildingName}
@@ -724,11 +1367,22 @@ export default function App() {
           questState={questState}
           muted={muted}
           language={settings.language}
-          vrmFileName={vrmFileName}
+          weather={weather}
+          timePhase={timePhase}
           onToggleMute={handleToggleMute}
           onOpenMap={() => updatePhase('map')}
           onOpenPause={() => updatePhase('paused')}
-          onImportVrm={() => vrmInputRef.current?.click()}
+          onPlayIntro={handleOpenCutsceneGallery}
+          onOpenCustomization={() => updatePhase('customization')}
+        />
+      )}
+
+      {showCutsceneGallery && phase === 'playing' && (
+        <CutsceneGalleryModal
+          onSelectCutscene={handlePlayCutsceneFromGallery}
+          onClose={() => setShowCutsceneGallery(false)}
+          onPlayHoverSfx={() => engineRefs.current.audio?.playUiHover()}
+          onPlayClickSfx={() => engineRefs.current.audio?.playUiClick()}
         />
       )}
 
@@ -738,7 +1392,11 @@ export default function App() {
           subtitlesEnabled={settings.subtitlesEnabled}
           onSelectChoice={handleSelectDialogueChoice}
           onClose={handleCloseModal}
+          onDismissSchedule={handleDismissSchedule}
           onBasketballComplete={handleBasketballComplete}
+          onPlayChoiceSfx={() => engineRefs.current.audio?.playUiClick()}
+          onPlayHoverSfx={() => engineRefs.current.audio?.playUiHover()}
+          onVoiceBlip={handleCharacterBlip}
         />
       )}
 

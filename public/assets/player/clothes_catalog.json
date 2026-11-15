@@ -1,0 +1,1524 @@
+{
+  "version": 2,
+  "female": [
+    {
+      "id": "female_Arm1",
+      "rawId": "Arm1",
+      "gender": "female",
+      "category": "arm",
+      "displayName": "Bras & Gants #1",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Arm1.png",
+      "layers": [
+        {
+          "partgroup": "N00_010_01_OnePiece",
+          "mainTextureUrl": "/assets/player/clothes/textures/8b2c85d8a4d0885d.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Arm2",
+      "rawId": "Arm2",
+      "gender": "female",
+      "category": "arm",
+      "displayName": "Bras & Gants #2",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Arm2.png",
+      "layers": [
+        {
+          "partgroup": "N00_010_01_OnePiece",
+          "mainTextureUrl": "/assets/player/clothes/textures/7ba977f8a41e80eb.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Arm3",
+      "rawId": "Arm3",
+      "gender": "female",
+      "category": "arm",
+      "displayName": "Bras & Gants #3",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Arm3.png",
+      "layers": [
+        {
+          "partgroup": "N00_010_01_OnePiece",
+          "mainTextureUrl": "/assets/player/clothes/textures/9e4196a4d77ca3eb.png",
+          "blendShapes": {
+            "ArmInflate4": 5
+          }
+        }
+      ]
+    },
+    {
+      "id": "female_Arm4",
+      "rawId": "Arm4",
+      "gender": "female",
+      "category": "arm",
+      "displayName": "Bras & Gants #4",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Arm4.png",
+      "layers": [
+        {
+          "partgroup": "N00_010_01_OnePiece",
+          "mainTextureUrl": "/assets/player/clothes/textures/4cd6260210565820.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Bottom1",
+      "rawId": "Bottom1",
+      "gender": "female",
+      "category": "bottom",
+      "displayName": "Bas #1",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Bottom1.png",
+      "layers": [
+        {
+          "partgroup": "N00_001_01_Bottoms",
+          "mainTextureUrl": "/assets/player/clothes/textures/a5c882dd94528142.png",
+          "blendShapes": {
+            "PantsCrease": 100
+          }
+        }
+      ]
+    },
+    {
+      "id": "female_Bottom2",
+      "rawId": "Bottom2",
+      "gender": "female",
+      "category": "bottom",
+      "displayName": "Bas #2",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Bottom2.png",
+      "layers": [
+        {
+          "partgroup": "N00_001_01_Bottoms",
+          "mainTextureUrl": "/assets/player/clothes/textures/75b07fcf79c9451d.png",
+          "blendShapes": {
+            "PantsCrease": 100
+          }
+        }
+      ]
+    },
+    {
+      "id": "female_Bottom3",
+      "rawId": "Bottom3",
+      "gender": "female",
+      "category": "bottom",
+      "displayName": "Bas #3",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Bottom3.png",
+      "layers": [
+        {
+          "partgroup": "N00_001_03_Bottoms",
+          "mainTextureUrl": "/assets/player/clothes/textures/95bba4d071d1b13c.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Bottom4",
+      "rawId": "Bottom4",
+      "gender": "female",
+      "category": "bottom",
+      "displayName": "Bas #4",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Bottom4.png",
+      "layers": [
+        {
+          "partgroup": "N00_003_01_Bottoms",
+          "mainTextureUrl": "/assets/player/clothes/textures/618a2c1bd082c335.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Bottom5",
+      "rawId": "Bottom5",
+      "gender": "female",
+      "category": "bottom",
+      "displayName": "Bas #5",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Bottom5.png",
+      "layers": [
+        {
+          "partgroup": "N00_003_01_Bottoms",
+          "mainTextureUrl": "/assets/player/clothes/textures/6f2df7c2afce99f1.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Bottom6",
+      "rawId": "Bottom6",
+      "gender": "female",
+      "category": "bottom",
+      "displayName": "Bas #6",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Bottom6.png",
+      "layers": [
+        {
+          "partgroup": "N00_003_01_Bottoms",
+          "mainTextureUrl": "/assets/player/clothes/textures/1883b4b116e4e9f5.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Bottom7",
+      "rawId": "Bottom7",
+      "gender": "female",
+      "category": "bottom",
+      "displayName": "Bas #7",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Bottom7.png",
+      "layers": [
+        {
+          "partgroup": "N00_003_01_Bottoms",
+          "mainTextureUrl": "/assets/player/clothes/textures/925bc8ffd2e87dd6.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Bottom8",
+      "rawId": "Bottom8",
+      "gender": "female",
+      "category": "bottom",
+      "displayName": "Bas #8",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Bottom8.png",
+      "layers": [
+        {
+          "partgroup": "N00_011_03_Bottoms",
+          "mainTextureUrl": "/assets/player/clothes/textures/1c80fc56893c3531.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Bottom9",
+      "rawId": "Bottom9",
+      "gender": "female",
+      "category": "bottom",
+      "displayName": "Bas #9",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Bottom9.png",
+      "layers": [
+        {
+          "partgroup": "N00_011_04_Bottoms",
+          "mainTextureUrl": "/assets/player/clothes/textures/7fd18c402cda321f.png",
+          "blendShapes": {
+            "LegCrease": 100
+          }
+        }
+      ]
+    },
+    {
+      "id": "female_Bottom10",
+      "rawId": "Bottom10",
+      "gender": "female",
+      "category": "bottom",
+      "displayName": "Bas #10",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Bottom10.png",
+      "layers": [
+        {
+          "partgroup": "N00_010_01_OnePiece",
+          "mainTextureUrl": "/assets/player/clothes/textures/b10ecee4b172ace6.png",
+          "blendShapes": {
+            "LegPuff1": 85,
+            "NavelFlat": 100,
+            "ButtFlat1": 77,
+            "HipFlat": 35,
+            "LegFlat1": 84
+          }
+        }
+      ]
+    },
+    {
+      "id": "female_Bottom11",
+      "rawId": "Bottom11",
+      "gender": "female",
+      "category": "bottom",
+      "displayName": "Bas #11",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Bottom11.png",
+      "layers": [
+        {
+          "partgroup": "N00_010_01_OnePiece",
+          "mainTextureUrl": "/assets/player/clothes/textures/65687215cbf65504.png",
+          "blendShapes": {
+            "NavelFlat": 100,
+            "ButtFlat1": 77,
+            "HipFlat": 35,
+            "LegFlat1": 38
+          }
+        }
+      ]
+    },
+    {
+      "id": "female_Bottom12",
+      "rawId": "Bottom12",
+      "gender": "female",
+      "category": "bottom",
+      "displayName": "Bas #12",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Bottom12.png",
+      "layers": [
+        {
+          "partgroup": "N00_001_01_Bottoms",
+          "mainTextureUrl": "/assets/player/clothes/textures/bbd9777e43a77f52.png",
+          "blendShapes": {
+            "PantsCrease": 100
+          }
+        }
+      ]
+    },
+    {
+      "id": "female_Dress1",
+      "rawId": "Dress1",
+      "gender": "female",
+      "category": "dress",
+      "displayName": "Robe / Tenue #1",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Dress1.png",
+      "layers": [
+        {
+          "partgroup": "N00_010_01_OnePiece",
+          "mainTextureUrl": "/assets/player/clothes/textures/73c1431815649e0d.png",
+          "blendShapes": {
+            "ClavicleLow": 100,
+            "AllInflate": 25,
+            "ArmPuff2": 34,
+            "ArmPuff3": 100,
+            "ClavicleFlat": 100,
+            "NavelFlat": 100,
+            "TorsoFlat": 80,
+            "ButtFlat1": 100
+          }
+        },
+        {
+          "partgroup": "N00_010_01_OnePiece",
+          "mainTextureUrl": "/assets/player/clothes/textures/6cb9457581745d65.png",
+          "blendShapes": {
+            "ClavicleLow": 100,
+            "AllInflate": 100,
+            "LegInflate4": 55,
+            "BustFlat2": 74,
+            "NavelFlat": 100,
+            "TorsoFlat": 100,
+            "ButtFlat1": 100,
+            "HipFlat": 100,
+            "LegFlat1": 100
+          }
+        }
+      ]
+    },
+    {
+      "id": "female_Dress2",
+      "rawId": "Dress2",
+      "gender": "female",
+      "category": "dress",
+      "displayName": "Robe / Tenue #2",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Dress2.png",
+      "skinAlphaMaskUrl": "/assets/player/clothes/textures/35bfd9cb09993407.png",
+      "layers": [
+        {
+          "partgroup": "N00_002_04_Tops",
+          "mainTextureUrl": "/assets/player/clothes/textures/a4390c736aacc079.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Dress3",
+      "rawId": "Dress3",
+      "gender": "female",
+      "category": "dress",
+      "displayName": "Robe / Tenue #3",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Dress3.png",
+      "skinAlphaMaskUrl": "/assets/player/clothes/textures/0b93d0880453eb99.png",
+      "layers": [
+        {
+          "partgroup": "N00_002_03_Tops",
+          "mainTextureUrl": "/assets/player/clothes/textures/026ae7b3635b608b.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Dress5",
+      "rawId": "Dress5",
+      "gender": "female",
+      "category": "dress",
+      "displayName": "Robe / Tenue #5",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Dress5.png",
+      "skinAlphaMaskUrl": "/assets/player/clothes/textures/a8381a47b14d0048.png",
+      "layers": [
+        {
+          "partgroup": "N00_002_02_Tops",
+          "mainTextureUrl": "/assets/player/clothes/textures/d289d99cd18eda42.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Dress6",
+      "rawId": "Dress6",
+      "gender": "female",
+      "category": "dress",
+      "displayName": "Robe / Tenue #6",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Dress6.png",
+      "skinAlphaMaskUrl": "/assets/player/clothes/textures/0b93d0880453eb99.png",
+      "layers": [
+        {
+          "partgroup": "N00_002_02_Tops",
+          "mainTextureUrl": "/assets/player/clothes/textures/08a297823ca57ce3.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Dress7",
+      "rawId": "Dress7",
+      "gender": "female",
+      "category": "dress",
+      "displayName": "Robe / Tenue #7",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Dress7.png",
+      "skinAlphaMaskUrl": "/assets/player/clothes/textures/b10ccebdb33c401b.png",
+      "layers": [
+        {
+          "partgroup": "N00_002_01_Tops",
+          "mainTextureUrl": "/assets/player/clothes/textures/e592ab8d1cf9229b.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Dress8",
+      "rawId": "Dress8",
+      "gender": "female",
+      "category": "dress",
+      "displayName": "Robe / Tenue #8",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Dress8.png",
+      "skinAlphaMaskUrl": "/assets/player/clothes/textures/c1adb608a429b0da.png",
+      "layers": [
+        {
+          "partgroup": "N00_002_01_Tops",
+          "mainTextureUrl": "/assets/player/clothes/textures/a14dc94eea3baf09.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Dress9",
+      "rawId": "Dress9",
+      "gender": "female",
+      "category": "dress",
+      "displayName": "Robe / Tenue #9",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Dress9.png",
+      "skinAlphaMaskUrl": "/assets/player/clothes/textures/35bfd9cb09993407.png",
+      "layers": [
+        {
+          "partgroup": "N00_002_01_Tops",
+          "mainTextureUrl": "/assets/player/clothes/textures/3ad3589aee2dd04c.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Glasses1",
+      "rawId": "Glasses1",
+      "gender": "female",
+      "category": "glasses",
+      "displayName": "Lunettes #1",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Glasses1.png",
+      "layers": [
+        {
+          "partgroup": "GlassesHi",
+          "mainTextureUrl": "/assets/player/clothes/textures/6b9f630af2dd4057.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Glasses2",
+      "rawId": "Glasses2",
+      "gender": "female",
+      "category": "glasses",
+      "displayName": "Lunettes #2",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Glasses2.png",
+      "layers": [
+        {
+          "partgroup": "GlassesLow",
+          "mainTextureUrl": "/assets/player/clothes/textures/6b9f630af2dd4057.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Neck1",
+      "rawId": "Neck1",
+      "gender": "female",
+      "category": "neck",
+      "displayName": "Col & Cravate #1",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Neck1.png",
+      "layers": [
+        {
+          "partgroup": "N00_007_02_Accessory_Tie",
+          "mainTextureUrl": "/assets/player/clothes/textures/d42ca7827ca3dff9.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Neck2",
+      "rawId": "Neck2",
+      "gender": "female",
+      "category": "neck",
+      "displayName": "Col & Cravate #2",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Neck2.png",
+      "layers": [
+        {
+          "partgroup": "N00_007_01_Accessory_Tie",
+          "mainTextureUrl": "/assets/player/clothes/textures/2802d8bdfa445cfc.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Neck3",
+      "rawId": "Neck3",
+      "gender": "female",
+      "category": "neck",
+      "displayName": "Col & Cravate #3",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Neck3.png",
+      "layers": [
+        {
+          "partgroup": "N00_001_02_Accessory_Tie",
+          "mainTextureUrl": "/assets/player/clothes/textures/502348f01be19149.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Neck4",
+      "rawId": "Neck4",
+      "gender": "female",
+      "category": "neck",
+      "displayName": "Col & Cravate #4",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Neck4.png",
+      "layers": [
+        {
+          "partgroup": "N00_001_01_Accessory_Tie",
+          "mainTextureUrl": "/assets/player/clothes/textures/58d961cd7302bdb3.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Shoes1",
+      "rawId": "Shoes1",
+      "gender": "female",
+      "category": "shoes",
+      "displayName": "Chaussures #1",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Shoes1.png",
+      "layers": [
+        {
+          "partgroup": "N00_009_01_Shoes",
+          "mainTextureUrl": "/assets/player/clothes/textures/c1ac33c7ababa2d8.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Shoes2",
+      "rawId": "Shoes2",
+      "gender": "female",
+      "category": "shoes",
+      "displayName": "Chaussures #2",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Shoes2.png",
+      "layers": [
+        {
+          "partgroup": "N00_009_01_Shoes",
+          "mainTextureUrl": "/assets/player/clothes/textures/9ecc288d4d173a87.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Shoes3",
+      "rawId": "Shoes3",
+      "gender": "female",
+      "category": "shoes",
+      "displayName": "Chaussures #3",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Shoes3.png",
+      "layers": [
+        {
+          "partgroup": "N00_001_01_Shoes",
+          "mainTextureUrl": "/assets/player/clothes/textures/5b099237d6e6d1d9.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Shoes4",
+      "rawId": "Shoes4",
+      "gender": "female",
+      "category": "shoes",
+      "displayName": "Chaussures #4",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Shoes4.png",
+      "layers": [
+        {
+          "partgroup": "N00_003_01_Shoes",
+          "mainTextureUrl": "/assets/player/clothes/textures/86e079d8cc4cc1e8.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Shoes5",
+      "rawId": "Shoes5",
+      "gender": "female",
+      "category": "shoes",
+      "displayName": "Chaussures #5",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Shoes5.png",
+      "layers": [
+        {
+          "partgroup": "N00_005_01_Shoes",
+          "mainTextureUrl": "/assets/player/clothes/textures/1fb1f4746423827f.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Shoes6",
+      "rawId": "Shoes6",
+      "gender": "female",
+      "category": "shoes",
+      "displayName": "Chaussures #6",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Shoes6.png",
+      "layers": [
+        {
+          "partgroup": "N00_006_01_Shoes",
+          "mainTextureUrl": "/assets/player/clothes/textures/f717c852083c2cf3.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Shoes7",
+      "rawId": "Shoes7",
+      "gender": "female",
+      "category": "shoes",
+      "displayName": "Chaussures #7",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Shoes7.png",
+      "layers": [
+        {
+          "partgroup": "N00_004_01_Shoes",
+          "mainTextureUrl": "/assets/player/clothes/textures/d405c615a8b3ebdc.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Socks1",
+      "rawId": "Socks1",
+      "gender": "female",
+      "category": "socks",
+      "displayName": "Chaussettes #1",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Socks1.png",
+      "layers": [
+        {
+          "partgroup": "SkinOverlay",
+          "mainTextureUrl": "/assets/player/clothes/textures/66abefc01fc10fde.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Socks2",
+      "rawId": "Socks2",
+      "gender": "female",
+      "category": "socks",
+      "displayName": "Chaussettes #2",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Socks2.png",
+      "layers": [
+        {
+          "partgroup": "SkinOverlay",
+          "mainTextureUrl": "/assets/player/clothes/textures/7474f8f61d502839.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Socks3",
+      "rawId": "Socks3",
+      "gender": "female",
+      "category": "socks",
+      "displayName": "Chaussettes #3",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Socks3.png",
+      "layers": [
+        {
+          "partgroup": "SkinOverlay",
+          "mainTextureUrl": "/assets/player/clothes/textures/18ea65962f747ef1.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Socks4",
+      "rawId": "Socks4",
+      "gender": "female",
+      "category": "socks",
+      "displayName": "Chaussettes #4",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Socks4.png",
+      "layers": [
+        {
+          "partgroup": "SkinOverlay",
+          "mainTextureUrl": "/assets/player/clothes/textures/b646f6c1ed0232b7.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Socks5",
+      "rawId": "Socks5",
+      "gender": "female",
+      "category": "socks",
+      "displayName": "Chaussettes #5",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Socks5.png",
+      "layers": [
+        {
+          "partgroup": "SkinOverlay",
+          "mainTextureUrl": "/assets/player/clothes/textures/758e9b0059707749.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Socks6",
+      "rawId": "Socks6",
+      "gender": "female",
+      "category": "socks",
+      "displayName": "Chaussettes #6",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Socks6.png",
+      "layers": [
+        {
+          "partgroup": "SkinOverlay",
+          "mainTextureUrl": "/assets/player/clothes/textures/b71bd48fa55e6bde.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Socks7",
+      "rawId": "Socks7",
+      "gender": "female",
+      "category": "socks",
+      "displayName": "Chaussettes #7",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Socks7.png",
+      "layers": [
+        {
+          "partgroup": "N00_010_01_OnePiece",
+          "mainTextureUrl": "/assets/player/clothes/textures/862f390fa9f1e22f.png",
+          "blendShapes": {
+            "AllInflate": 31.718
+          }
+        },
+        {
+          "partgroup": "N00_010_01_OnePiece",
+          "mainTextureUrl": "/assets/player/clothes/textures/4f3d92574b42dbd6.png",
+          "blendShapes": {}
+        },
+        {
+          "partgroup": "SkinOverlay",
+          "mainTextureUrl": "/assets/player/clothes/textures/7c6091cc55338487.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Socks8",
+      "rawId": "Socks8",
+      "gender": "female",
+      "category": "socks",
+      "displayName": "Chaussettes #8",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Socks8.png",
+      "layers": [
+        {
+          "partgroup": "SkinOverlay",
+          "mainTextureUrl": "/assets/player/clothes/textures/50f3ea5c1de4e462.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "female_Top1",
+      "rawId": "Top1",
+      "gender": "female",
+      "category": "top",
+      "displayName": "Haut #1",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Top1.png",
+      "layers": [
+        {
+          "partgroup": "N00_010_01_OnePiece",
+          "mainTextureUrl": "/assets/player/clothes/textures/72bbba85706ba3ab.png",
+          "blendShapes": {
+            "ClavicleLow": 100,
+            "AllInflate": 45,
+            "ArmPuff3": 11,
+            "ClavicleFlat": 100,
+            "NavelFlat": 100,
+            "TorsoFlat": 80,
+            "ButtFlat1": 100
+          }
+        }
+      ]
+    },
+    {
+      "id": "female_Top2",
+      "rawId": "Top2",
+      "gender": "female",
+      "category": "top",
+      "displayName": "Haut #2",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Top2.png",
+      "layers": [
+        {
+          "partgroup": "N00_010_01_OnePiece",
+          "mainTextureUrl": "/assets/player/clothes/textures/475fbc0c5ea84738.png",
+          "blendShapes": {
+            "ClavicleLow": 62,
+            "ArmPuff2": 90,
+            "ClavicleFlat": 77,
+            "BustFlat2": 87,
+            "NavelFlat": 100
+          }
+        },
+        {
+          "partgroup": "N00_010_01_OnePiece",
+          "mainTextureUrl": "/assets/player/clothes/textures/83276885ef689e3b.png",
+          "blendShapes": {
+            "ClavicleLow": 100,
+            "AllInflate": 45,
+            "ArmPuff2": 90,
+            "ClavicleFlat": 77,
+            "BustFlat2": 87,
+            "NavelFlat": 100
+          }
+        }
+      ]
+    },
+    {
+      "id": "female_Top3",
+      "rawId": "Top3",
+      "gender": "female",
+      "category": "top",
+      "displayName": "Haut #3",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Top3.png",
+      "skinAlphaMaskUrl": "/assets/player/clothes/textures/804728cb362a612f.png",
+      "layers": [
+        {
+          "partgroup": "N00_005_01_Tops",
+          "mainTextureUrl": "/assets/player/clothes/textures/7d928c97295d4014.png",
+          "blendShapes": {
+            "SleeveThick": 100,
+            "SleeveSqueeze": 100,
+            "SleeveCrease": 100
+          }
+        }
+      ]
+    },
+    {
+      "id": "female_Top4",
+      "rawId": "Top4",
+      "gender": "female",
+      "category": "top",
+      "displayName": "Haut #4",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Top4.png",
+      "skinAlphaMaskUrl": "/assets/player/clothes/textures/690e870016f7f6fe.png",
+      "layers": [
+        {
+          "partgroup": "N00_005_01_Tops",
+          "mainTextureUrl": "/assets/player/clothes/textures/f230a2d2f69b02f9.png",
+          "blendShapes": {
+            "SleeveThick": 100,
+            "SleeveSqueeze": 100,
+            "SleeveCrease": 100
+          }
+        }
+      ]
+    },
+    {
+      "id": "female_Top5",
+      "rawId": "Top5",
+      "gender": "female",
+      "category": "top",
+      "displayName": "Haut #5",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Top5.png",
+      "skinAlphaMaskUrl": "/assets/player/clothes/textures/ddc9bdbf1e67977b.png",
+      "layers": [
+        {
+          "partgroup": "N00_003_01_Tops",
+          "mainTextureUrl": "/assets/player/clothes/textures/4e14edf29fd3d494.png",
+          "blendShapes": {
+            "SleeveNarrow": 100
+          }
+        }
+      ]
+    },
+    {
+      "id": "female_Top6",
+      "rawId": "Top6",
+      "gender": "female",
+      "category": "top",
+      "displayName": "Haut #6",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Top6.png",
+      "skinAlphaMaskUrl": "/assets/player/clothes/textures/e7f85cc3f3652a41.png",
+      "layers": [
+        {
+          "partgroup": "N00_004_01_Tops",
+          "mainTextureUrl": "/assets/player/clothes/textures/8c2f79c8c198a930.png",
+          "blendShapes": {
+            "SleeveLong": 50
+          }
+        }
+      ]
+    },
+    {
+      "id": "female_Top7",
+      "rawId": "Top7",
+      "gender": "female",
+      "category": "top",
+      "displayName": "Haut #7",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Top7.png",
+      "layers": [
+        {
+          "partgroup": "N00_010_01_OnePiece",
+          "mainTextureUrl": "/assets/player/clothes/textures/1c26eb55967458b2.png",
+          "blendShapes": {
+            "ClavicleLow": 100,
+            "AllInflate": 100,
+            "ArmPuff3": 11,
+            "ClavicleFlat": 100,
+            "BustFlat2": 60,
+            "NavelFlat": 100,
+            "TorsoFlat": 100,
+            "ButtFlat1": 100
+          }
+        }
+      ]
+    },
+    {
+      "id": "female_Top8",
+      "rawId": "Top8",
+      "gender": "female",
+      "category": "top",
+      "displayName": "Haut #8",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/female/Top8.png",
+      "skinAlphaMaskUrl": "/assets/player/clothes/textures/690e870016f7f6fe.png",
+      "layers": [
+        {
+          "partgroup": "N00_001_02_Tops",
+          "mainTextureUrl": "/assets/player/clothes/textures/8f9501d49174592c.png",
+          "blendShapes": {
+            "SleeveCrease": 100,
+            "CuffTightness": 100
+          }
+        }
+      ]
+    }
+  ],
+  "male": [
+    {
+      "id": "male_Arm1",
+      "rawId": "Arm1",
+      "gender": "male",
+      "category": "arm",
+      "displayName": "Bras & Gants #1",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Arm1.png",
+      "layers": [
+        {
+          "partgroup": "N00_010_01_OnePiece",
+          "mainTextureUrl": "/assets/player/clothes/textures/8b2c85d8a4d0885d.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "male_Arm2",
+      "rawId": "Arm2",
+      "gender": "male",
+      "category": "arm",
+      "displayName": "Bras & Gants #2",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Arm2.png",
+      "layers": [
+        {
+          "partgroup": "N00_010_01_OnePiece",
+          "mainTextureUrl": "/assets/player/clothes/textures/7ba977f8a41e80eb.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "male_Arm3",
+      "rawId": "Arm3",
+      "gender": "male",
+      "category": "arm",
+      "displayName": "Bras & Gants #3",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Arm3.png",
+      "layers": [
+        {
+          "partgroup": "N00_010_01_OnePiece",
+          "mainTextureUrl": "/assets/player/clothes/textures/9e4196a4d77ca3eb.png",
+          "blendShapes": {
+            "ArmInflate4": 5
+          }
+        }
+      ]
+    },
+    {
+      "id": "male_Arm4",
+      "rawId": "Arm4",
+      "gender": "male",
+      "category": "arm",
+      "displayName": "Bras & Gants #4",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Arm4.png",
+      "layers": [
+        {
+          "partgroup": "N00_010_01_OnePiece",
+          "mainTextureUrl": "/assets/player/clothes/textures/4cd6260210565820.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "male_Arm5",
+      "rawId": "Arm5",
+      "gender": "male",
+      "category": "arm",
+      "displayName": "Bras & Gants #5",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Arm5.png",
+      "skinAlphaMaskUrl": "/assets/player/clothes/textures/b4a53464dc7529d2.png",
+      "layers": [
+        {
+          "partgroup": "N00_002_01_Tops",
+          "mainTextureUrl": "/assets/player/clothes/textures/cca69880b3c61593.png",
+          "blendShapes": {
+            "SleeveWidth": 30
+          }
+        }
+      ]
+    },
+    {
+      "id": "male_Arm6",
+      "rawId": "Arm6",
+      "gender": "male",
+      "category": "arm",
+      "displayName": "Bras & Gants #6",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Arm6.png",
+      "layers": [
+        {
+          "partgroup": "N00_010_01_OnePiece",
+          "mainTextureUrl": "/assets/player/clothes/textures/223a4ac085053ac5.png",
+          "blendShapes": {
+            "ArmInflate1": 8,
+            "FingerInflate": 14
+          }
+        },
+        {
+          "partgroup": "N00_010_01_OnePiece",
+          "mainTextureUrl": "/assets/player/clothes/textures/31ac32f4958488ba.png",
+          "blendShapes": {
+            "ArmFlat1": 59,
+            "FingerSharpen": 47
+          }
+        }
+      ]
+    },
+    {
+      "id": "male_Bottom1",
+      "rawId": "Bottom1",
+      "gender": "male",
+      "category": "bottom",
+      "displayName": "Bas #1",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Bottom1.png",
+      "layers": [
+        {
+          "partgroup": "N00_001_01_Bottoms",
+          "mainTextureUrl": "/assets/player/clothes/textures/a5c882dd94528142.png",
+          "blendShapes": {
+            "PantsCrease": 100
+          }
+        }
+      ]
+    },
+    {
+      "id": "male_Bottom2",
+      "rawId": "Bottom2",
+      "gender": "male",
+      "category": "bottom",
+      "displayName": "Bas #2",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Bottom2.png",
+      "layers": [
+        {
+          "partgroup": "N00_001_01_Bottoms",
+          "mainTextureUrl": "/assets/player/clothes/textures/75b07fcf79c9451d.png",
+          "blendShapes": {
+            "PantsCrease": 100
+          }
+        }
+      ]
+    },
+    {
+      "id": "male_Bottom3",
+      "rawId": "Bottom3",
+      "gender": "male",
+      "category": "bottom",
+      "displayName": "Bas #3",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Bottom3.png",
+      "layers": [
+        {
+          "partgroup": "N00_011_03_Bottoms",
+          "mainTextureUrl": "/assets/player/clothes/textures/1c80fc56893c3531.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "male_Bottom4",
+      "rawId": "Bottom4",
+      "gender": "male",
+      "category": "bottom",
+      "displayName": "Bas #4",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Bottom4.png",
+      "layers": [
+        {
+          "partgroup": "N00_011_04_Bottoms",
+          "mainTextureUrl": "/assets/player/clothes/textures/7fd18c402cda321f.png",
+          "blendShapes": {
+            "LegCrease": 100
+          }
+        }
+      ]
+    },
+    {
+      "id": "male_Bottom5",
+      "rawId": "Bottom5",
+      "gender": "male",
+      "category": "bottom",
+      "displayName": "Bas #5",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Bottom5.png",
+      "layers": [
+        {
+          "partgroup": "N00_010_01_OnePiece",
+          "mainTextureUrl": "/assets/player/clothes/textures/b10ecee4b172ace6.png",
+          "blendShapes": {
+            "LegPuff1": 85,
+            "NavelFlat": 100,
+            "ButtFlat1": 77,
+            "HipFlat": 35,
+            "LegFlat1": 84
+          }
+        }
+      ]
+    },
+    {
+      "id": "male_Bottom6",
+      "rawId": "Bottom6",
+      "gender": "male",
+      "category": "bottom",
+      "displayName": "Bas #6",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Bottom6.png",
+      "layers": [
+        {
+          "partgroup": "N00_010_01_OnePiece",
+          "mainTextureUrl": "/assets/player/clothes/textures/65687215cbf65504.png",
+          "blendShapes": {
+            "NavelFlat": 100,
+            "ButtFlat1": 77,
+            "HipFlat": 35,
+            "LegFlat1": 38
+          }
+        }
+      ]
+    },
+    {
+      "id": "male_Bottom7",
+      "rawId": "Bottom7",
+      "gender": "male",
+      "category": "bottom",
+      "displayName": "Bas #7",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Bottom7.png",
+      "layers": [
+        {
+          "partgroup": "N00_001_01_Bottoms",
+          "mainTextureUrl": "/assets/player/clothes/textures/bbd9777e43a77f52.png",
+          "blendShapes": {
+            "PantsCrease": 100
+          }
+        }
+      ]
+    },
+    {
+      "id": "male_Glasses1",
+      "rawId": "Glasses1",
+      "gender": "male",
+      "category": "glasses",
+      "displayName": "Lunettes #1",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Glasses1.png",
+      "layers": [
+        {
+          "partgroup": "GlassesHi",
+          "mainTextureUrl": "/assets/player/clothes/textures/6b9f630af2dd4057.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "male_Glasses2",
+      "rawId": "Glasses2",
+      "gender": "male",
+      "category": "glasses",
+      "displayName": "Lunettes #2",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Glasses2.png",
+      "layers": [
+        {
+          "partgroup": "GlassesLow",
+          "mainTextureUrl": "/assets/player/clothes/textures/6b9f630af2dd4057.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "male_Neck1",
+      "rawId": "Neck1",
+      "gender": "male",
+      "category": "neck",
+      "displayName": "Col & Cravate #1",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Neck1.png",
+      "layers": [
+        {
+          "partgroup": "N00_007_02_Accessory_Tie",
+          "mainTextureUrl": "/assets/player/clothes/textures/d42ca7827ca3dff9.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "male_Neck2",
+      "rawId": "Neck2",
+      "gender": "male",
+      "category": "neck",
+      "displayName": "Col & Cravate #2",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Neck2.png",
+      "layers": [
+        {
+          "partgroup": "N00_007_01_Accessory_Tie",
+          "mainTextureUrl": "/assets/player/clothes/textures/2802d8bdfa445cfc.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "male_Neck3",
+      "rawId": "Neck3",
+      "gender": "male",
+      "category": "neck",
+      "displayName": "Col & Cravate #3",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Neck3.png",
+      "layers": [
+        {
+          "partgroup": "N00_001_02_Accessory_Tie",
+          "mainTextureUrl": "/assets/player/clothes/textures/502348f01be19149.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "male_Neck4",
+      "rawId": "Neck4",
+      "gender": "male",
+      "category": "neck",
+      "displayName": "Col & Cravate #4",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Neck4.png",
+      "layers": [
+        {
+          "partgroup": "N00_001_01_Accessory_Tie",
+          "mainTextureUrl": "/assets/player/clothes/textures/58d961cd7302bdb3.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "male_Shoes1",
+      "rawId": "Shoes1",
+      "gender": "male",
+      "category": "shoes",
+      "displayName": "Chaussures #1",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Shoes1.png",
+      "layers": [
+        {
+          "partgroup": "N00_001_01_Shoes",
+          "mainTextureUrl": "/assets/player/clothes/textures/5b099237d6e6d1d9.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "male_Shoes2",
+      "rawId": "Shoes2",
+      "gender": "male",
+      "category": "shoes",
+      "displayName": "Chaussures #2",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Shoes2.png",
+      "layers": [
+        {
+          "partgroup": "N00_005_01_Shoes",
+          "mainTextureUrl": "/assets/player/clothes/textures/1fb1f4746423827f.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "male_Shoes3",
+      "rawId": "Shoes3",
+      "gender": "male",
+      "category": "shoes",
+      "displayName": "Chaussures #3",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Shoes3.png",
+      "layers": [
+        {
+          "partgroup": "N00_006_01_Shoes",
+          "mainTextureUrl": "/assets/player/clothes/textures/f717c852083c2cf3.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "male_Shoes4",
+      "rawId": "Shoes4",
+      "gender": "male",
+      "category": "shoes",
+      "displayName": "Chaussures #4",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Shoes4.png",
+      "layers": [
+        {
+          "partgroup": "N00_006_01_Shoes",
+          "mainTextureUrl": "/assets/player/clothes/textures/f717c852083c2cf3.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "male_Shoes5",
+      "rawId": "Shoes5",
+      "gender": "male",
+      "category": "shoes",
+      "displayName": "Chaussures #5",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Shoes5.png",
+      "layers": [
+        {
+          "partgroup": "N00_004_01_Shoes",
+          "mainTextureUrl": "/assets/player/clothes/textures/d405c615a8b3ebdc.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "male_Socks1",
+      "rawId": "Socks1",
+      "gender": "male",
+      "category": "socks",
+      "displayName": "Chaussettes #1",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Socks1.png",
+      "layers": [
+        {
+          "partgroup": "SkinOverlay",
+          "mainTextureUrl": "/assets/player/clothes/textures/7474f8f61d502839.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "male_Socks2",
+      "rawId": "Socks2",
+      "gender": "male",
+      "category": "socks",
+      "displayName": "Chaussettes #2",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Socks2.png",
+      "layers": [
+        {
+          "partgroup": "SkinOverlay",
+          "mainTextureUrl": "/assets/player/clothes/textures/18ea65962f747ef1.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "male_Socks3",
+      "rawId": "Socks3",
+      "gender": "male",
+      "category": "socks",
+      "displayName": "Chaussettes #3",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Socks3.png",
+      "layers": [
+        {
+          "partgroup": "SkinOverlay",
+          "mainTextureUrl": "/assets/player/clothes/textures/b646f6c1ed0232b7.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "male_Socks4",
+      "rawId": "Socks4",
+      "gender": "male",
+      "category": "socks",
+      "displayName": "Chaussettes #4",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Socks4.png",
+      "layers": [
+        {
+          "partgroup": "SkinOverlay",
+          "mainTextureUrl": "/assets/player/clothes/textures/b71bd48fa55e6bde.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "male_Socks5",
+      "rawId": "Socks5",
+      "gender": "male",
+      "category": "socks",
+      "displayName": "Chaussettes #5",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Socks5.png",
+      "layers": [
+        {
+          "partgroup": "N00_010_01_OnePiece",
+          "mainTextureUrl": "/assets/player/clothes/textures/862f390fa9f1e22f.png",
+          "blendShapes": {
+            "AllInflate": 31.718
+          }
+        },
+        {
+          "partgroup": "N00_010_01_OnePiece",
+          "mainTextureUrl": "/assets/player/clothes/textures/4f3d92574b42dbd6.png",
+          "blendShapes": {}
+        },
+        {
+          "partgroup": "SkinOverlay",
+          "mainTextureUrl": "/assets/player/clothes/textures/7c6091cc55338487.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "male_Socks6",
+      "rawId": "Socks6",
+      "gender": "male",
+      "category": "socks",
+      "displayName": "Chaussettes #6",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Socks6.png",
+      "layers": [
+        {
+          "partgroup": "SkinOverlay",
+          "mainTextureUrl": "/assets/player/clothes/textures/50f3ea5c1de4e462.png",
+          "blendShapes": {}
+        }
+      ]
+    },
+    {
+      "id": "male_Top1",
+      "rawId": "Top1",
+      "gender": "male",
+      "category": "top",
+      "displayName": "Haut #1",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Top1.png",
+      "layers": [
+        {
+          "partgroup": "N00_010_01_OnePiece",
+          "mainTextureUrl": "/assets/player/clothes/textures/72bbba85706ba3ab.png",
+          "blendShapes": {
+            "ClavicleLow": 100,
+            "AllInflate": 45,
+            "ArmPuff3": 11,
+            "ClavicleFlat": 100,
+            "NavelFlat": 100,
+            "TorsoFlat": 80,
+            "ButtFlat1": 100
+          }
+        }
+      ]
+    },
+    {
+      "id": "male_Top2",
+      "rawId": "Top2",
+      "gender": "male",
+      "category": "top",
+      "displayName": "Haut #2",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Top2.png",
+      "skinAlphaMaskUrl": "/assets/player/clothes/textures/804728cb362a612f.png",
+      "layers": [
+        {
+          "partgroup": "N00_005_01_Tops",
+          "mainTextureUrl": "/assets/player/clothes/textures/7d928c97295d4014.png",
+          "blendShapes": {
+            "SleeveThick": 100,
+            "SleeveSqueeze": 100,
+            "SleeveCrease": 100
+          }
+        }
+      ]
+    },
+    {
+      "id": "male_Top3",
+      "rawId": "Top3",
+      "gender": "male",
+      "category": "top",
+      "displayName": "Haut #3",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Top3.png",
+      "skinAlphaMaskUrl": "/assets/player/clothes/textures/690e870016f7f6fe.png",
+      "layers": [
+        {
+          "partgroup": "N00_005_01_Tops",
+          "mainTextureUrl": "/assets/player/clothes/textures/f230a2d2f69b02f9.png",
+          "blendShapes": {
+            "SleeveThick": 100,
+            "SleeveSqueeze": 100,
+            "SleeveCrease": 100
+          }
+        }
+      ]
+    },
+    {
+      "id": "male_Top4",
+      "rawId": "Top4",
+      "gender": "male",
+      "category": "top",
+      "displayName": "Haut #4",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Top4.png",
+      "layers": [
+        {
+          "partgroup": "N00_010_01_OnePiece",
+          "mainTextureUrl": "/assets/player/clothes/textures/1c26eb55967458b2.png",
+          "blendShapes": {
+            "ClavicleLow": 100,
+            "AllInflate": 100,
+            "ArmPuff3": 11,
+            "ClavicleFlat": 100,
+            "BustFlat2": 60,
+            "NavelFlat": 100,
+            "TorsoFlat": 100,
+            "ButtFlat1": 100
+          }
+        }
+      ]
+    },
+    {
+      "id": "male_Top5",
+      "rawId": "Top5",
+      "gender": "male",
+      "category": "top",
+      "displayName": "Haut #5",
+      "thumbnailUrl": "/assets/player/clothes/thumbnails/male/Top5.png",
+      "skinAlphaMaskUrl": "/assets/player/clothes/textures/690e870016f7f6fe.png",
+      "layers": [
+        {
+          "partgroup": "N00_001_02_Tops",
+          "mainTextureUrl": "/assets/player/clothes/textures/8f9501d49174592c.png",
+          "blendShapes": {
+            "SleeveCrease": 100,
+            "CuffTightness": 100
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -173,9 +173,20 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+  const listenWithFallback = (port: number) => {
+    const server = app.listen(port, '0.0.0.0', () => {
+      console.log(`Server running on http://localhost:${port}`);
+    });
+    server.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EADDRINUSE') {
+        console.warn(`Port ${port} is in use, trying ${port + 1}...`);
+        listenWithFallback(port + 1);
+      } else {
+        throw err;
+      }
+    });
+  };
+  listenWithFallback(Number(process.env.PORT) || PORT);
 }
 
 void startServer();

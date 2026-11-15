@@ -21,6 +21,7 @@ export interface GameSettings {
   mouseSensitivity: number;
   graphicsQuality: GraphicsQuality;
   dayCycleEnabled: boolean;
+  titleTravelingEnabled: boolean;
   subtitlesEnabled: boolean;
   reducedMotion: boolean;
   colorblindMode: ColorblindMode;
@@ -45,7 +46,8 @@ export const DEFAULT_SETTINGS: GameSettings = {
   masterVolume: 0.65,
   mouseSensitivity: 1.0,
   graphicsQuality: 'medium',
-  dayCycleEnabled: false,
+  dayCycleEnabled: true,
+  titleTravelingEnabled: true,
   subtitlesEnabled: true,
   reducedMotion: false,
   colorblindMode: 'none',

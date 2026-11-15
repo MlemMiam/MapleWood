@@ -39,6 +39,13 @@ export class PhysicsWorld {
     return this.world.createCollider(colliderDesc, body);
   }
 
+  public addStaticTrimesh(vertices: Float32Array, indices: Uint32Array): RAPIER.Collider {
+    const bodyDesc = RAPIER.RigidBodyDesc.fixed();
+    const body = this.world.createRigidBody(bodyDesc);
+    const colliderDesc = RAPIER.ColliderDesc.trimesh(vertices, indices);
+    return this.world.createCollider(colliderDesc, body);
+  }
+
   public addStaticCylinder(
     cx: number,
     cy: number,

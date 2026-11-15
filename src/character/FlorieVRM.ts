@@ -8,14 +8,210 @@ import {
   VRMSpringBoneColliderShapeSphere,
   VRMSpringBoneColliderShapeCapsule,
 } from '@pixiv/three-vrm';
-import type { AnimState } from './PlayerAnimations';
+import { createSoftContactShadow, type AnimState } from './PlayerAnimations';
+import {
+  computeStylizedAnimeGait,
+  createEmptyGaitPose,
+  createStylizedGaitBlendState,
+} from './StylizedWalk';
+import {
+  applyBlenderSitPose,
+  isBlenderSitAnimReady,
+  preloadBlenderSitAnim,
+} from './BlenderSitAnim';
+import {
+  applyBlenderFlorieArrivalPose,
+  applyBlenderInspectHandsPose,
+  preloadBlenderFlorieArrivalAnim,
+  preloadBlenderInspectHandsAnim,
+} from './BlenderCutsceneAnim';
+
+export type CutsceneActorPose =
+  | 'none'
+  | 'inspectHands'
+  | 'florieArrival'
+  | 'wave'
+  | 'takeArm'
+  | 'openDoor'
+  | 'deskRest'
+  | 'confusedGlance'
+  | 'embarrassed'
+  | 'chuckle';
+
+export type CutsceneExpression =
+  | 'none'
+  | 'confused'
+  | 'warmSmile'
+  | 'embarrassed'
+  | 'amused'
+  | 'laugh'
+  | 'surprised';
+
+export type CutsceneHeadGesture = 'none' | 'nod' | 'shake' | 'tilt';
+
+export interface CutsceneActorOverride {
+  pose: CutsceneActorPose;
+  expression: CutsceneExpression;
+  headGesture: CutsceneHeadGesture;
+  blush: number;
+  time: number;
+}
 
 export interface FlorieVRMController {
   vrm: VRM | null;
   container: THREE.Group;
   sourceLabel: string;
   update: (state: AnimState, gaitPhase: number, interactTimer: number, dt: number) => void;
-  updateIntroCutscene: (introTime: number, dt: number) => void;
+  updateIntroCutscene: (
+    introTime: number,
+    dt: number,
+    floriePos?: THREE.Vector3,
+    playerYaw?: number,
+    cameraPos?: THREE.Vector3
+  ) => void;
+  setNpcDialogueVisuals?: (opts: {
+    lookAtPos: THREE.Vector3 | null;
+    isTalking: boolean;
+    speechLevel: number;
+    speechTime: number;
+  }) => void;
+  setCutsceneOverride?: (opts: CutsceneActorOverride | null) => void;
+}
+
+type VisemeKey = 'aa' | 'ih' | 'ou' | 'ee' | 'oh';
+type VisemeCue = [
+  start: number,
+  end: number,
+  v1: VisemeKey,
+  w1: number,
+  v2?: VisemeKey,
+  w2?: number,
+];
+
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * Character-accurate French phoneme-to-viseme cues extracted via ElevenLabs Scribe v2
+ * from florie_intro_1.mp3 ("Coucou, bienvenue à Maple Wood. Je m'appelle Florie. Je suis trop contente de te voir aujourd'hui")
+ * Weights are calibrated (0.14 - 0.25) so her mouth opens delicately and closes naturally on bilabials (b, m, p).
+ */
+const VISEME_CUES_LINE_0: VisemeCue[] = [
+  // "Cou-cou" (0.10 - 0.48)
+  [0.10, 0.25, 'ou', 0.24, 'oh', 0.06],
+  [0.27, 0.48, 'ou', 0.25, 'oh', 0.05],
+  // "bien-ve-nue" (0.88 - 1.26, 'b' closed 0.88-0.92)
+  [0.92, 0.99, 'ih', 0.19],
+  [0.99, 1.10, 'ee', 0.20, 'aa', 0.08],
+  [1.13, 1.19, 'oh', 0.15],
+  [1.19, 1.27, 'ou', 0.22, 'ih', 0.07],
+  // "à" (1.31 - 1.41)
+  [1.31, 1.41, 'aa', 0.23],
+  // "Ma-ple" (1.46 - 1.76, 'M' closed 1.46-1.50, 'p' closed 1.62-1.65)
+  [1.51, 1.62, 'ee', 0.19, 'aa', 0.11],
+  [1.65, 1.76, 'oh', 0.16],
+  // "Wood" (1.82 - 2.12)
+  [1.82, 2.04, 'ou', 0.24, 'oh', 0.06],
+  [2.04, 2.12, 'ih', 0.10],
+  // "Je" (2.48 - 2.55)
+  [2.48, 2.55, 'oh', 0.16, 'ou', 0.06],
+  // "m'ap-pelle" (2.56 - 2.88, 'm' closed 2.56-2.61, 'pp' closed 2.68-2.73)
+  [2.61, 2.68, 'aa', 0.22],
+  [2.73, 2.89, 'ee', 0.21, 'aa', 0.07],
+  // "Flo-rie" (2.96 - 3.32)
+  [2.97, 3.05, 'ih', 0.07],
+  [3.05, 3.18, 'oh', 0.22],
+  [3.18, 3.33, 'ih', 0.21, 'ee', 0.07],
+  // "Je suis" (3.48 - 3.86)
+  [3.48, 3.60, 'oh', 0.16],
+  [3.64, 3.72, 'ou', 0.21],
+  [3.72, 3.86, 'ih', 0.20],
+  // "trop" (3.92 - 4.18, 'p' closed at end)
+  [3.93, 4.01, 'ih', 0.07],
+  [4.01, 4.16, 'oh', 0.22, 'ou', 0.06],
+  // "con-ten-te" (4.22 - 4.56)
+  [4.24, 4.38, 'oh', 0.21, 'ou', 0.07],
+  [4.39, 4.50, 'aa', 0.21, 'oh', 0.07],
+  [4.50, 4.56, 'ih', 0.11],
+  // "de te" (4.60 - 4.76)
+  [4.60, 4.67, 'oh', 0.14],
+  [4.70, 4.77, 'oh', 0.14],
+  // "voir" (4.78 - 4.96)
+  [4.81, 4.87, 'ou', 0.19],
+  [4.87, 4.96, 'aa', 0.22],
+  // "au-jour-d'hui" (4.98 - 5.44)
+  [4.98, 5.08, 'oh', 0.20],
+  [5.08, 5.22, 'ou', 0.23],
+  [5.26, 5.34, 'ou', 0.20],
+  [5.34, 5.45, 'ih', 0.21, 'ee', 0.08],
+];
+
+/**
+ * Character-accurate French phoneme-to-viseme cues extracted via ElevenLabs Scribe v2
+ * from florie_intro_2.mp3 ("Allez, viens, suis-moi à l'intérieur du bâtiment. Je vais te faire visiter tout le campus")
+ */
+const VISEME_CUES_LINE_1: VisemeCue[] = [
+  // "Al-lez" (0.05 - 0.25)
+  [0.05, 0.13, 'aa', 0.22],
+  [0.13, 0.25, 'ee', 0.21, 'ih', 0.07],
+  // "viens" (0.30 - 0.50)
+  [0.33, 0.39, 'ih', 0.19],
+  [0.39, 0.51, 'ee', 0.20, 'aa', 0.10],
+  // "suis-moi" (0.82 - 1.08, 'm' closed 0.95-1.00)
+  [0.83, 0.89, 'ou', 0.21],
+  [0.89, 0.95, 'ih', 0.19],
+  [1.00, 1.04, 'ou', 0.19],
+  [1.04, 1.09, 'aa', 0.22],
+  // "à l'in-té-rieur" (1.11 - 1.56)
+  [1.11, 1.16, 'aa', 0.19],
+  [1.17, 1.31, 'ee', 0.19, 'ih', 0.08],
+  [1.31, 1.41, 'ee', 0.21],
+  [1.41, 1.48, 'ih', 0.19],
+  [1.48, 1.57, 'oh', 0.19, 'ee', 0.07],
+  // "du" (1.60 - 1.67)
+  [1.60, 1.67, 'ou', 0.22],
+  // "bâ-ti-ment" (1.70 - 2.12, 'b' closed 1.70-1.74, 'm' closed 1.96-1.99)
+  [1.75, 1.86, 'aa', 0.23],
+  [1.86, 1.96, 'ih', 0.19],
+  [2.00, 2.13, 'aa', 0.18, 'oh', 0.10],
+  // "Je vais te faire" (2.54 - 3.05)
+  [2.54, 2.61, 'oh', 0.15],
+  [2.65, 2.73, 'ee', 0.20],
+  [2.76, 2.85, 'oh', 0.14],
+  [2.90, 3.05, 'ee', 0.20, 'aa', 0.10],
+  // "vi-si-ter" (3.08 - 3.45)
+  [3.11, 3.20, 'ih', 0.19],
+  [3.21, 3.33, 'ih', 0.21],
+  [3.33, 3.45, 'ee', 0.21],
+  // "tout le cam-pus" (3.66 - 4.42, 'mp' closed 4.08-4.16)
+  [3.66, 3.77, 'ou', 0.22],
+  [3.80, 3.89, 'oh', 0.15],
+  [3.94, 4.08, 'aa', 0.21, 'oh', 0.07],
+  [4.16, 4.26, 'ou', 0.22],
+  [4.26, 4.42, 'ih', 0.13],
+];
+
+function sampleIntroVisemes(introTime: number): Record<VisemeKey, number> {
+  const out: Record<VisemeKey, number> = { aa: 0, ih: 0, ou: 0, ee: 0, oh: 0 };
+  const isSecondLine = introTime >= 6.2;
+  const lineTime = isSecondLine ? introTime - 6.25 : introTime - 0.08;
+  if (lineTime < 0) return out;
+
+  const cues = isSecondLine ? VISEME_CUES_LINE_1 : VISEME_CUES_LINE_0;
+  for (let i = 0; i < cues.length; i++) {
+    const [start, end, v1, w1, v2, w2] = cues[i];
+    if (lineTime >= start && lineTime <= end) {
+      const u = (lineTime - start) / Math.max(0.01, end - start);
+      const env = Math.sin(u * Math.PI);
+      out[v1] = Math.max(out[v1], w1 * env);
+      if (v2 && w2) {
+        out[v2] = Math.max(out[v2], w2 * env);
+      }
+    }
+  }
+  return out;
 }
 
 const IDB_NAME = 'maplewood-vrm-cache';
@@ -142,6 +338,7 @@ export async function discoverFlorieVrmBuffer(): Promise<{ buffer: ArrayBuffer; 
 
 const _worldPosA = new THREE.Vector3();
 const _worldPosB = new THREE.Vector3();
+const _worldPosC = new THREE.Vector3();
 const _clampedQuat = new THREE.Quaternion();
 
 interface TunedSpringJoint {
@@ -216,22 +413,13 @@ export async function parseFlorieVrmFromBuffer(
   modelRoot.traverse((obj) => {
     if ((obj as THREE.Mesh).isMesh) {
       obj.castShadow = true;
-      obj.receiveShadow = true;
+      obj.receiveShadow = false;
       obj.frustumCulled = false;
     }
   });
 
-  // Soft radial contact shadow under Florie
-  const shadowMat = new THREE.MeshBasicMaterial({
-    color: 0x090d16,
-    transparent: true,
-    opacity: 0.34,
-    depthWrite: false,
-  });
-  const shadowDisc = new THREE.Mesh(new THREE.CircleGeometry(0.42, 20), shadowMat);
-  shadowDisc.rotation.x = -Math.PI / 2;
-  shadowDisc.position.y = 0.018;
-  container.add(shadowDisc);
+  // Feathered radial contact shadow under Florie
+  container.add(createSoftContactShadow(1.05));
 
   // Resolve VRM humanoid normalized bone nodes for procedural gait & idle animation
   const getBone = (name: VRMHumanBoneName): THREE.Object3D | null =>
@@ -265,37 +453,16 @@ export async function parseFlorieVrmFromBuffer(
   // Optional direct reference to bundled skirt drape node for subtle procedural cloth ripple
   const bundledSkirtDrape = modelRoot.getObjectByName('skirtDrapeRoot') || null;
 
-  // Apply natural, softly relaxed finger curl if finger bones exist on the VRM
-  const fingerBoneNames: Array<[VRMHumanBoneName, number]> = [
-    [VRMHumanBoneName.LeftIndexProximal, -0.18],
-    [VRMHumanBoneName.LeftIndexIntermediate, -0.22],
-    [VRMHumanBoneName.LeftMiddleProximal, -0.22],
-    [VRMHumanBoneName.LeftMiddleIntermediate, -0.25],
-    [VRMHumanBoneName.LeftRingProximal, -0.25],
-    [VRMHumanBoneName.LeftRingIntermediate, -0.28],
-    [VRMHumanBoneName.LeftLittleProximal, -0.28],
-    [VRMHumanBoneName.LeftLittleIntermediate, -0.3],
-    [VRMHumanBoneName.RightIndexProximal, 0.18],
-    [VRMHumanBoneName.RightIndexIntermediate, 0.22],
-    [VRMHumanBoneName.RightMiddleProximal, 0.22],
-    [VRMHumanBoneName.RightMiddleIntermediate, 0.25],
-    [VRMHumanBoneName.RightRingProximal, 0.25],
-    [VRMHumanBoneName.RightRingIntermediate, 0.28],
-    [VRMHumanBoneName.RightLittleProximal, 0.28],
-    [VRMHumanBoneName.RightLittleIntermediate, 0.3],
-  ];
-  for (const [fName, curlZ] of fingerBoneNames) {
-    const fb = getBone(fName);
-    if (fb) {
-      fb.rotation.z = curlZ;
-    }
-  }
-
   const baseHipsPos = hips ? hips.position.clone() : new THREE.Vector3(0, 0.85, 0);
 
   // Ensure XYZ Euler order on upper arms so Z lowers from T-pose first and X swings forward/back cleanly
   if (leftUpperArm) leftUpperArm.rotation.order = 'XYZ';
   if (rightUpperArm) rightUpperArm.rotation.order = 'XYZ';
+  // Use YXZ on lower arms so X twists around the forearm shaft before Y bends the elbow
+  if (leftLowerArm) leftLowerArm.rotation.order = 'YXZ';
+  if (rightLowerArm) rightLowerArm.rotation.order = 'YXZ';
+  if (leftHand) leftHand.rotation.order = 'XYZ';
+  if (rightHand) rightHand.rotation.order = 'XYZ';
 
   // Automatically determine which Z-rotation sign brings each upper arm DOWN from T-pose
   let leftArmDownZ = -1.26;
@@ -333,6 +500,435 @@ export async function parseFlorieVrmFromBuffer(
     rightUpperArm.rotation.z = rightArmDownZ;
   }
 
+  // In VRM 0.0 (rightArmDownZ < 0), +X pitches a lowered arm forward; in VRM 1.0 (rightArmDownZ > 0), -X pitches forward
+  const armForwardXSign = -Math.sign(rightArmDownZ);
+  const leftCurlSign = Math.sign(leftArmDownZ);
+
+  // Probe lower-body X-axis & Z-adduction signs in container space (-Z forward, +Z back, -Y down)
+  let thighForwardXSign = -1;
+  let leftThighInwardZSign = -1;
+  let rightThighInwardZSign = 1;
+  let kneeBackXSign = 1;
+  let ankleDownXSign = 1;
+
+  if (vrm && leftUpperLeg && leftFoot) {
+    leftUpperLeg.rotation.x = -0.6;
+    vrm.update(0);
+    container.updateMatrixWorld(true);
+    leftFoot.getWorldPosition(_worldPosA);
+
+    leftUpperLeg.rotation.x = 0.6;
+    vrm.update(0);
+    container.updateMatrixWorld(true);
+    leftFoot.getWorldPosition(_worldPosB);
+
+    thighForwardXSign = _worldPosA.z < _worldPosB.z ? -1 : 1;
+    leftUpperLeg.rotation.x = 0;
+
+    // Probe which Z sign brings leftFoot closer to centerline (smaller |x| in container space)
+    leftUpperLeg.rotation.z = -0.25;
+    vrm.update(0);
+    container.updateMatrixWorld(true);
+    leftFoot.getWorldPosition(_worldPosA);
+
+    leftUpperLeg.rotation.z = 0.25;
+    vrm.update(0);
+    container.updateMatrixWorld(true);
+    leftFoot.getWorldPosition(_worldPosB);
+
+    leftThighInwardZSign = Math.abs(_worldPosA.x) < Math.abs(_worldPosB.x) ? -1 : 1;
+    leftUpperLeg.rotation.z = 0;
+  }
+
+  if (vrm && rightUpperLeg && rightFoot) {
+    rightUpperLeg.rotation.z = 0.25;
+    vrm.update(0);
+    container.updateMatrixWorld(true);
+    rightFoot.getWorldPosition(_worldPosA);
+
+    rightUpperLeg.rotation.z = -0.25;
+    vrm.update(0);
+    container.updateMatrixWorld(true);
+    rightFoot.getWorldPosition(_worldPosB);
+
+    rightThighInwardZSign = Math.abs(_worldPosA.x) < Math.abs(_worldPosB.x) ? 1 : -1;
+    rightUpperLeg.rotation.z = 0;
+  }
+
+  if (vrm && leftLowerLeg && leftFoot) {
+    leftLowerLeg.rotation.x = 0.6;
+    vrm.update(0);
+    container.updateMatrixWorld(true);
+    leftFoot.getWorldPosition(_worldPosA);
+
+    leftLowerLeg.rotation.x = -0.6;
+    vrm.update(0);
+    container.updateMatrixWorld(true);
+    leftFoot.getWorldPosition(_worldPosB);
+
+    kneeBackXSign = _worldPosA.z > _worldPosB.z ? 1 : -1;
+    leftLowerLeg.rotation.x = 0;
+  }
+
+  if (vrm && leftFoot && leftToes) {
+    leftFoot.rotation.x = 0.5;
+    vrm.update(0);
+    container.updateMatrixWorld(true);
+    leftToes.getWorldPosition(_worldPosA);
+
+    leftFoot.rotation.x = -0.5;
+    vrm.update(0);
+    container.updateMatrixWorld(true);
+    leftToes.getWorldPosition(_worldPosB);
+
+    ankleDownXSign = _worldPosA.y < _worldPosB.y ? 1 : -1;
+    leftFoot.rotation.x = 0;
+    vrm.update(0);
+  }
+  const rightCurlSign = Math.sign(rightArmDownZ);
+
+  // Geometrically probe upper-body forward pitch & elbow flexion signs in container space (-Z forward)
+  const probeForwardZSign = (
+    bone: THREE.Object3D | null,
+    axis: 'x' | 'y',
+    effector: THREE.Object3D | null,
+    angle = 0.55,
+    fallback = 1
+  ): number => {
+    if (!vrm || !bone || !effector) return fallback;
+    const prev = bone.rotation[axis];
+    bone.rotation[axis] = angle;
+    vrm.update(0);
+    container.updateMatrixWorld(true);
+    effector.getWorldPosition(_worldPosA);
+
+    bone.rotation[axis] = -angle;
+    vrm.update(0);
+    container.updateMatrixWorld(true);
+    effector.getWorldPosition(_worldPosB);
+
+    bone.rotation[axis] = prev;
+    vrm.update(0);
+    return _worldPosA.z < _worldPosB.z ? 1 : -1;
+  };
+
+  const spineForwardXSign = probeForwardZSign(spine, 'x', head || chest, 0.4, 1);
+  const leftArmForwardXSign = probeForwardZSign(
+    leftUpperArm,
+    'x',
+    leftHand || leftLowerArm,
+    0.55,
+    armForwardXSign
+  );
+  const rightArmForwardXSign = probeForwardZSign(
+    rightUpperArm,
+    'x',
+    rightHand || rightLowerArm,
+    0.55,
+    armForwardXSign
+  );
+  const leftElbowForwardYSign = probeForwardZSign(leftLowerArm, 'y', leftHand, 0.6, -1);
+  const rightElbowForwardYSign = probeForwardZSign(rightLowerArm, 'y', rightHand, 0.6, 1);
+
+  const probeArmInwardYSign = (
+    upperArm: THREE.Object3D | null,
+    lowerArm: THREE.Object3D | null,
+    handNode: THREE.Object3D | null,
+    elbowSign: number,
+    fallback: number
+  ): number => {
+    if (!vrm || !upperArm || !lowerArm || !handNode) return fallback;
+    const prevY = upperArm.rotation.y;
+    const prevElbow = lowerArm.rotation.y;
+    lowerArm.rotation.y = elbowSign * 1.1;
+
+    upperArm.rotation.y = 0.5;
+    vrm.update(0);
+    container.updateMatrixWorld(true);
+    handNode.getWorldPosition(_worldPosA);
+
+    upperArm.rotation.y = -0.5;
+    vrm.update(0);
+    container.updateMatrixWorld(true);
+    handNode.getWorldPosition(_worldPosB);
+
+    upperArm.rotation.y = prevY;
+    lowerArm.rotation.y = prevElbow;
+    vrm.update(0);
+    return Math.abs(_worldPosA.x) < Math.abs(_worldPosB.x) ? 1 : -1;
+  };
+
+  const leftArmInwardYSign = probeArmInwardYSign(leftUpperArm, leftLowerArm, leftHand, leftElbowForwardYSign, -1);
+  const rightArmInwardYSign = probeArmInwardYSign(
+    rightUpperArm,
+    rightLowerArm,
+    rightHand,
+    rightElbowForwardYSign,
+    1
+  );
+
+  const probeShoulderUpZSign = (
+    shoulder: THREE.Object3D | null,
+    upperArm: THREE.Object3D | null,
+    fallback: number
+  ): number => {
+    if (!vrm || !shoulder || !upperArm) return fallback;
+    const prevZ = shoulder.rotation.z;
+    shoulder.rotation.z = 0.25;
+    vrm.update(0);
+    container.updateMatrixWorld(true);
+    upperArm.getWorldPosition(_worldPosA);
+
+    shoulder.rotation.z = -0.25;
+    vrm.update(0);
+    container.updateMatrixWorld(true);
+    upperArm.getWorldPosition(_worldPosB);
+
+    shoulder.rotation.z = prevZ;
+    vrm.update(0);
+    return _worldPosA.y > _worldPosB.y ? 1 : -1;
+  };
+
+  const leftShoulderUpZSign = probeShoulderUpZSign(leftShoulder, leftUpperArm, -Math.sign(leftArmDownZ));
+  const rightShoulderUpZSign = probeShoulderUpZSign(rightShoulder, rightUpperArm, -Math.sign(rightArmDownZ));
+
+  // Geometrically probe palm curl sign in T-pose (smaller world Y = inward toward palm)
+  const probeFingerCurlSign = (
+    upperArm: THREE.Object3D | null,
+    fingerProx: THREE.Object3D | null,
+    fingerTip: THREE.Object3D | null,
+    fallback: number
+  ): number => {
+    if (!vrm || !upperArm || !fingerProx || !fingerTip) return fallback;
+    const prevArmZ = upperArm.rotation.z;
+    const prevZ = fingerProx.rotation.z;
+    upperArm.rotation.z = 0;
+
+    fingerProx.rotation.z = 0.8;
+    vrm.update(0);
+    container.updateMatrixWorld(true);
+    fingerTip.getWorldPosition(_worldPosA);
+
+    fingerProx.rotation.z = -0.8;
+    vrm.update(0);
+    container.updateMatrixWorld(true);
+    fingerTip.getWorldPosition(_worldPosB);
+
+    fingerProx.rotation.z = prevZ;
+    upperArm.rotation.z = prevArmZ;
+    vrm.update(0);
+    return _worldPosA.y < _worldPosB.y ? 1 : -1;
+  };
+
+  const leftFingerCurlSign = probeFingerCurlSign(
+    leftUpperArm,
+    getBone(VRMHumanBoneName.LeftMiddleProximal),
+    getBone(VRMHumanBoneName.LeftMiddleDistal) || getBone(VRMHumanBoneName.LeftMiddleIntermediate),
+    leftCurlSign
+  );
+  const rightFingerCurlSign = probeFingerCurlSign(
+    rightUpperArm,
+    getBone(VRMHumanBoneName.RightMiddleProximal),
+    getBone(VRMHumanBoneName.RightMiddleDistal) || getBone(VRMHumanBoneName.RightMiddleIntermediate),
+    rightCurlSign
+  );
+
+  // Cache all 3 phalanges (proximal, intermediate, distal) per finger for resting curl, fanning & closed fists
+  interface CachedFingerBone {
+    bone: THREE.Object3D;
+    restZ: number;
+    fistZ: number;
+    fingerIdx: number;
+  }
+  const buildHandFingers = (
+    defs: Array<[VRMHumanBoneName, number, number, number]>,
+    curlSign: number
+  ): CachedFingerBone[] => {
+    const out: CachedFingerBone[] = [];
+    for (const [fName, restMag, fistMag, fingerIdx] of defs) {
+      const fb = getBone(fName);
+      if (fb) {
+        const restZ = curlSign * restMag;
+        const fistZ = curlSign * fistMag;
+        fb.rotation.z = restZ;
+        out.push({ bone: fb, restZ, fistZ, fingerIdx });
+      }
+    }
+    return out;
+  };
+
+  const leftFingerBones = buildHandFingers(
+    [
+      [VRMHumanBoneName.LeftIndexProximal, 0.18, 1.24, 0],
+      [VRMHumanBoneName.LeftIndexIntermediate, 0.22, 1.44, 0],
+      [VRMHumanBoneName.LeftIndexDistal, 0.14, 0.96, 0],
+      [VRMHumanBoneName.LeftMiddleProximal, 0.22, 1.28, 1],
+      [VRMHumanBoneName.LeftMiddleIntermediate, 0.25, 1.46, 1],
+      [VRMHumanBoneName.LeftMiddleDistal, 0.16, 0.98, 1],
+      [VRMHumanBoneName.LeftRingProximal, 0.25, 1.28, 2],
+      [VRMHumanBoneName.LeftRingIntermediate, 0.28, 1.46, 2],
+      [VRMHumanBoneName.LeftRingDistal, 0.18, 0.96, 2],
+      [VRMHumanBoneName.LeftLittleProximal, 0.28, 1.24, 3],
+      [VRMHumanBoneName.LeftLittleIntermediate, 0.3, 1.42, 3],
+      [VRMHumanBoneName.LeftLittleDistal, 0.2, 0.92, 3],
+    ],
+    leftFingerCurlSign
+  );
+
+  const rightFingerBones = buildHandFingers(
+    [
+      [VRMHumanBoneName.RightIndexProximal, 0.18, 1.24, 0],
+      [VRMHumanBoneName.RightIndexIntermediate, 0.22, 1.44, 0],
+      [VRMHumanBoneName.RightIndexDistal, 0.14, 0.96, 0],
+      [VRMHumanBoneName.RightMiddleProximal, 0.22, 1.28, 1],
+      [VRMHumanBoneName.RightMiddleIntermediate, 0.25, 1.46, 1],
+      [VRMHumanBoneName.RightMiddleDistal, 0.16, 0.98, 1],
+      [VRMHumanBoneName.RightRingProximal, 0.25, 1.28, 2],
+      [VRMHumanBoneName.RightRingIntermediate, 0.28, 1.46, 2],
+      [VRMHumanBoneName.RightRingDistal, 0.18, 0.96, 2],
+      [VRMHumanBoneName.RightLittleProximal, 0.28, 1.24, 3],
+      [VRMHumanBoneName.RightLittleIntermediate, 0.3, 1.42, 3],
+      [VRMHumanBoneName.RightLittleDistal, 0.2, 0.92, 3],
+    ],
+    rightFingerCurlSign
+  );
+
+  const leftThumbMetacarpal = getBone(VRMHumanBoneName.LeftThumbMetacarpal);
+  const leftThumbProximal = getBone(VRMHumanBoneName.LeftThumbProximal);
+  const leftThumbDistal = getBone(VRMHumanBoneName.LeftThumbDistal);
+  const rightThumbMetacarpal = getBone(VRMHumanBoneName.RightThumbMetacarpal);
+  const rightThumbProximal = getBone(VRMHumanBoneName.RightThumbProximal);
+  const rightThumbIntermediate = getBone(VRMHumanBoneName.RightThumbDistal);
+
+  // Geometrically probe which forearm/wrist X-rotation sign turns the palm forward (-Z in container space,
+  // facing the camera when Florie faces +Z) by checking which sign moves the thumb outward (larger |x|).
+  const probePalmForwardXSign = (
+    upperArm: THREE.Object3D | null,
+    downZ: number,
+    lowerArm: THREE.Object3D | null,
+    elbowSign: number,
+    thumbBone: THREE.Object3D | null,
+    fallback: number
+  ): number => {
+    if (!vrm || !upperArm || !lowerArm || !thumbBone) return fallback;
+    const prevUZ = upperArm.rotation.z;
+    const prevLY = lowerArm.rotation.y;
+    const prevLX = lowerArm.rotation.x;
+    upperArm.rotation.z = downZ * 0.75;
+    lowerArm.rotation.y = elbowSign * 1.1;
+
+    lowerArm.rotation.x = 1.0;
+    vrm.update(0);
+    container.updateMatrixWorld(true);
+    thumbBone.getWorldPosition(_worldPosA);
+
+    lowerArm.rotation.x = -1.0;
+    vrm.update(0);
+    container.updateMatrixWorld(true);
+    thumbBone.getWorldPosition(_worldPosB);
+
+    upperArm.rotation.z = prevUZ;
+    lowerArm.rotation.y = prevLY;
+    lowerArm.rotation.x = prevLX;
+    vrm.update(0);
+    return Math.abs(_worldPosA.x) > Math.abs(_worldPosB.x) ? 1 : -1;
+  };
+  const leftPalmForwardXSign = probePalmForwardXSign(
+    leftUpperArm,
+    leftArmDownZ,
+    leftLowerArm,
+    leftElbowForwardYSign,
+    leftThumbProximal,
+    1
+  );
+  const rightPalmForwardXSign = probePalmForwardXSign(
+    rightUpperArm,
+    rightArmDownZ,
+    rightLowerArm,
+    rightElbowForwardYSign,
+    rightThumbProximal,
+    -1
+  );
+
+  // Geometrically probe which thumb rotation axes/signs tuck the thumb across curled fingers into a fist
+  interface ThumbTuckAxes {
+    x: number;
+    y: number;
+    z: number;
+  }
+  const probeThumbTuckAxes = (
+    fingerBones: CachedFingerBone[],
+    thumbProx: THREE.Object3D | null,
+    thumbTip: THREE.Object3D | null,
+    targetKnuckle: THREE.Object3D | null,
+    fallbackZ: number
+  ): ThumbTuckAxes => {
+    if (!vrm || !thumbProx || !thumbTip || !targetKnuckle) {
+      return { x: 0, y: 0.65, z: fallbackZ * 0.65 };
+    }
+    // Temporarily curl fingers into a real fist so targetKnuckle sits inside the palm
+    const savedFingers = fingerBones.map((f) => f.bone.rotation.z);
+    for (const f of fingerBones) f.bone.rotation.z = f.fistZ;
+    vrm.update(0);
+    container.updateMatrixWorld(true);
+    targetKnuckle.getWorldPosition(_worldPosC);
+    thumbTip.getWorldPosition(_worldPosA);
+    const baseDistSq = _worldPosA.distanceToSquared(_worldPosC);
+
+    const testAxis = (axis: 'x' | 'y' | 'z'): { sign: number; gain: number } => {
+      const prev = thumbProx.rotation[axis];
+      thumbProx.rotation[axis] = 0.65;
+      vrm.update(0);
+      container.updateMatrixWorld(true);
+      thumbTip.getWorldPosition(_worldPosA);
+      const dPos = _worldPosA.distanceToSquared(_worldPosC);
+
+      thumbProx.rotation[axis] = -0.65;
+      vrm.update(0);
+      container.updateMatrixWorld(true);
+      thumbTip.getWorldPosition(_worldPosB);
+      const dNeg = _worldPosB.distanceToSquared(_worldPosC);
+
+      thumbProx.rotation[axis] = prev;
+      const best = Math.min(dPos, dNeg);
+      return { sign: dPos < dNeg ? 1 : -1, gain: Math.max(0, baseDistSq - best) };
+    };
+
+    const rx = testAxis('x');
+    const ry = testAxis('y');
+    const rz = testAxis('z');
+
+    for (let i = 0; i < fingerBones.length; i++) {
+      fingerBones[i].bone.rotation.z = savedFingers[i];
+    }
+    vrm.update(0);
+
+    const maxGain = Math.max(rx.gain, ry.gain, rz.gain, 1e-6);
+    if (maxGain <= 1e-5) {
+      return { x: 0, y: 0.65, z: fallbackZ * 0.65 };
+    }
+    const nx = (rx.gain / maxGain) * rx.sign;
+    const ny = (ry.gain / maxGain) * ry.sign;
+    const nz = (rz.gain / maxGain) * rz.sign;
+    const mag = Math.hypot(nx, ny, nz) || 1;
+    return { x: nx / mag, y: ny / mag, z: nz / mag };
+  };
+
+  const leftThumbTuck = probeThumbTuckAxes(
+    leftFingerBones,
+    leftThumbProximal,
+    leftThumbDistal,
+    getBone(VRMHumanBoneName.LeftMiddleIntermediate),
+    leftFingerCurlSign
+  );
+  const rightThumbTuck = probeThumbTuckAxes(
+    rightFingerBones,
+    rightThumbProximal,
+    rightThumbIntermediate,
+    getBone(VRMHumanBoneName.RightMiddleIntermediate),
+    rightFingerCurlSign
+  );
+
   // Normalize height to ~1.66m and ground feet at Y = 0 in standing posture
   if (vrm) {
     vrm.update(0);
@@ -348,6 +944,25 @@ export async function parseFlorieVrmFromBuffer(
     const scaledBox = new THREE.Box3().setFromObject(modelRoot);
     modelRoot.position.y -= scaledBox.min.y;
   }
+
+  // Locate Face mesh morph targets for delicate anime eyebrow/eye/mouth-corner expression control
+  let faceMorphDict: Record<string, number> | null = null;
+  let faceMorphInfluences: number[] | null = null;
+  modelRoot.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (
+      mesh.isMesh &&
+      mesh.morphTargetDictionary &&
+      mesh.morphTargetInfluences &&
+      'Fcl_MTH_Fun' in mesh.morphTargetDictionary
+    ) {
+      faceMorphDict = mesh.morphTargetDictionary;
+      faceMorphInfluences = mesh.morphTargetInfluences;
+    }
+  });
+
+  // Smoothed viseme weights so phoneme transitions are silky-smooth
+  const currentVisemes: Record<VisemeKey, number> = { aa: 0, ih: 0, ou: 0, ee: 0, oh: 0 };
 
   // --- RECALIBRATE VRM SPRINGBONE PHYSICS FOR SOFT, NATURAL DRESS & HAIR ---
   // 1) Attach a local-space spring center inside facingPivot so world-space running velocity
@@ -426,228 +1041,341 @@ export async function parseFlorieVrmFromBuffer(
     }
   }
 
-  let elapsedAccum = 0;
-  let moveWeight = 0;
-  let runWeight = 0;
-  let airWeight = 0;
+  const skirtFrontBones: { bone: THREE.Object3D; restQuat: THREE.Quaternion; rad: number }[] = [];
+  modelRoot.traverse((obj) => {
+    if (!obj.name || /end/i.test(obj.name)) return;
+    if (/SkirtFront0/i.test(obj.name)) {
+      skirtFrontBones.push({ bone: obj, restQuat: obj.quaternion.clone(), rad: 0.22 });
+    } else if (/SkirtFront1/i.test(obj.name)) {
+      skirtFrontBones.push({ bone: obj, restQuat: obj.quaternion.clone(), rad: 0.13 });
+    } else if (/SkirtFront2/i.test(obj.name)) {
+      skirtFrontBones.push({ bone: obj, restQuat: obj.quaternion.clone(), rad: 0.07 });
+    }
+  });
+  const _skirtDrapeAxis = new THREE.Vector3(1, 0, 0);
+  const _skirtDrapeQ = new THREE.Quaternion();
+  let skirtFrontSitWeight = 0;
+
+  const gaitBlend = createStylizedGaitBlendState();
+  const gaitPose = createEmptyGaitPose();
+  void preloadBlenderSitAnim();
+  void preloadBlenderInspectHandsAnim();
+  void preloadBlenderFlorieArrivalAnim();
+
+  let prevSitAnimState: AnimState = 'idle';
+  let sitDownTime = 0;
+  let sitIdleTime = 0;
+  let standUpTime = 0;
+  let sitClipBlend = 0;
+
+  const npcTalkState = {
+    lookAtPos: null as THREE.Vector3 | null,
+    isTalking: false,
+    speechLevel: 0,
+    speechTime: 0,
+  };
+  let npcTalkBlend = 0;
+  let npcTalkYaw = 0;
+  let npcTalkPitch = 0;
+  const _npcHeadWorld = new THREE.Vector3();
+  const _npcInvQuat = new THREE.Quaternion();
+  const _npcLocalDir = new THREE.Vector3();
+  const setNpcDialogueVisuals = (opts: {
+    lookAtPos: THREE.Vector3 | null;
+    isTalking: boolean;
+    speechLevel: number;
+    speechTime: number;
+  }) => {
+    npcTalkState.lookAtPos = opts.lookAtPos;
+    npcTalkState.isTalking = opts.isTalking;
+    npcTalkState.speechLevel = opts.speechLevel;
+    npcTalkState.speechTime = opts.speechTime;
+  };
+
+  let cutsceneOverride: CutsceneActorOverride | null = null;
+  let blushLeftMat: THREE.MeshBasicMaterial | null = null;
+  let blushRightMat: THREE.MeshBasicMaterial | null = null;
+  let blushInitDone = false;
+
+  const ensureBlushSprites = () => {
+    if (blushInitDone || !head) return;
+    blushInitDone = true;
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 32;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const grad = ctx.createRadialGradient(32, 16, 2, 32, 16, 30);
+    grad.addColorStop(0, 'rgba(255, 105, 135, 0.85)');
+    grad.addColorStop(0.55, 'rgba(255, 125, 150, 0.45)');
+    grad.addColorStop(1, 'rgba(255, 125, 150, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 64, 32);
+    const tex = new THREE.CanvasTexture(canvas);
+    const geo = new THREE.PlaneGeometry(0.055, 0.026);
+    blushLeftMat = new THREE.MeshBasicMaterial({
+      map: tex,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    blushRightMat = blushLeftMat.clone();
+    const leftMesh = new THREE.Mesh(geo, blushLeftMat);
+    leftMesh.position.set(-0.041, 0.042, 0.092);
+    leftMesh.rotation.y = -0.35;
+    leftMesh.renderOrder = 5;
+    const rightMesh = new THREE.Mesh(geo, blushRightMat);
+    rightMesh.position.set(0.041, 0.042, 0.092);
+    rightMesh.rotation.y = 0.35;
+    rightMesh.renderOrder = 5;
+    head.add(leftMesh, rightMesh);
+  };
+
+  const setCutsceneOverride = (opts: CutsceneActorOverride | null) => {
+    cutsceneOverride = opts;
+    if (opts && opts.blush > 0.01) ensureBlushSprites();
+  };
 
   const update = (state: AnimState, gaitPhase: number, interactTimer: number, dt: number) => {
     const safeDt = Math.min(Math.max(dt, 0.001), 0.05);
-    elapsedAccum += safeDt;
-
-    // Smooth continuous blend weights for transitions between idle, walk, run, and jump
-    const targetMove = state === 'walk' || state === 'run' ? 1 : 0;
-    const targetRun = state === 'run' ? 1 : 0;
-    const targetAir = state === 'jump' ? 1 : 0;
-
-    moveWeight = THREE.MathUtils.damp(moveWeight, targetMove, 10, safeDt);
-    runWeight = THREE.MathUtils.damp(runWeight, targetRun, 9, safeDt);
-    airWeight = THREE.MathUtils.damp(airWeight, targetAir, 14, safeDt);
-
-    const damp = 1 - Math.exp(-15 * safeDt);
+    const pose = computeStylizedAnimeGait(
+      state,
+      gaitPhase,
+      interactTimer,
+      safeDt,
+      gaitBlend,
+      gaitPose
+    );
+    const elapsedAccum = gaitBlend.elapsedAccum;
+    // Disable dramatic idle poses during scripted cutscenes so only cutsceneOverride controls the actor
+    if (cutsceneOverride && state === 'idle') {
+      const breath = Math.sin(elapsedAccum * 2.1) * 0.012;
+      pose.hipsOffsetX = 0;
+      pose.hipsOffsetY = 0;
+      pose.hipsOffsetZ = 0;
+      pose.hipsRotX = 0;
+      pose.hipsRotY = 0;
+      pose.hipsRotZ = 0;
+      pose.spineRotX = breath * 0.4;
+      pose.spineRotY = 0;
+      pose.spineRotZ = 0;
+      pose.chestRotX = breath;
+      pose.chestRotY = 0;
+      pose.chestRotZ = 0;
+      pose.upperChestRotX = breath * 0.5;
+      pose.upperChestRotY = 0;
+      pose.upperChestRotZ = 0;
+      pose.neckRotX = 0;
+      pose.neckRotY = 0;
+      pose.neckRotZ = 0;
+      pose.headRotX = 0;
+      pose.headRotY = 0;
+      pose.headRotZ = 0;
+      pose.leftArmAdduction = 0.06;
+      pose.rightArmAdduction = 0.06;
+      pose.leftArmForwardX = 0.05;
+      pose.rightArmForwardX = 0.05;
+      pose.leftArmRotY = 0;
+      pose.rightArmRotY = 0;
+      pose.leftElbowBend = 0.16;
+      pose.rightElbowBend = 0.16;
+      pose.leftForearmTwist = 0;
+      pose.rightForearmTwist = 0;
+      pose.leftWristX = 0;
+      pose.rightWristX = 0;
+      pose.leftWristZ = 0;
+      pose.rightWristZ = 0;
+      pose.leftFingerCurlScale = 0.22;
+      pose.rightFingerCurlScale = 0.22;
+      pose.leftThighX = 0;
+      pose.rightThighX = 0;
+      pose.leftThighZ = 0.02;
+      pose.rightThighZ = 0.02;
+      pose.leftKneeX = 0;
+      pose.rightKneeX = 0;
+      pose.leftAnkleX = 0;
+      pose.rightAnkleX = 0;
+      pose.leftToeX = 0;
+      pose.rightToeX = 0;
+      pose.expressionHappy = 0;
+      pose.expressionEyeSquint = 0;
+      pose.expressionCuriousBrow = 0;
+    }
+    const dampRate = THREE.MathUtils.lerp(11.5, 19.0, pose.runWeight);
+    const damp = 1 - Math.exp(-dampRate * safeDt);
 
     if (vrm) {
-      // Primary & harmonic gait waves (s > 0 => Left leg swings forward, Right leg in stance)
-      const s = Math.sin(gaitPhase);
-      const c = Math.cos(gaitPhase);
-      const s2 = Math.sin(gaitPhase * 2);
-      const c2 = Math.cos(gaitPhase * 2);
-
-      // Phase-delayed waves for supple spine, shoulder, and forearm follow-through
-      const sSpineLag = Math.sin(gaitPhase - 0.22);
-      const sArmLag = Math.sin(gaitPhase - 0.14);
-      const sElbowLag = Math.sin(gaitPhase - 0.48);
-      const sWristLag = Math.sin(gaitPhase - 0.78);
-
-      // Blend walk vs run amplitudes smoothly
-      const legStrideAmp = THREE.MathUtils.lerp(0.45, 0.84, runWeight) * moveWeight;
-      const legHarmonicAmp = THREE.MathUtils.lerp(0.055, 0.1, runWeight) * moveWeight;
-      const kneeFlexAmp = THREE.MathUtils.lerp(0.64, 1.14, runWeight) * moveWeight;
-      const stanceCushionAmp = THREE.MathUtils.lerp(0.13, 0.22, runWeight) * moveWeight;
-      const armSwingAmp = THREE.MathUtils.lerp(0.36, 0.74, runWeight) * moveWeight;
-      const baseElbowBend = THREE.MathUtils.lerp(
-        0.12,
-        THREE.MathUtils.lerp(0.22, 0.56, runWeight),
-        moveWeight
-      );
-      const dynamicElbowAmp = THREE.MathUtils.lerp(0.22, 0.44, runWeight) * moveWeight;
-
-      // Vertical double-bounce (peaks at mid-stance twice per stride, dips at heel-strike)
-      const walkBobY = (-c2 * 0.5 + 0.5) * THREE.MathUtils.lerp(0.028, 0.06, runWeight) * moveWeight;
-      const idleBreathY = Math.sin(elapsedAccum * 2.0) * 0.008 * (1 - moveWeight * 0.7);
-      const lateralWeightShiftX = -s * THREE.MathUtils.lerp(0.016, 0.022, runWeight) * moveWeight;
-
-      // Subtle local cloth-center breathing offset so the dress feels a gentle, capped breeze
+      // Subtle local cloth-center inertia & breeze response so hair and skirt sway organically
       springCenter.position.set(
-        lateralWeightShiftX * 0.2,
-        -walkBobY * 0.18,
-        moveWeight * THREE.MathUtils.lerp(0.006, 0.012, runWeight)
+        pose.hipsOffsetX * 0.36 + pose.chestRotZ * 0.08 + pose.idleBreezeX,
+        -pose.hipsOffsetY * 0.24,
+        pose.hipsOffsetZ * 0.85 - pose.chestRotX * 0.06 + pose.idleBreezeZ
       );
 
-      // 1) HIPS / PELVIS (3D weight shift, pelvic list & axial rotation)
+      // 1) HIPS / PELVIS (3D weight shift, figure-8 pelvic list, forward/back tilt & axial rotation)
       if (hips) {
-        const targetHipsX = baseHipsPos.x + lateralWeightShiftX;
-        const targetHipsY = baseHipsPos.y + walkBobY + idleBreathY;
-        hips.position.x = THREE.MathUtils.lerp(hips.position.x, targetHipsX, damp);
-        hips.position.y = THREE.MathUtils.lerp(hips.position.y, targetHipsY, damp);
-
-        const pelvicTwistY =
-          -s * THREE.MathUtils.lerp(0.08, 0.13, runWeight) * moveWeight +
-          Math.sin(elapsedAccum * 1.1) * 0.02 * (1 - moveWeight);
-        const pelvicListZ =
-          s * THREE.MathUtils.lerp(0.046, 0.064, runWeight) * moveWeight +
-          Math.cos(elapsedAccum * 1.1) * 0.012 * (1 - moveWeight);
-
-        hips.rotation.y = THREE.MathUtils.lerp(hips.rotation.y, pelvicTwistY, damp);
-        hips.rotation.z = THREE.MathUtils.lerp(hips.rotation.z, pelvicListZ, damp);
+        if (prevSitAnimState === 'stand_up' && state !== 'stand_up' && state !== 'sit' && state !== 'sit_down') {
+          // Clear stand_up's forward hipsOffset at the exact frame Player.position hands off to sitFrontPos
+          hips.position.copy(baseHipsPos);
+        } else {
+          hips.position.x = THREE.MathUtils.lerp(hips.position.x, baseHipsPos.x + pose.hipsOffsetX, damp);
+          hips.position.y = THREE.MathUtils.lerp(hips.position.y, baseHipsPos.y + pose.hipsOffsetY, damp);
+          hips.position.z = THREE.MathUtils.lerp(hips.position.z, baseHipsPos.z + pose.hipsOffsetZ, damp);
+        }
+        hips.rotation.x = THREE.MathUtils.lerp(hips.rotation.x, spineForwardXSign * pose.hipsRotX, damp);
+        hips.rotation.y = THREE.MathUtils.lerp(hips.rotation.y, pose.hipsRotY, damp);
+        hips.rotation.z = THREE.MathUtils.lerp(hips.rotation.z, pose.hipsRotZ, damp);
       }
 
-      // 2) SPINE, CHEST & UPPER CHEST (Supple counter-rotation & S-curve balance)
-      const forwardLean =
-        THREE.MathUtils.lerp(0.032, 0.12, runWeight) * moveWeight +
-        s2 * 0.012 * moveWeight -
-        0.04 * airWeight;
-      const breathPitch = Math.sin(elapsedAccum * 2.0) * 0.014;
-      const counterTwistY = sSpineLag * THREE.MathUtils.lerp(0.075, 0.13, runWeight) * moveWeight;
-      const counterSwayZ = -s * THREE.MathUtils.lerp(0.032, 0.048, runWeight) * moveWeight;
-
+      // 2) SPINE, CHEST & UPPER CHEST (Supple 3-joint S-curve cascade & rib arch)
       if (spine) {
-        spine.rotation.x = THREE.MathUtils.lerp(spine.rotation.x, forwardLean * 0.6 + breathPitch, damp);
-        spine.rotation.y = THREE.MathUtils.lerp(spine.rotation.y, counterTwistY * 0.55, damp);
-        spine.rotation.z = THREE.MathUtils.lerp(spine.rotation.z, counterSwayZ * 0.6, damp);
+        spine.rotation.x = THREE.MathUtils.lerp(spine.rotation.x, spineForwardXSign * pose.spineRotX, damp);
+        spine.rotation.y = THREE.MathUtils.lerp(spine.rotation.y, pose.spineRotY, damp);
+        spine.rotation.z = THREE.MathUtils.lerp(spine.rotation.z, pose.spineRotZ, damp);
       }
 
       if (chest) {
-        chest.rotation.x = THREE.MathUtils.lerp(chest.rotation.x, forwardLean * 0.4 + breathPitch * 0.6, damp);
-        chest.rotation.y = THREE.MathUtils.lerp(chest.rotation.y, counterTwistY * 0.65, damp);
-        chest.rotation.z = THREE.MathUtils.lerp(chest.rotation.z, counterSwayZ * 0.5, damp);
+        chest.rotation.x = THREE.MathUtils.lerp(chest.rotation.x, spineForwardXSign * pose.chestRotX, damp);
+        chest.rotation.y = THREE.MathUtils.lerp(chest.rotation.y, pose.chestRotY, damp);
+        chest.rotation.z = THREE.MathUtils.lerp(chest.rotation.z, pose.chestRotZ, damp);
       }
 
       if (upperChest) {
-        upperChest.rotation.y = THREE.MathUtils.lerp(upperChest.rotation.y, counterTwistY * 0.35, damp);
+        upperChest.rotation.x = THREE.MathUtils.lerp(
+          upperChest.rotation.x,
+          spineForwardXSign * pose.upperChestRotX,
+          damp
+        );
+        upperChest.rotation.y = THREE.MathUtils.lerp(upperChest.rotation.y, pose.upperChestRotY, damp);
+        upperChest.rotation.z = THREE.MathUtils.lerp(upperChest.rotation.z, pose.upperChestRotZ, damp);
       }
 
-      // 3) NECK & HEAD (Gaze stabilization & soft secondary nod)
+      // 3) NECK & HEAD (Gaze stabilization & full pitch/yaw/roll expression)
       if (neck) {
-        neck.rotation.y = THREE.MathUtils.lerp(neck.rotation.y, -counterTwistY * 0.35, damp);
-        neck.rotation.z = THREE.MathUtils.lerp(neck.rotation.z, -counterSwayZ * 0.3, damp);
+        neck.rotation.x = THREE.MathUtils.lerp(neck.rotation.x, spineForwardXSign * pose.neckRotX, damp);
+        neck.rotation.y = THREE.MathUtils.lerp(neck.rotation.y, pose.neckRotY, damp);
+        neck.rotation.z = THREE.MathUtils.lerp(neck.rotation.z, pose.neckRotZ, damp);
       }
 
       if (head) {
-        const headNodX =
-          -forwardLean * 0.45 +
-          Math.sin(gaitPhase * 2 - 0.5) * 0.018 * moveWeight +
-          Math.sin(elapsedAccum * 1.5) * 0.024 * (1 - moveWeight);
-        const headTiltZ =
-          s * 0.02 * moveWeight + Math.cos(elapsedAccum * 1.2) * 0.02 * (1 - moveWeight);
-        const headTurnY = -counterTwistY * 0.4;
-
-        head.rotation.x = THREE.MathUtils.lerp(head.rotation.x, headNodX, damp);
-        head.rotation.y = THREE.MathUtils.lerp(head.rotation.y, headTurnY, damp);
-        head.rotation.z = THREE.MathUtils.lerp(head.rotation.z, headTiltZ, damp);
+        head.rotation.x = THREE.MathUtils.lerp(head.rotation.x, spineForwardXSign * pose.headRotX, damp);
+        head.rotation.y = THREE.MathUtils.lerp(head.rotation.y, pose.headRotY, damp);
+        head.rotation.z = THREE.MathUtils.lerp(head.rotation.z, pose.headRotZ, damp);
       }
 
-      // 4) LEGS, KNEES, ANKLES & TOES (Anatomical 4-phase gait cycle)
+      // 4) LEGS, KNEES, ANKLES & TOES (Probed world-space signs, feet/toes kept straight forward)
       if (leftUpperLeg && rightUpperLeg) {
-        const walkThighL = -s * legStrideAmp - c2 * legHarmonicAmp - 0.03 * moveWeight;
-        const walkThighR = s * legStrideAmp - c2 * legHarmonicAmp - 0.03 * moveWeight;
-
-        const targetThighL = THREE.MathUtils.lerp(walkThighL, -0.45, airWeight);
-        const targetThighR = THREE.MathUtils.lerp(walkThighR, 0.25, airWeight);
-
-        leftUpperLeg.rotation.x = THREE.MathUtils.lerp(leftUpperLeg.rotation.x, targetThighL, damp);
-        rightUpperLeg.rotation.x = THREE.MathUtils.lerp(rightUpperLeg.rotation.x, targetThighR, damp);
-
-        // Subtle feminine hip adduction (feet track naturally along walking line)
+        leftUpperLeg.rotation.x = THREE.MathUtils.lerp(
+          leftUpperLeg.rotation.x,
+          thighForwardXSign * pose.leftThighX,
+          damp
+        );
+        rightUpperLeg.rotation.x = THREE.MathUtils.lerp(
+          rightUpperLeg.rotation.x,
+          thighForwardXSign * pose.rightThighX,
+          damp
+        );
+        // Counter-rotate hips Y twist so feet and toes stay pointed straight ahead
+        leftUpperLeg.rotation.y = THREE.MathUtils.lerp(
+          leftUpperLeg.rotation.y,
+          -pose.hipsRotY * 0.85,
+          damp
+        );
+        rightUpperLeg.rotation.y = THREE.MathUtils.lerp(
+          rightUpperLeg.rotation.y,
+          -pose.hipsRotY * 0.85,
+          damp
+        );
         leftUpperLeg.rotation.z = THREE.MathUtils.lerp(
           leftUpperLeg.rotation.z,
-          -0.022 * moveWeight + c * 0.015 * moveWeight,
+          leftThighInwardZSign * pose.leftThighZ,
           damp
         );
         rightUpperLeg.rotation.z = THREE.MathUtils.lerp(
           rightUpperLeg.rotation.z,
-          0.022 * moveWeight + c * 0.015 * moveWeight,
+          rightThighInwardZSign * pose.rightThighZ,
           damp
         );
       }
 
       if (leftLowerLeg && rightLowerLeg) {
-        // Two-peak POSITIVE knee flexion (anatomical backward bend >= 0)
-        const swingWaveL = Math.max(0, Math.sin(gaitPhase - 0.95));
-        const cushionWaveL = Math.max(0, Math.sin(gaitPhase - 2.35));
-        const walkKneeL =
-          Math.pow(swingWaveL, 1.35) * kneeFlexAmp +
-          Math.pow(cushionWaveL, 1.6) * stanceCushionAmp +
-          0.03;
-
-        const swingWaveR = Math.max(0, Math.sin(gaitPhase + Math.PI - 0.95));
-        const cushionWaveR = Math.max(0, Math.sin(gaitPhase + Math.PI - 2.35));
-        const walkKneeR =
-          Math.pow(swingWaveR, 1.35) * kneeFlexAmp +
-          Math.pow(cushionWaveR, 1.6) * stanceCushionAmp +
-          0.03;
-
-        const targetKneeL = THREE.MathUtils.lerp(walkKneeL, 0.82, airWeight);
-        const targetKneeR = THREE.MathUtils.lerp(walkKneeR, 0.64, airWeight);
-
         leftLowerLeg.rotation.x = THREE.MathUtils.lerp(
           leftLowerLeg.rotation.x,
-          Math.max(0, targetKneeL),
+          kneeBackXSign * pose.leftKneeX,
           damp
         );
         rightLowerLeg.rotation.x = THREE.MathUtils.lerp(
           rightLowerLeg.rotation.x,
-          Math.max(0, targetKneeR),
+          kneeBackXSign * pose.rightKneeX,
           damp
         );
       }
 
       if (leftFoot && rightFoot) {
-        const ankleL =
-          (-Math.sin(gaitPhase + 0.35) * 0.22 + Math.cos(gaitPhase * 2) * 0.05) * moveWeight +
-          0.25 * airWeight;
-        const ankleR =
-          (Math.sin(gaitPhase + 0.35) * 0.22 + Math.cos(gaitPhase * 2) * 0.05) * moveWeight +
-          0.2 * airWeight;
-
-        leftFoot.rotation.x = THREE.MathUtils.lerp(leftFoot.rotation.x, ankleL, damp);
-        rightFoot.rotation.x = THREE.MathUtils.lerp(rightFoot.rotation.x, ankleR, damp);
+        leftFoot.rotation.x = THREE.MathUtils.lerp(
+          leftFoot.rotation.x,
+          ankleDownXSign * pose.leftAnkleX,
+          damp
+        );
+        leftFoot.rotation.y = THREE.MathUtils.lerp(leftFoot.rotation.y, 0, damp);
+        leftFoot.rotation.z = THREE.MathUtils.lerp(leftFoot.rotation.z, 0, damp);
+        rightFoot.rotation.x = THREE.MathUtils.lerp(
+          rightFoot.rotation.x,
+          ankleDownXSign * pose.rightAnkleX,
+          damp
+        );
+        rightFoot.rotation.y = THREE.MathUtils.lerp(rightFoot.rotation.y, 0, damp);
+        rightFoot.rotation.z = THREE.MathUtils.lerp(rightFoot.rotation.z, 0, damp);
       }
 
       if (leftToes && rightToes) {
-        const toeL = Math.max(0, -s) * 0.22 * moveWeight;
-        const toeR = Math.max(0, s) * 0.22 * moveWeight;
-        leftToes.rotation.x = THREE.MathUtils.lerp(leftToes.rotation.x, -toeL, damp);
-        rightToes.rotation.x = THREE.MathUtils.lerp(rightToes.rotation.x, -toeR, damp);
+        leftToes.rotation.x = THREE.MathUtils.lerp(
+          leftToes.rotation.x,
+          ankleDownXSign * pose.leftToeX,
+          damp
+        );
+        leftToes.rotation.y = THREE.MathUtils.lerp(leftToes.rotation.y, 0, damp);
+        leftToes.rotation.z = THREE.MathUtils.lerp(leftToes.rotation.z, 0, damp);
+        rightToes.rotation.x = THREE.MathUtils.lerp(
+          rightToes.rotation.x,
+          ankleDownXSign * pose.rightToeX,
+          damp
+        );
+        rightToes.rotation.y = THREE.MathUtils.lerp(rightToes.rotation.y, 0, damp);
+        rightToes.rotation.z = THREE.MathUtils.lerp(rightToes.rotation.z, 0, damp);
       }
 
-      // 5) SHOULDERS, ARMS, FOREARMS & WRISTS (Phase-delayed pendulum opposite to legs)
+      // 5) SHOULDERS, ARMS, FOREARMS & WRISTS (4-joint overlapping pendulum)
       if (leftShoulder && rightShoulder) {
-        leftShoulder.rotation.y = THREE.MathUtils.lerp(
-          leftShoulder.rotation.y,
-          sArmLag * 0.045 * moveWeight,
+        leftShoulder.rotation.y = THREE.MathUtils.lerp(leftShoulder.rotation.y, pose.leftShoulderY, damp);
+        rightShoulder.rotation.y = THREE.MathUtils.lerp(rightShoulder.rotation.y, pose.rightShoulderY, damp);
+        leftShoulder.rotation.z = THREE.MathUtils.lerp(
+          leftShoulder.rotation.z,
+          leftShoulderUpZSign * pose.leftShoulderZ,
           damp
         );
-        rightShoulder.rotation.y = THREE.MathUtils.lerp(
-          rightShoulder.rotation.y,
-          sArmLag * 0.045 * moveWeight,
+        rightShoulder.rotation.z = THREE.MathUtils.lerp(
+          rightShoulder.rotation.z,
+          rightShoulderUpZSign * pose.rightShoulderZ,
           damp
         );
       }
 
-      const idleBreathArm = Math.sin(elapsedAccum * 2.0) * 0.018;
       if (leftUpperArm) {
         leftUpperArm.rotation.z = THREE.MathUtils.lerp(
           leftUpperArm.rotation.z,
-          leftArmDownZ + Math.sign(leftArmDownZ) * idleBreathArm,
+          leftArmDownZ + Math.sign(leftArmDownZ) * pose.leftArmAdduction,
           damp
         );
-        const walkArmLX = sArmLag * armSwingAmp - 0.03 * moveWeight;
-        const targetArmLX = THREE.MathUtils.lerp(walkArmLX, -0.42, airWeight);
-        leftUpperArm.rotation.x = THREE.MathUtils.lerp(leftUpperArm.rotation.x, targetArmLX, damp);
+        leftUpperArm.rotation.x = THREE.MathUtils.lerp(
+          leftUpperArm.rotation.x,
+          leftArmForwardXSign * pose.leftArmForwardX,
+          damp
+        );
         leftUpperArm.rotation.y = THREE.MathUtils.lerp(
           leftUpperArm.rotation.y,
-          -sArmLag * 0.06 * moveWeight,
+          pose.leftArmRotY + leftArmInwardYSign * pose.leftArmInward,
           damp
         );
       }
@@ -655,64 +1383,696 @@ export async function parseFlorieVrmFromBuffer(
       if (rightUpperArm) {
         rightUpperArm.rotation.z = THREE.MathUtils.lerp(
           rightUpperArm.rotation.z,
-          rightArmDownZ + Math.sign(rightArmDownZ) * idleBreathArm,
+          rightArmDownZ + Math.sign(rightArmDownZ) * pose.rightArmAdduction,
           damp
         );
-        const walkArmRX = -sArmLag * armSwingAmp - 0.03 * moveWeight;
-        const targetArmRX =
-          interactTimer > 0
-            ? -0.95
-            : THREE.MathUtils.lerp(walkArmRX, -0.42, airWeight);
-        rightUpperArm.rotation.x = THREE.MathUtils.lerp(rightUpperArm.rotation.x, targetArmRX, damp);
+        rightUpperArm.rotation.x = THREE.MathUtils.lerp(
+          rightUpperArm.rotation.x,
+          rightArmForwardXSign * pose.rightArmForwardX,
+          damp
+        );
         rightUpperArm.rotation.y = THREE.MathUtils.lerp(
           rightUpperArm.rotation.y,
-          -sArmLag * 0.06 * moveWeight,
+          pose.rightArmRotY + rightArmInwardYSign * pose.rightArmInward,
           damp
         );
       }
 
       if (leftLowerArm && rightLowerArm) {
-        const lFlex =
-          baseElbowBend + Math.max(0, -sElbowLag * 0.85 + 0.15) * dynamicElbowAmp;
-        const rFlex =
-          interactTimer > 0
-            ? 0.55
-            : baseElbowBend + Math.max(0, sElbowLag * 0.85 + 0.15) * dynamicElbowAmp;
-
-        leftLowerArm.rotation.y = THREE.MathUtils.lerp(leftLowerArm.rotation.y, -lFlex, damp);
-        rightLowerArm.rotation.y = THREE.MathUtils.lerp(rightLowerArm.rotation.y, rFlex, damp);
+        leftLowerArm.rotation.x = THREE.MathUtils.lerp(
+          leftLowerArm.rotation.x,
+          armForwardXSign * pose.leftForearmTwist,
+          damp
+        );
+        leftLowerArm.rotation.y = THREE.MathUtils.lerp(
+          leftLowerArm.rotation.y,
+          leftElbowForwardYSign * pose.leftElbowBend,
+          damp
+        );
+        leftLowerArm.rotation.z = THREE.MathUtils.lerp(leftLowerArm.rotation.z, 0, damp);
+        rightLowerArm.rotation.x = THREE.MathUtils.lerp(
+          rightLowerArm.rotation.x,
+          armForwardXSign * pose.rightForearmTwist,
+          damp
+        );
+        rightLowerArm.rotation.y = THREE.MathUtils.lerp(
+          rightLowerArm.rotation.y,
+          rightElbowForwardYSign * pose.rightElbowBend,
+          damp
+        );
+        rightLowerArm.rotation.z = THREE.MathUtils.lerp(rightLowerArm.rotation.z, 0, damp);
       }
 
       if (leftHand && rightHand) {
-        const wristWaveL = sWristLag * 0.08 * moveWeight;
-        const wristWaveR = -sWristLag * 0.08 * moveWeight;
-        leftHand.rotation.z = THREE.MathUtils.lerp(leftHand.rotation.z, wristWaveL, damp);
-        rightHand.rotation.z = THREE.MathUtils.lerp(rightHand.rotation.z, wristWaveR, damp);
+        leftHand.rotation.x = THREE.MathUtils.lerp(leftHand.rotation.x, pose.leftWristX, damp);
+        leftHand.rotation.y = THREE.MathUtils.lerp(leftHand.rotation.y, pose.leftWristY, damp);
+        leftHand.rotation.z = THREE.MathUtils.lerp(leftHand.rotation.z, pose.leftWristZ, damp);
+        rightHand.rotation.x = THREE.MathUtils.lerp(rightHand.rotation.x, pose.rightWristX, damp);
+        rightHand.rotation.y = THREE.MathUtils.lerp(rightHand.rotation.y, pose.rightWristY, damp);
+        rightHand.rotation.z = THREE.MathUtils.lerp(rightHand.rotation.z, pose.rightWristZ, damp);
       }
 
-      // 6) Natural periodic eye blinking & lively facial expression via VRM ExpressionManager
+      const applyHandPose = (
+        fingers: CachedFingerBone[],
+        curlScale: number,
+        fistWeight: number,
+        thumbMeta: THREE.Object3D | null,
+        thumbProx: THREE.Object3D | null,
+        thumbDist: THREE.Object3D | null,
+        tuck: ThumbTuckAxes,
+        fingerTap?: [number, number, number, number]
+      ) => {
+        const openness = Math.max(0, 1 - curlScale);
+        for (const f of fingers) {
+          const fan = 1 + (f.fingerIdx - 1.5) * 0.08 * openness;
+          const openZ = f.restZ * curlScale * fan;
+          const tapWeight = fingerTap ? fingerTap[f.fingerIdx] ?? 0 : 0;
+          const effectiveWeight = Math.max(fistWeight, tapWeight * 0.78);
+          const targetZ = THREE.MathUtils.lerp(openZ, f.fistZ, effectiveWeight);
+          f.bone.rotation.z = THREE.MathUtils.lerp(f.bone.rotation.z, targetZ, damp);
+        }
+        // Bend thumbs strongly during fists and gently follow soft finger curls (e.g., hair tuck)
+        const thumbFlex = Math.max(fistWeight, Math.min(0.32, Math.max(0, curlScale - 1) * 0.25));
+        if (thumbMeta) {
+          thumbMeta.rotation.x = THREE.MathUtils.lerp(thumbMeta.rotation.x, tuck.x * 0.45 * thumbFlex, damp);
+          thumbMeta.rotation.y = THREE.MathUtils.lerp(thumbMeta.rotation.y, tuck.y * 0.48 * thumbFlex, damp);
+          thumbMeta.rotation.z = THREE.MathUtils.lerp(thumbMeta.rotation.z, tuck.z * 0.42 * thumbFlex, damp);
+        }
+        if (thumbProx) {
+          thumbProx.rotation.x = THREE.MathUtils.lerp(thumbProx.rotation.x, tuck.x * 0.92 * thumbFlex, damp);
+          thumbProx.rotation.y = THREE.MathUtils.lerp(thumbProx.rotation.y, tuck.y * 0.96 * thumbFlex, damp);
+          thumbProx.rotation.z = THREE.MathUtils.lerp(thumbProx.rotation.z, tuck.z * 0.78 * thumbFlex, damp);
+        }
+        if (thumbDist) {
+          thumbDist.rotation.x = THREE.MathUtils.lerp(thumbDist.rotation.x, tuck.x * 0.98 * thumbFlex, damp);
+          thumbDist.rotation.y = THREE.MathUtils.lerp(thumbDist.rotation.y, tuck.y * 1.02 * thumbFlex, damp);
+          thumbDist.rotation.z = THREE.MathUtils.lerp(thumbDist.rotation.z, tuck.z * 0.82 * thumbFlex, damp);
+        }
+      };
+
+      applyHandPose(
+        rightFingerBones,
+        pose.rightFingerCurlScale,
+        pose.rightFistWeight,
+        rightThumbMetacarpal,
+        rightThumbProximal,
+        rightThumbIntermediate,
+        rightThumbTuck,
+        pose.rightFingerTap
+      );
+      applyHandPose(
+        leftFingerBones,
+        pose.leftFingerCurlScale,
+        pose.leftFistWeight,
+        leftThumbMetacarpal,
+        leftThumbProximal,
+        leftThumbDistal,
+        leftThumbTuck,
+        pose.leftFingerTap
+      );
+
+      // Apply Blender-authored VRM sitting / transition clips when active
+      const isSitClipState = state === 'sit_down' || state === 'sit' || state === 'stand_up';
+      if (isSitClipState && isBlenderSitAnimReady()) {
+        if (state === 'sit_down') {
+          if (prevSitAnimState !== 'sit_down') {
+            sitDownTime = 0;
+            sitClipBlend = 0.25;
+          }
+          sitDownTime += safeDt;
+          sitClipBlend = Math.min(1, sitClipBlend + safeDt / 0.14);
+          applyBlenderSitPose(vrm, baseHipsPos, 'sit_down', sitDownTime, sitClipBlend, false);
+        } else if (state === 'sit') {
+          if (prevSitAnimState !== 'sit') {
+            sitIdleTime = 0;
+            sitClipBlend = prevSitAnimState === 'sit_down' ? 1 : 0.25;
+          }
+          sitIdleTime += safeDt;
+          sitClipBlend = Math.min(1, sitClipBlend + safeDt / 0.16);
+          applyBlenderSitPose(vrm, baseHipsPos, 'sit_idle', sitIdleTime, sitClipBlend, true);
+        } else {
+          if (prevSitAnimState !== 'stand_up') {
+            standUpTime = 0;
+            sitClipBlend = prevSitAnimState === 'sit' ? 1 : 0.35;
+          }
+          standUpTime += safeDt;
+          sitClipBlend = Math.min(1, sitClipBlend + safeDt / 0.12);
+          applyBlenderSitPose(vrm, baseHipsPos, 'stand_up', standUpTime, sitClipBlend, false);
+        }
+      } else {
+        sitClipBlend = 0;
+      }
+      prevSitAnimState = state;
+
+      // 5b) NPC dialogue head/gaze tracking toward camera + expressive speaking nods
+      npcTalkBlend = THREE.MathUtils.damp(npcTalkBlend, npcTalkState.isTalking ? 1 : 0, 7.5, safeDt);
+      if (npcTalkBlend > 0.005 && head) {
+        let targetYaw = 0;
+        let targetPitch = 0;
+        if (npcTalkState.lookAtPos) {
+          head.getWorldPosition(_npcHeadWorld);
+          _npcLocalDir.copy(npcTalkState.lookAtPos).sub(_npcHeadWorld);
+          container.getWorldQuaternion(_npcInvQuat).invert();
+          _npcLocalDir.applyQuaternion(_npcInvQuat);
+          if (_npcLocalDir.lengthSq() > 0.0001) {
+            _npcLocalDir.normalize();
+            targetYaw = THREE.MathUtils.clamp(Math.atan2(-_npcLocalDir.x, -_npcLocalDir.z), -0.82, 0.82);
+            targetPitch = THREE.MathUtils.clamp(
+              Math.atan2(_npcLocalDir.y, Math.hypot(_npcLocalDir.x, _npcLocalDir.z)),
+              -0.32,
+              0.32
+            );
+          }
+        }
+        const gazeDamp = 1 - Math.exp(-8.0 * safeDt);
+        npcTalkYaw = THREE.MathUtils.lerp(npcTalkYaw, targetYaw, gazeDamp);
+        npcTalkPitch = THREE.MathUtils.lerp(npcTalkPitch, targetPitch, gazeDamp);
+
+        const sLvl = npcTalkState.speechLevel;
+        const sTime = npcTalkState.speechTime;
+        const talkNod = sLvl > 0.04 ? Math.sin(sTime * 4.8) * 0.035 * Math.min(1, sLvl * 1.4) : 0;
+        const gentleTilt = Math.sin(elapsedAccum * 1.35) * 0.045 * npcTalkBlend;
+
+        if (neck) {
+          const targetNeckY = THREE.MathUtils.lerp(pose.neckRotY, npcTalkYaw * 0.36, npcTalkBlend);
+          const targetNeckX = THREE.MathUtils.lerp(
+            spineForwardXSign * pose.neckRotX,
+            -spineForwardXSign * (npcTalkPitch * 0.35 + talkNod * 0.4),
+            npcTalkBlend
+          );
+          neck.rotation.y = targetNeckY;
+          neck.rotation.x = targetNeckX;
+        }
+        const targetHeadY = THREE.MathUtils.lerp(pose.headRotY, npcTalkYaw * 0.64, npcTalkBlend);
+        const targetHeadX = THREE.MathUtils.lerp(
+          spineForwardXSign * pose.headRotX,
+          -spineForwardXSign * (npcTalkPitch * 0.65 + talkNod),
+          npcTalkBlend
+        );
+        const targetHeadZ = THREE.MathUtils.lerp(pose.headRotZ, gentleTilt, npcTalkBlend);
+        head.rotation.y = targetHeadY;
+        head.rotation.x = targetHeadX;
+        head.rotation.z = targetHeadZ;
+      }
+
+      // 5c) Expressive anime cutscene pose & head gestures
+      if (cutsceneOverride) {
+        const co = cutsceneOverride;
+        const ct = co.time;
+        const cDamp = 1 - Math.exp(-4.0 * safeDt);
+
+        if (co.pose === 'inspectHands') {
+          if (vrm && applyBlenderInspectHandsPose(vrm, baseHipsPos, ct)) {
+            // Blender-authored full-body & finger animation applied directly
+          } else {
+          // Fallback procedural inspectHands if bundle is still loading
+          const raiseU = smoothstep(3.0, 3.85, ct);
+          const headFocusU = smoothstep(4.95, 5.55, ct);
+          const focusL = smoothstep(3.5, 4.1, ct) * (1 - smoothstep(4.95, 5.45, ct));
+          const focusR = smoothstep(5.0, 5.55, ct) * (1 - smoothstep(6.65, 7.05, ct));
+          const leftTurnU = smoothstep(3.95, 4.90, ct);
+          const rightTurnU = smoothstep(5.35, 6.40, ct);
+          const palmTurnL = THREE.MathUtils.lerp(-0.78, 0.88, leftTurnU);
+          const palmTurnR = THREE.MathUtils.lerp(-0.78, 0.88, rightTurnU);
+          const breath = Math.sin(ct * 1.65);
+          const floatL = Math.sin(ct * 2.1);
+          const floatR = Math.cos(ct * 2.1);
+
+          if (leftUpperArm) {
+            leftUpperArm.rotation.x = THREE.MathUtils.lerp(
+              leftUpperArm.rotation.x,
+              leftArmForwardXSign * (0.10 + breath * 0.02 + raiseU * (0.50 + focusL * 0.14 + floatL * 0.025)),
+              cDamp
+            );
+            leftUpperArm.rotation.y = THREE.MathUtils.lerp(
+              leftUpperArm.rotation.y,
+              0.04 + raiseU * (0.16 + focusL * 0.12),
+              cDamp
+            );
+            leftUpperArm.rotation.z = THREE.MathUtils.lerp(
+              leftUpperArm.rotation.z,
+              leftArmDownZ * (0.91 - breath * 0.015 - raiseU * (0.24 + focusL * 0.06)),
+              cDamp
+            );
+          }
+          if (rightUpperArm) {
+            rightUpperArm.rotation.x = THREE.MathUtils.lerp(
+              rightUpperArm.rotation.x,
+              rightArmForwardXSign * (0.10 - breath * 0.02 + raiseU * (0.50 + focusR * 0.14 + floatR * 0.025)),
+              cDamp
+            );
+            rightUpperArm.rotation.y = THREE.MathUtils.lerp(
+              rightUpperArm.rotation.y,
+              -(0.04 + raiseU * (0.16 + focusR * 0.12)),
+              cDamp
+            );
+            rightUpperArm.rotation.z = THREE.MathUtils.lerp(
+              rightUpperArm.rotation.z,
+              rightArmDownZ * (0.91 - breath * 0.015 - raiseU * (0.24 + focusR * 0.06)),
+              cDamp
+            );
+          }
+          if (leftLowerArm) {
+            leftLowerArm.rotation.x = THREE.MathUtils.lerp(
+              leftLowerArm.rotation.x,
+              leftPalmForwardXSign * (0.08 * (1 - raiseU) + raiseU * (palmTurnL + floatL * 0.05)),
+              cDamp
+            );
+            leftLowerArm.rotation.y = THREE.MathUtils.lerp(
+              leftLowerArm.rotation.y,
+              leftElbowForwardYSign * (0.34 + breath * 0.04 + raiseU * (1.08 + focusL * 0.22)),
+              cDamp
+            );
+            leftLowerArm.rotation.z = THREE.MathUtils.lerp(
+              leftLowerArm.rotation.z,
+              leftArmDownZ * (0.04 + raiseU * 0.08 * focusL),
+              cDamp
+            );
+          }
+          if (rightLowerArm) {
+            rightLowerArm.rotation.x = THREE.MathUtils.lerp(
+              rightLowerArm.rotation.x,
+              rightPalmForwardXSign * (0.08 * (1 - raiseU) + raiseU * (palmTurnR + floatR * 0.05)),
+              cDamp
+            );
+            rightLowerArm.rotation.y = THREE.MathUtils.lerp(
+              rightLowerArm.rotation.y,
+              rightElbowForwardYSign * (0.34 - breath * 0.04 + raiseU * (1.08 + focusR * 0.22)),
+              cDamp
+            );
+            rightLowerArm.rotation.z = THREE.MathUtils.lerp(
+              rightLowerArm.rotation.z,
+              rightArmDownZ * (0.04 + raiseU * 0.08 * focusR),
+              cDamp
+            );
+          }
+          if (leftHand) {
+            leftHand.rotation.x = THREE.MathUtils.lerp(
+              leftHand.rotation.x,
+              leftPalmForwardXSign * (0.06 + raiseU * (palmTurnL * 0.58 + floatL * 0.08)),
+              cDamp
+            );
+            leftHand.rotation.y = THREE.MathUtils.lerp(
+              leftHand.rotation.y,
+              raiseU * (0.14 + Math.sin(ct * 2.5) * 0.10),
+              cDamp
+            );
+            leftHand.rotation.z = THREE.MathUtils.lerp(
+              leftHand.rotation.z,
+              leftCurlSign * (0.16 + breath * 0.04 - raiseU * (0.28 + Math.sin(ct * 2.8) * 0.12)),
+              cDamp
+            );
+          }
+          if (rightHand) {
+            rightHand.rotation.x = THREE.MathUtils.lerp(
+              rightHand.rotation.x,
+              rightPalmForwardXSign * (0.06 + raiseU * (palmTurnR * 0.58 + floatR * 0.08)),
+              cDamp
+            );
+            rightHand.rotation.y = THREE.MathUtils.lerp(
+              rightHand.rotation.y,
+              -raiseU * (0.14 + Math.cos(ct * 2.5) * 0.10),
+              cDamp
+            );
+            rightHand.rotation.z = THREE.MathUtils.lerp(
+              rightHand.rotation.z,
+              rightCurlSign * (0.16 + breath * 0.04 - raiseU * (0.28 + Math.cos(ct * 2.8) * 0.12)),
+              cDamp
+            );
+          }
+          for (const f of leftFingerBones) {
+            const idleCurl = 0.22 + f.fingerIdx * 0.05 + Math.sin(ct * 1.9 + f.fingerIdx * 0.55) * 0.05;
+            const inspectWave = 0.14 + 0.34 * (0.5 + 0.5 * Math.sin(ct * 3.8 - f.fingerIdx * 0.72));
+            const curlAmt = THREE.MathUtils.lerp(idleCurl, inspectWave * (0.55 + 0.45 * focusL), raiseU);
+            f.bone.rotation.z = THREE.MathUtils.lerp(
+              f.bone.rotation.z,
+              THREE.MathUtils.lerp(f.restZ * 0.45, f.fistZ, curlAmt),
+              cDamp
+            );
+          }
+          for (const f of rightFingerBones) {
+            const idleCurl = 0.22 + f.fingerIdx * 0.05 + Math.cos(ct * 1.9 + f.fingerIdx * 0.55) * 0.05;
+            const inspectWave = 0.14 + 0.34 * (0.5 + 0.5 * Math.sin(ct * 3.8 - f.fingerIdx * 0.72 + 1.1));
+            const curlAmt = THREE.MathUtils.lerp(idleCurl, inspectWave * (0.55 + 0.45 * focusR), raiseU);
+            f.bone.rotation.z = THREE.MathUtils.lerp(
+              f.bone.rotation.z,
+              THREE.MathUtils.lerp(f.restZ * 0.45, f.fistZ, curlAmt),
+              cDamp
+            );
+          }
+          const thumbFlexL = 0.14 + raiseU * (0.22 + 0.18 * Math.sin(ct * 3.2));
+          const thumbFlexR = 0.14 + raiseU * (0.22 + 0.18 * Math.cos(ct * 3.2));
+          if (leftThumbProximal) {
+            leftThumbProximal.rotation.z = THREE.MathUtils.lerp(leftThumbProximal.rotation.z, leftCurlSign * thumbFlexL, cDamp);
+          }
+          if (leftThumbDistal) {
+            leftThumbDistal.rotation.z = THREE.MathUtils.lerp(leftThumbDistal.rotation.z, leftCurlSign * thumbFlexL * 1.2, cDamp);
+          }
+          if (rightThumbProximal) {
+            rightThumbProximal.rotation.z = THREE.MathUtils.lerp(rightThumbProximal.rotation.z, rightCurlSign * thumbFlexR, cDamp);
+          }
+          if (rightThumbIntermediate) {
+            rightThumbIntermediate.rotation.z = THREE.MathUtils.lerp(rightThumbIntermediate.rotation.z, rightCurlSign * thumbFlexR * 1.2, cDamp);
+          }
+
+          // Head follows gaze slightly downward (+spineForwardXSign) from left hand (+Y) to right hand (-Y)
+          const scanYaw = raiseU * THREE.MathUtils.lerp(0.24, -0.26, headFocusU);
+          if (neck) neck.rotation.y = THREE.MathUtils.lerp(neck.rotation.y, scanYaw * 0.4, cDamp);
+          if (head) {
+            head.rotation.y = THREE.MathUtils.lerp(head.rotation.y, scanYaw * 0.6, cDamp);
+            head.rotation.x = THREE.MathUtils.lerp(
+              head.rotation.x,
+              spineForwardXSign * (0.02 + raiseU * 0.18),
+              cDamp
+            );
+            head.rotation.z = THREE.MathUtils.lerp(
+              head.rotation.z,
+              raiseU * THREE.MathUtils.lerp(0.08, -0.08, headFocusU),
+              cDamp
+            );
+          }
+          }
+        } else if (co.pose === 'florieArrival') {
+          if (vrm) {
+            applyBlenderFlorieArrivalPose(vrm, baseHipsPos, Math.max(0, ct - 7.0));
+          }
+        } else if (co.pose === 'wave') {
+          if (rightUpperArm) {
+            rightUpperArm.rotation.x = THREE.MathUtils.lerp(
+              rightUpperArm.rotation.x,
+              rightArmForwardXSign * 0.28,
+              cDamp
+            );
+            rightUpperArm.rotation.z = THREE.MathUtils.lerp(
+              rightUpperArm.rotation.z,
+              rightArmDownZ * 0.44,
+              cDamp
+            );
+          }
+          if (rightLowerArm) {
+            rightLowerArm.rotation.x = THREE.MathUtils.lerp(
+              rightLowerArm.rotation.x,
+              rightPalmForwardXSign * 0.92,
+              cDamp
+            );
+            rightLowerArm.rotation.y = THREE.MathUtils.lerp(
+              rightLowerArm.rotation.y,
+              rightElbowForwardYSign * 1.32,
+              cDamp
+            );
+          }
+          if (rightHand) {
+            rightHand.rotation.y = THREE.MathUtils.lerp(rightHand.rotation.y, Math.sin(ct * 7.4) * 0.36, cDamp);
+          }
+        } else if (co.pose === 'takeArm') {
+          if (leftUpperArm) {
+            leftUpperArm.rotation.x = THREE.MathUtils.lerp(
+              leftUpperArm.rotation.x,
+              leftArmForwardXSign * 0.36,
+              cDamp
+            );
+            leftUpperArm.rotation.z = THREE.MathUtils.lerp(
+              leftUpperArm.rotation.z,
+              leftArmDownZ * 0.72,
+              cDamp
+            );
+          }
+          if (leftLowerArm) {
+            leftLowerArm.rotation.x = THREE.MathUtils.lerp(
+              leftLowerArm.rotation.x,
+              leftPalmForwardXSign * 0.24,
+              cDamp
+            );
+            leftLowerArm.rotation.y = THREE.MathUtils.lerp(
+              leftLowerArm.rotation.y,
+              leftElbowForwardYSign * 0.72,
+              cDamp
+            );
+          }
+          for (const f of leftFingerBones) {
+            f.bone.rotation.z = THREE.MathUtils.lerp(
+              f.bone.rotation.z,
+              leftCurlSign * (0.34 + f.fingerIdx * 0.05),
+              cDamp
+            );
+          }
+        } else if (co.pose === 'openDoor') {
+          // Florie reaches right hand forward to grasp & turn the door handle, then pushes door open
+          const reachU = smoothstep(15.7, 16.25, ct) * (1 - smoothstep(16.85, 17.35, ct));
+          if (rightUpperArm) {
+            rightUpperArm.rotation.x = THREE.MathUtils.lerp(
+              rightUpperArm.rotation.x,
+              rightArmForwardXSign * (0.12 + reachU * 0.68),
+              cDamp
+            );
+            rightUpperArm.rotation.z = THREE.MathUtils.lerp(
+              rightUpperArm.rotation.z,
+              rightArmDownZ * (0.88 - reachU * 0.22),
+              cDamp
+            );
+          }
+          if (rightLowerArm) {
+            rightLowerArm.rotation.y = THREE.MathUtils.lerp(
+              rightLowerArm.rotation.y,
+              rightElbowForwardYSign * (0.22 + reachU * 0.45),
+              cDamp
+            );
+            rightLowerArm.rotation.x = THREE.MathUtils.lerp(
+              rightLowerArm.rotation.x,
+              rightPalmForwardXSign * reachU * 0.25,
+              cDamp
+            );
+          }
+          if (rightHand) {
+            const handleTurn = smoothstep(16.1, 16.35, ct) * (1 - smoothstep(16.55, 16.85, ct));
+            rightHand.rotation.x = THREE.MathUtils.lerp(rightHand.rotation.x, handleTurn * 0.35, cDamp);
+          }
+          for (const f of rightFingerBones) {
+            f.bone.rotation.z = THREE.MathUtils.lerp(
+              f.bone.rotation.z,
+              rightCurlSign * (0.24 + reachU * 0.36),
+              cDamp
+            );
+          }
+        } else if (co.pose === 'deskRest') {
+          // Helen's hands calmly resting on the reception desk (zero typing/tapping)
+          if (leftUpperArm) {
+            leftUpperArm.rotation.x = THREE.MathUtils.lerp(leftUpperArm.rotation.x, leftArmForwardXSign * 0.26, cDamp);
+            leftUpperArm.rotation.z = THREE.MathUtils.lerp(leftUpperArm.rotation.z, leftArmDownZ * 0.86, cDamp);
+          }
+          if (rightUpperArm) {
+            rightUpperArm.rotation.x = THREE.MathUtils.lerp(rightUpperArm.rotation.x, rightArmForwardXSign * 0.26, cDamp);
+            rightUpperArm.rotation.z = THREE.MathUtils.lerp(rightUpperArm.rotation.z, rightArmDownZ * 0.86, cDamp);
+          }
+          if (leftLowerArm) {
+            leftLowerArm.rotation.y = THREE.MathUtils.lerp(leftLowerArm.rotation.y, leftElbowForwardYSign * 0.72, cDamp);
+          }
+          if (rightLowerArm) {
+            rightLowerArm.rotation.y = THREE.MathUtils.lerp(rightLowerArm.rotation.y, rightElbowForwardYSign * 0.72, cDamp);
+          }
+          for (const f of leftFingerBones) {
+            f.bone.rotation.z = THREE.MathUtils.lerp(f.bone.rotation.z, leftCurlSign * 0.22, cDamp);
+          }
+          for (const f of rightFingerBones) {
+            f.bone.rotation.z = THREE.MathUtils.lerp(f.bone.rotation.z, rightCurlSign * 0.22, cDamp);
+          }
+        } else if (co.pose === 'confusedGlance') {
+          // Player confused reaction ("Wait... she forgot my name?"): subtle head tilt + calm bewildered posture
+          if (spine) {
+            spine.rotation.z += Math.sin(ct * 1.4) * 0.012;
+          }
+          if (head) {
+            head.rotation.z = THREE.MathUtils.lerp(head.rotation.z, 0.11, cDamp);
+          }
+        } else if (co.pose === 'embarrassed') {
+          if (rightUpperArm) {
+            rightUpperArm.rotation.x = THREE.MathUtils.lerp(
+              rightUpperArm.rotation.x,
+              rightArmForwardXSign * 0.42,
+              cDamp
+            );
+            rightUpperArm.rotation.z = THREE.MathUtils.lerp(
+              rightUpperArm.rotation.z,
+              rightArmDownZ * 0.62,
+              cDamp
+            );
+          }
+          if (rightLowerArm) {
+            rightLowerArm.rotation.x = THREE.MathUtils.lerp(
+              rightLowerArm.rotation.x,
+              rightPalmForwardXSign * 0.45,
+              cDamp
+            );
+            rightLowerArm.rotation.y = THREE.MathUtils.lerp(
+              rightLowerArm.rotation.y,
+              rightElbowForwardYSign * 1.35,
+              cDamp
+            );
+          }
+        } else if (co.pose === 'chuckle') {
+          if (chest) {
+            chest.rotation.x += Math.abs(Math.sin(ct * 8.0)) * 0.03;
+          }
+          if (leftShoulder) {
+            leftShoulder.rotation.z = THREE.MathUtils.lerp(
+              leftShoulder.rotation.z,
+              -leftArmDownZ * (0.04 + Math.abs(Math.sin(ct * 8.0)) * 0.04),
+              cDamp
+            );
+          }
+          if (rightShoulder) {
+            rightShoulder.rotation.z = THREE.MathUtils.lerp(
+              rightShoulder.rotation.z,
+              -rightArmDownZ * (0.04 + Math.abs(Math.sin(ct * 8.0)) * 0.04),
+              cDamp
+            );
+          }
+          if (head) {
+            head.rotation.x += Math.sin(ct * 8.0) * 0.035;
+            head.rotation.z = THREE.MathUtils.lerp(head.rotation.z, 0.06, cDamp);
+          }
+        } else if (co.pose === 'none') {
+          // Subtle living presence: gentle weight sway and attentive micro-motion while listening
+          if (spine) {
+            spine.rotation.z += Math.sin(ct * 1.6) * 0.014;
+          }
+          if (head) {
+            head.rotation.x += Math.sin(ct * 2.1) * 0.018;
+            head.rotation.z += Math.cos(ct * 1.4) * 0.016;
+          }
+        }
+
+        if (head) {
+          if (co.headGesture === 'nod') {
+            // Subtle upward affirmative chin-lift (-spineForwardXSign lifts chin UP), then returns cleanly to neutral
+            const upNod = Math.max(0, Math.sin((ct - 8.5) * 4.2));
+            head.rotation.x += -spineForwardXSign * 0.10 * upNod;
+          } else if (co.headGesture === 'shake') {
+            head.rotation.y += Math.sin(ct * 5.2) * 0.18;
+          } else if (co.headGesture === 'tilt') {
+            head.rotation.z = THREE.MathUtils.lerp(head.rotation.z, 0.12, cDamp);
+          }
+        }
+
+        if (blushLeftMat && blushRightMat) {
+          blushLeftMat.opacity = THREE.MathUtils.lerp(blushLeftMat.opacity, co.blush * 0.72, cDamp);
+          blushRightMat.opacity = blushLeftMat.opacity;
+        }
+      } else if (blushLeftMat && blushRightMat && blushLeftMat.opacity > 0.005) {
+        blushLeftMat.opacity = THREE.MathUtils.lerp(blushLeftMat.opacity, 0, damp);
+        blushRightMat.opacity = blushLeftMat.opacity;
+      }
+
+      // 6) Natural periodic eye blinking & nuanced facial expressions via VRM ExpressionManager
+      const hasVRoidMorphs = !!(faceMorphDict && faceMorphInfluences);
+      let activeBlink = 0;
+      const talkSmile = npcTalkBlend * (0.34 + npcTalkState.speechLevel * 0.16);
+      const talkBrow = npcTalkBlend * Math.max(0, (npcTalkState.speechLevel - 0.18) * 0.85);
+      const cutExpr = cutsceneOverride?.expression ?? 'none';
+      const cutHappy =
+        cutExpr === 'warmSmile'
+          ? 0.58
+          : cutExpr === 'embarrassed'
+            ? 0.42
+            : cutExpr === 'amused'
+              ? 0.5
+              : cutExpr === 'laugh'
+                ? 0.72
+                : 0;
+      const cutEyeSquint =
+        cutExpr === 'embarrassed'
+          ? 0.22
+          : cutExpr === 'laugh'
+            ? 0.38
+            : cutExpr === 'warmSmile' || cutExpr === 'amused'
+              ? 0.16
+              : 0;
+      const cutBrow = cutExpr === 'confused' ? 0.55 : cutExpr === 'surprised' ? 0.68 : 0;
+      const effHappy = Math.max(pose.expressionHappy, talkSmile, cutHappy);
+      const effEyeSquint = Math.max(pose.expressionEyeSquint, npcTalkBlend * 0.24, cutEyeSquint);
+      const effCuriousBrow = Math.max(pose.expressionCuriousBrow, talkBrow, cutBrow);
+
       if (vrm.expressionManager) {
         const blinkCycle = elapsedAccum % 3.8;
-        let blinkWeight = 0;
+        let autoBlink = 0;
         if (blinkCycle > 3.64) {
-          blinkWeight = Math.sin(((blinkCycle - 3.64) / 0.16) * Math.PI);
+          autoBlink = Math.sin(((blinkCycle - 3.64) / 0.16) * Math.PI);
         }
-        vrm.expressionManager.setValue('blink', Math.max(0, Math.min(1, blinkWeight)));
-        vrm.expressionManager.setValue('happy', state === 'run' || interactTimer > 0 ? 0.35 : 0.12);
+        activeBlink = Math.max(0, Math.min(1, Math.max(autoBlink, pose.blinkOverride)));
+        vrm.expressionManager.setValue('blink', activeBlink);
+        // Let direct VRoid morphs render delicate closed smiles so 'happy' never pops the jaw wide open
+        vrm.expressionManager.setValue('happy', hasVRoidMorphs ? 0 : Math.min(0.75, effHappy));
+        vrm.expressionManager.setValue('relaxed', hasVRoidMorphs ? 0 : effEyeSquint * 0.65);
+        vrm.expressionManager.setValue('surprised', hasVRoidMorphs ? 0 : effCuriousBrow * 0.45);
+        const sLvl = npcTalkState.speechLevel;
+        const sTime = npcTalkState.speechTime;
+        const lipActive = npcTalkBlend > 0.05 && sLvl > 0.03;
+        const lipDamp = lipActive ? 1 - Math.exp(-26 * safeDt) : damp;
+        const cycle = (sTime * 9.5) % 4.0;
+        const wAa = lipActive ? sLvl * (0.42 + 0.38 * Math.max(0, Math.sin(cycle * 1.57))) : 0;
+        const wOh = lipActive ? sLvl * 0.38 * Math.max(0, Math.cos(cycle * 1.57)) : 0;
+        const wIh = lipActive ? sLvl * 0.28 * Math.max(0, Math.sin((cycle + 1.2) * 1.57)) : 0;
+        const wEe = lipActive ? sLvl * 0.22 * Math.max(0, -Math.sin(cycle * 1.57)) : 0;
+
+        for (const vk of ['aa', 'ih', 'ou', 'ee', 'oh'] as VisemeKey[]) {
+          let targetV =
+            vk === 'oh'
+              ? pose.expressionSoftMouthOpen * 0.85
+              : vk === 'aa'
+                ? pose.expressionSoftMouthOpen * 0.22
+                : 0;
+          if (lipActive) {
+            targetV =
+              vk === 'aa'
+                ? wAa
+                : vk === 'oh'
+                  ? wOh
+                  : vk === 'ih'
+                    ? wIh
+                    : vk === 'ee'
+                      ? wEe
+                      : wOh * 0.35;
+          }
+          currentVisemes[vk] = THREE.MathUtils.lerp(currentVisemes[vk], targetV, lipDamp);
+          vrm.expressionManager.setValue(vk, currentVisemes[vk]);
+        }
       }
 
       // 7) Advance VRM SpringBones & enforce supple, non-bouncing cloth physics on the dress
       vrm.update(safeDt);
+
+      // Apply delicate eyebrow/eye/mouth-corner VRoid morphs directly without stacking over blink or sticking
+      if (faceMorphDict && faceMorphInfluences) {
+        const brwJoyIdx = faceMorphDict['Fcl_BRW_Joy'];
+        const brwSurpIdx = faceMorphDict['Fcl_BRW_Surprised'];
+        const eyeFunIdx = faceMorphDict['Fcl_EYE_Fun'];
+        const mthFunIdx = faceMorphDict['Fcl_MTH_Fun'];
+        if (brwJoyIdx !== undefined) {
+          faceMorphInfluences[brwJoyIdx] = Math.min(0.75, effHappy * 0.72);
+        }
+        if (brwSurpIdx !== undefined) {
+          faceMorphInfluences[brwSurpIdx] = effCuriousBrow * 0.65;
+        }
+        if (eyeFunIdx !== undefined) {
+          // Attenuate happy eye-squint while blinking so eyelids never over-close or clip
+          faceMorphInfluences[eyeFunIdx] = effEyeSquint * 0.62 * (1 - activeBlink * 0.85);
+        }
+        if (mthFunIdx !== undefined) {
+          faceMorphInfluences[mthFunIdx] = Math.min(0.45, effHappy * 0.48);
+        }
+      }
 
       const clothSmoothAlpha = 1 - Math.exp(-10 * safeDt);
       for (const tj of tunedJoints) {
         const bone = tj.joint.bone as THREE.Object3D;
         _clampedQuat.copy(bone.quaternion);
 
-        // Softly clamp maximum angular deflection from rest pose so the dress never flies far out
+        // Softly clamp maximum angular deflection from rest pose (tighter on skirt while seated so front never lifts high)
+        const effectiveMaxAngle =
+          isSitClipState && tj.isDressOrSkirt ? 0.10 : tj.maxAngleRad;
         const angle = tj.restQuat.angleTo(_clampedQuat);
-        if (angle > tj.maxAngleRad && angle > 0.0001) {
-          const allowedFraction = tj.maxAngleRad / angle;
+        if (angle > effectiveMaxAngle && angle > 0.0001) {
+          const allowedFraction = effectiveMaxAngle / angle;
           _clampedQuat.copy(tj.restQuat).slerp(bone.quaternion, allowedFraction);
         }
 
@@ -729,20 +2089,27 @@ export async function parseFlorieVrmFromBuffer(
         bone.updateMatrix();
       }
 
+      // Smoothly drape front skirt bones down onto thighs while sitting/seated so SpringBones never lift them
+      const targetSkirtWeight = state === 'sit' ? 1 : state === 'sit_down' || state === 'stand_up' ? 0.85 : 0;
+      skirtFrontSitWeight = THREE.MathUtils.damp(skirtFrontSitWeight, targetSkirtWeight, 8, safeDt);
+      if (skirtFrontSitWeight > 0.005 && skirtFrontBones.length > 0) {
+        for (const sf of skirtFrontBones) {
+          _skirtDrapeQ.setFromAxisAngle(_skirtDrapeAxis, -thighForwardXSign * sf.rad * skirtFrontSitWeight);
+          sf.bone.quaternion.copy(sf.restQuat).multiply(_skirtDrapeQ);
+          sf.bone.updateMatrix();
+        }
+      }
+
       // Add subtle, organic woven-fabric ripple to the bundled skirt drape during locomotion
       if (bundledSkirtDrape) {
-        const ripplePitch =
-          (Math.sin(gaitPhase * 2 - 0.6) * 0.032 + THREE.MathUtils.lerp(0.025, 0.065, runWeight)) *
-          moveWeight;
-        const rippleRoll = -s * 0.028 * moveWeight;
         bundledSkirtDrape.rotation.x = THREE.MathUtils.lerp(
           bundledSkirtDrape.rotation.x,
-          ripplePitch,
+          pose.skirtRipplePitch,
           clothSmoothAlpha
         );
         bundledSkirtDrape.rotation.z = THREE.MathUtils.lerp(
           bundledSkirtDrape.rotation.z,
-          rippleRoll,
+          pose.skirtRippleRoll,
           clothSmoothAlpha
         );
         bundledSkirtDrape.updateMatrix();
@@ -750,187 +2117,578 @@ export async function parseFlorieVrmFromBuffer(
     }
   };
 
-  const updateIntroCutscene = (introTime: number, dt: number) => {
+  const updateIntroCutscene = (
+    introTime: number,
+    dt: number,
+    floriePos?: THREE.Vector3,
+    playerYaw = Math.PI,
+    cameraPos?: THREE.Vector3
+  ) => {
     const safeDt = Math.min(Math.max(dt, 0.001), 0.05);
-    elapsedAccum += safeDt;
-    const damp = 1 - Math.exp(-12 * safeDt);
+    gaitBlend.elapsedAccum += safeDt;
+    const damp = 1 - Math.exp(-7.2 * safeDt);
+    const fastDamp = 1 - Math.exp(-10.5 * safeDt);
+    const visemeDamp = 1 - Math.exp(-24 * safeDt);
 
     if (!vrm) return;
 
-    const isWavePhase = introTime < 4.8;
-    const isBeckonPhase = introTime >= 4.8 && introTime < 8.8;
+    // Continuous C1-smooth choreography across the 11.65s cutscene:
+    // - raiseEnv: smoothly raises right arm for greeting (0.0s -> 0.45s)
+    // - waveBlend: enthusiastic greeting wave on "Bonjour !" (0.0s -> 2.2s)
+    // - introSelfEnv: warm hand-to-chest + welcoming left hand on "Je m'appelle Florie" (1.85s -> 3.85s)
+    // - happyClaspEnv: excited soft clasp on "trop contente que tu sois ici !" (3.45s -> 5.65s)
+    // - beckonBlend: turns & beckons warmly on "Allez viens, suis-moi !" (5.5s -> 9.0s)
+    // - walkWeight: transitions smoothly into StylizedWalk gait (5.65s -> 6.55s)
+    // - walkArmsWeight: transitions arms into natural walking swing through the open door (8.5s -> 9.3s)
+    // - afterBeckon: turns head/torso forward into the entrance right before the cut (10.1s -> 10.95s)
+    const raiseEnv = smoothstep(0.0, 0.45, introTime);
+    const waveBlend = smoothstep(0.0, 0.35, introTime) * (1 - smoothstep(1.6, 2.25, introTime));
+    const introSelfEnv = smoothstep(1.85, 2.35, introTime) * (1 - smoothstep(3.35, 3.85, introTime));
+    const happyClaspEnv = smoothstep(3.45, 3.95, introTime) * (1 - smoothstep(5.1, 5.65, introTime));
+    const toBeckon = smoothstep(5.35, 6.55, introTime);
+    const turnStepEnv = Math.sin(toBeckon * Math.PI);
+    const walkArmsWeight = smoothstep(8.5, 9.3, introTime);
+    const afterBeckon = smoothstep(9.1, 10.5, introTime);
+    const beckonBlend = toBeckon * (1 - smoothstep(8.3, 9.1, introTime));
+    const walkWeight = smoothstep(5.55, 6.75, introTime);
 
-    const bounceFreq = isWavePhase ? 5.4 : 4.6;
-    const bounceAmp = isWavePhase || isBeckonPhase ? 0.026 : 0.008;
-    const bounceY = Math.abs(Math.sin(introTime * bounceFreq)) * bounceAmp;
-    const swayX = Math.sin(introTime * 2.7) * 0.018;
+    // Continuous walking gait clock using the exact in-game StylizedWalk animation
+    const walkClock = Math.max(0, introTime - 5.45) * 6.2;
+    const walkS = Math.sin(walkClock);
+    const walkPose = computeStylizedAnimeGait(
+      'walk',
+      walkClock,
+      0,
+      safeDt,
+      gaitBlend,
+      gaitPose
+    );
+
+    const idleBounceY = Math.abs(Math.sin(introTime * 5.0)) * 0.016 + turnStepEnv * 0.022;
+    const bounceY = THREE.MathUtils.lerp(idleBounceY, walkPose.hipsOffsetY, walkWeight);
+
+    const idleSwayX = Math.sin(introTime * 2.5) * 0.016;
+    const swayX = THREE.MathUtils.lerp(idleSwayX, walkPose.hipsOffsetX, walkWeight);
 
     springCenter.position.set(swayX * 0.25, -bounceY * 0.2, 0.006);
 
+    // Compute exact world-space yaw from Florie to the camera (the player's eyes)
+    // In Florie.vrm, total world yaw = Math.PI + camYaw makes her face point 100% directly at cameraPos!
+    const camDx = cameraPos && floriePos ? cameraPos.x - floriePos.x : 0;
+    const camDz = cameraPos && floriePos ? cameraPos.z - floriePos.z : 1.8;
+    const camYawFromFlorie = Math.atan2(camDx, Math.max(0.25, camDz));
+    const desiredLookWorldYaw = Math.PI + camYawFromFlorie;
+
+    // 1) Hips & Torso contrapposto -> fluid upper-body twist back toward the camera while walking to the door
     if (hips) {
       hips.position.x = THREE.MathUtils.lerp(hips.position.x, baseHipsPos.x + swayX, damp);
       hips.position.y = THREE.MathUtils.lerp(hips.position.y, baseHipsPos.y + bounceY, damp);
+      hips.position.z = THREE.MathUtils.lerp(
+        hips.position.z,
+        baseHipsPos.z + walkPose.hipsOffsetZ * walkWeight,
+        damp
+      );
 
-      const targetHipsYRot = isBeckonPhase ? 0.42 : Math.sin(introTime * 2.4) * 0.06;
-      const targetHipsZRot = isWavePhase ? 0.045 : -0.035;
+      const waveHipsY = Math.sin(introTime * 2.5) * 0.05;
+      const targetHipsYRot = THREE.MathUtils.lerp(waveHipsY, walkPose.hipsRotY, walkWeight);
+
+      const waveHipsZ = 0.035 + Math.cos(introTime * 2.5) * 0.015;
+      const targetHipsZRot = THREE.MathUtils.lerp(waveHipsZ, walkPose.hipsRotZ, walkWeight);
+      const targetHipsXRot = THREE.MathUtils.lerp(
+        -0.02,
+        spineForwardXSign * walkPose.hipsRotX,
+        walkWeight
+      );
+
+      hips.rotation.x = THREE.MathUtils.lerp(hips.rotation.x, targetHipsXRot, damp);
       hips.rotation.y = THREE.MathUtils.lerp(hips.rotation.y, targetHipsYRot, damp);
       hips.rotation.z = THREE.MathUtils.lerp(hips.rotation.z, targetHipsZRot, damp);
     }
 
     if (spine) {
-      const targetSpineX = isWavePhase ? -0.04 : 0.03;
-      const targetSpineY = isBeckonPhase ? 0.22 : Math.sin(introTime * 2.4) * 0.04;
-      const targetSpineZ = isWavePhase ? -0.05 : 0.03;
+      const targetSpineX =
+        (-0.04 + Math.sin(introTime * 5.0) * 0.016) * (1 - toBeckon) +
+        (0.03 + Math.sin(introTime * 5.0) * 0.018) * toBeckon;
+      // Spine twists naturally over her right shoulder (-Y) during beckonBlend as she turns to walk forward
+      const targetSpineY =
+        Math.sin(introTime * 2.5 - 0.3) * 0.05 * (1 - toBeckon) +
+        -0.28 * beckonBlend +
+        -0.14 * turnStepEnv +
+        -walkS * 0.06 * afterBeckon;
+      const targetSpineZ = -0.05 * (1 - toBeckon) + 0.03 * beckonBlend;
       spine.rotation.x = THREE.MathUtils.lerp(spine.rotation.x, targetSpineX, damp);
       spine.rotation.y = THREE.MathUtils.lerp(spine.rotation.y, targetSpineY, damp);
       spine.rotation.z = THREE.MathUtils.lerp(spine.rotation.z, targetSpineZ, damp);
     }
 
     if (chest) {
-      const targetChestY = isBeckonPhase ? 0.16 : 0;
-      const targetChestZ = isWavePhase ? -0.04 : 0.02;
-      chest.rotation.x = THREE.MathUtils.lerp(chest.rotation.x, -0.03, damp);
+      const targetChestX = -0.035 * (1 - toBeckon) + 0.015 * toBeckon;
+      const targetChestY = -0.04 * (1 - toBeckon) - 0.24 * beckonBlend;
+      const targetChestZ = -0.04 * (1 - toBeckon) - 0.025 * beckonBlend;
+      chest.rotation.x = THREE.MathUtils.lerp(chest.rotation.x, targetChestX, damp);
       chest.rotation.y = THREE.MathUtils.lerp(chest.rotation.y, targetChestY, damp);
       chest.rotation.z = THREE.MathUtils.lerp(chest.rotation.z, targetChestZ, damp);
     }
 
+    if (upperChest) {
+      const targetUpperChestY = -0.03 * (1 - toBeckon) - 0.16 * beckonBlend;
+      const targetUpperChestZ = -0.025 * (1 - toBeckon) - 0.02 * beckonBlend;
+      upperChest.rotation.x = THREE.MathUtils.lerp(
+        upperChest.rotation.x,
+        Math.sin(introTime * 3.0) * 0.016,
+        damp
+      );
+      upperChest.rotation.y = THREE.MathUtils.lerp(upperChest.rotation.y, targetUpperChestY, damp);
+      upperChest.rotation.z = THREE.MathUtils.lerp(upperChest.rotation.z, targetUpperChestZ, damp);
+    }
+
+    // 2) Neck & Head: mathematically locked onto the player/camera (desiredLookWorldYaw)
+    //    during both the greeting wave AND the entire "Suis-moi !" walk!
+    const currentTorsoWorldYaw =
+      playerYaw +
+      (hips?.rotation.y ?? 0) +
+      (spine?.rotation.y ?? 0) +
+      (chest?.rotation.y ?? 0) +
+      (upperChest?.rotation.y ?? 0);
+
+    const rawYawDiff = desiredLookWorldYaw - currentTorsoWorldYaw;
+    const normalizedYawDiff = Math.atan2(Math.sin(rawYawDiff), Math.cos(rawYawDiff));
+    const clampedLookDiff = THREE.MathUtils.clamp(normalizedYawDiff, -1.05, 1.05);
+    // Keep looking directly at the camera until 11.4s (when she finishes speaking and steps through the door)
+    const lookAtCameraWeight = 1 - afterBeckon;
+
     if (neck) {
-      const targetNeckY = isBeckonPhase ? -0.32 : 0;
-      neck.rotation.y = THREE.MathUtils.lerp(neck.rotation.y, targetNeckY, damp);
-      neck.rotation.z = THREE.MathUtils.lerp(neck.rotation.z, isWavePhase ? 0.05 : -0.04, damp);
+      const targetNeckY = clampedLookDiff * 0.42 * lookAtCameraWeight;
+      const targetNeckZ = 0.05 * (1 - toBeckon) + 0.04 * beckonBlend;
+      const targetNeckX = -0.02 * (1 - toBeckon) + -0.015 * beckonBlend;
+      neck.rotation.x = THREE.MathUtils.lerp(neck.rotation.x, targetNeckX, fastDamp);
+      neck.rotation.y = THREE.MathUtils.lerp(neck.rotation.y, targetNeckY, fastDamp);
+      neck.rotation.z = THREE.MathUtils.lerp(neck.rotation.z, targetNeckZ, fastDamp);
     }
 
     if (head) {
-      const targetHeadX = isWavePhase
-        ? -0.06 + Math.sin(introTime * 5.4) * 0.035
-        : -0.04 + Math.sin(introTime * 6.5) * 0.045;
-      const targetHeadY = isBeckonPhase ? -0.44 : Math.sin(introTime * 2.0) * 0.05;
-      const targetHeadZ = isWavePhase
-        ? 0.14 + Math.sin(introTime * 3.2) * 0.04
-        : -0.11 + Math.cos(introTime * 3.0) * 0.03;
+      const targetHeadX = -0.05 + Math.sin(introTime * 6.2) * 0.052;
+      const targetHeadY =
+        (clampedLookDiff * 0.62 + Math.sin(introTime * 2.4) * 0.045) * lookAtCameraWeight;
+      const targetHeadZ =
+        (0.14 + Math.sin(introTime * 3.4) * 0.045) * (1 - toBeckon) +
+        (0.10 + Math.cos(introTime * 2.8) * 0.032) * beckonBlend;
 
-      head.rotation.x = THREE.MathUtils.lerp(head.rotation.x, targetHeadX, damp);
-      head.rotation.y = THREE.MathUtils.lerp(head.rotation.y, targetHeadY, damp);
-      head.rotation.z = THREE.MathUtils.lerp(head.rotation.z, targetHeadZ, damp);
+      head.rotation.x = THREE.MathUtils.lerp(head.rotation.x, targetHeadX, fastDamp);
+      head.rotation.y = THREE.MathUtils.lerp(head.rotation.y, targetHeadY, fastDamp);
+      head.rotation.z = THREE.MathUtils.lerp(head.rotation.z, targetHeadZ, fastDamp);
+    }
+
+    // 3) Left Clavicle, Upper Arm, Forearm, Wrist & Fingers (Palms Toward Camera, Natural Welcome & Clasp)
+    if (leftShoulder) {
+      const lShZ =
+        -leftArmDownZ * (0.04 + 0.08 * introSelfEnv + 0.10 * happyClaspEnv) * (1 - toBeckon);
+      const lShY = -0.02 * (1 - toBeckon) + 0.04 * beckonBlend;
+      leftShoulder.rotation.z = THREE.MathUtils.lerp(leftShoulder.rotation.z, lShZ, damp);
+      leftShoulder.rotation.y = THREE.MathUtils.lerp(leftShoulder.rotation.y, lShY, damp);
     }
 
     if (leftUpperArm) {
-      leftUpperArm.rotation.z = THREE.MathUtils.lerp(
-        leftUpperArm.rotation.z,
-        leftArmDownZ * 0.84,
-        damp
+      const walkSwingL = walkS * 0.42 * walkWeight;
+      const welcomeOpenLX = 0.28 * introSelfEnv + 0.36 * happyClaspEnv;
+      const welcomeOpenLZ = leftArmDownZ * (0.82 - 0.18 * introSelfEnv - 0.22 * happyClaspEnv);
+      const targetLZ = THREE.MathUtils.lerp(
+        welcomeOpenLZ + Math.sin(introTime * 2.5) * 0.025,
+        leftArmDownZ * 0.90,
+        walkWeight
       );
-      leftUpperArm.rotation.x = THREE.MathUtils.lerp(
-        leftUpperArm.rotation.x,
-        isWavePhase ? -0.26 : -0.18,
-        damp
-      );
-      leftUpperArm.rotation.y = THREE.MathUtils.lerp(leftUpperArm.rotation.y, 0.12, damp);
+      const targetLX =
+        leftArmForwardXSign *
+        THREE.MathUtils.lerp(0.18 + welcomeOpenLX, walkSwingL + 0.08 * beckonBlend, walkWeight);
+      const targetLY = 0.08 * (1 - afterBeckon) - 0.12 * happyClaspEnv;
+      leftUpperArm.rotation.z = THREE.MathUtils.lerp(leftUpperArm.rotation.z, targetLZ, damp);
+      leftUpperArm.rotation.x = THREE.MathUtils.lerp(leftUpperArm.rotation.x, targetLX, damp);
+      leftUpperArm.rotation.y = THREE.MathUtils.lerp(leftUpperArm.rotation.y, targetLY, damp);
     }
+
     if (leftLowerArm) {
-      leftLowerArm.rotation.y = THREE.MathUtils.lerp(
-        leftLowerArm.rotation.y,
-        isWavePhase ? -0.52 : -0.32,
-        damp
-      );
+      const walkElbowL = leftElbowForwardYSign * (0.28 + Math.max(0, walkS) * 0.28);
+      const gestureElbowL =
+        leftElbowForwardYSign *
+        (0.46 + 0.56 * introSelfEnv + 0.72 * happyClaspEnv + Math.sin(introTime * 2.5) * 0.04);
+      const targetLElbowY = THREE.MathUtils.lerp(gestureElbowL, walkElbowL, walkWeight);
+      const targetLElbowX =
+        leftPalmForwardXSign *
+        THREE.MathUtils.lerp(0.55 + 0.48 * introSelfEnv + 0.28 * happyClaspEnv, 0.08, walkWeight);
+      leftLowerArm.rotation.x = THREE.MathUtils.lerp(leftLowerArm.rotation.x, targetLElbowX, damp);
+      leftLowerArm.rotation.y = THREE.MathUtils.lerp(leftLowerArm.rotation.y, targetLElbowY, damp);
+      leftLowerArm.rotation.z = THREE.MathUtils.lerp(leftLowerArm.rotation.z, 0, damp);
     }
 
+    if (leftHand) {
+      const lWristX =
+        leftPalmForwardXSign *
+        THREE.MathUtils.lerp(0.24 + 0.22 * introSelfEnv + 0.14 * happyClaspEnv, 0.04, walkWeight);
+      const lWristY =
+        (Math.sin(introTime * 2.8) * 0.12 + 0.12 * introSelfEnv - 0.12 * happyClaspEnv) *
+        (1 - walkWeight);
+      const lWristZ =
+        leftCurlSign *
+        THREE.MathUtils.lerp(-0.14 * introSelfEnv + 0.18 * happyClaspEnv, 0.14, walkWeight);
+      leftHand.rotation.x = THREE.MathUtils.lerp(leftHand.rotation.x, lWristX, fastDamp);
+      leftHand.rotation.y = THREE.MathUtils.lerp(leftHand.rotation.y, lWristY, fastDamp);
+      leftHand.rotation.z = THREE.MathUtils.lerp(leftHand.rotation.z, lWristZ, fastDamp);
+    }
+
+    for (const f of leftFingerBones) {
+      const welcomeSpread = 0.05 + f.fingerIdx * 0.025;
+      const claspCurl = 0.44 + f.fingerIdx * 0.055;
+      const walkCurl = 0.28 + f.fingerIdx * 0.045;
+      const gestureCurl =
+        THREE.MathUtils.lerp(0.14 + f.fingerIdx * 0.03, welcomeSpread, introSelfEnv) *
+          (1 - happyClaspEnv) +
+        claspCurl * happyClaspEnv;
+      const targetLFingerZ = leftCurlSign * THREE.MathUtils.lerp(gestureCurl, walkCurl, walkWeight);
+      f.bone.rotation.z = THREE.MathUtils.lerp(f.bone.rotation.z, targetLFingerZ, fastDamp);
+    }
+    if (leftThumbProximal) {
+      const lThumbY = 0.20 * happyClaspEnv - 0.14 * introSelfEnv;
+      const lThumbZ = leftCurlSign * (0.22 * happyClaspEnv + 0.10 * walkWeight);
+      leftThumbProximal.rotation.y = THREE.MathUtils.lerp(leftThumbProximal.rotation.y, lThumbY, fastDamp);
+      leftThumbProximal.rotation.z = THREE.MathUtils.lerp(leftThumbProximal.rotation.z, lThumbZ, fastDamp);
+    }
+
+    // 4) Right Clavicle, Upper Arm, Forearm, Wrist & Fingers (Palms Toward Camera: Wave -> Welcome -> Clasp -> Beckon -> Walk)
     if (rightUpperArm && rightLowerArm) {
-      if (isWavePhase) {
-        const waveOsc = Math.sin(introTime * 9.6);
-        const targetZ = rightArmDownZ * 0.18 + waveOsc * 0.24;
-        const targetX = -0.88 + Math.cos(introTime * 4.8) * 0.06;
-        const targetY = -0.18;
-        rightUpperArm.rotation.z = THREE.MathUtils.lerp(rightUpperArm.rotation.z, targetZ, damp);
-        rightUpperArm.rotation.x = THREE.MathUtils.lerp(rightUpperArm.rotation.x, targetX, damp);
-        rightUpperArm.rotation.y = THREE.MathUtils.lerp(rightUpperArm.rotation.y, targetY, damp);
+      // Wave phase oscillators (Act I)
+      const wavePhase = introTime * 7.8;
+      const waveUpper = Math.sin(wavePhase);
+      const waveForearm = Math.sin(wavePhase - 0.28);
+      const waveWrist = Math.sin(wavePhase - 0.58);
 
-        const targetElbowY = 0.88 + waveOsc * 0.22;
-        rightLowerArm.rotation.y = THREE.MathUtils.lerp(
-          rightLowerArm.rotation.y,
-          targetElbowY,
-          damp
-        );
-        if (rightHand) {
-          rightHand.rotation.z = THREE.MathUtils.lerp(rightHand.rotation.z, waveOsc * 0.36, damp);
-          rightHand.rotation.x = THREE.MathUtils.lerp(rightHand.rotation.x, 0, damp);
-        }
-      } else if (isBeckonPhase) {
-        const beckonCycle = (introTime - 4.8) * 7.8;
-        const beckonOsc = Math.sin(beckonCycle);
-        const beckonPull = Math.max(0, beckonOsc);
-        const targetZ = rightArmDownZ * 0.48;
-        const targetX = -0.74 - beckonPull * 0.22;
-        const targetY = 0.22;
-        rightUpperArm.rotation.z = THREE.MathUtils.lerp(rightUpperArm.rotation.z, targetZ, damp);
-        rightUpperArm.rotation.x = THREE.MathUtils.lerp(rightUpperArm.rotation.x, targetX, damp);
-        rightUpperArm.rotation.y = THREE.MathUtils.lerp(rightUpperArm.rotation.y, targetY, damp);
+      // Beckon phase oscillators (Act II)
+      const beckonPhase = Math.max(0, introTime - 5.95) * 5.0;
+      const pullUpper = Math.sin(beckonPhase) * 0.5 + 0.5;
+      const pullElbow = Math.sin(beckonPhase - 0.35) * 0.5 + 0.5;
+      const pullWrist = Math.sin(beckonPhase - 0.68) * 0.5 + 0.5;
+      const pullFingers = Math.sin(beckonPhase - 0.95) * 0.5 + 0.5;
 
-        const targetElbowY = 0.58 + beckonPull * 0.62;
-        rightLowerArm.rotation.y = THREE.MathUtils.lerp(
-          rightLowerArm.rotation.y,
-          targetElbowY,
-          damp
+      // Walk-in arm swing (Act III)
+      const walkSwingR = -walkS * 0.40;
+
+      if (rightShoulder) {
+        const shZ =
+          -rightArmDownZ * 0.12 * waveBlend +
+          -rightArmDownZ * 0.08 * (introSelfEnv + happyClaspEnv) +
+          -rightArmDownZ * (0.06 + pullUpper * 0.06) * beckonBlend;
+        const shY =
+          waveUpper * 0.04 * waveBlend + (-0.04 + pullUpper * 0.14) * beckonBlend;
+        rightShoulder.rotation.z = THREE.MathUtils.lerp(rightShoulder.rotation.z, shZ, fastDamp);
+        rightShoulder.rotation.y = THREE.MathUtils.lerp(rightShoulder.rotation.y, shY, fastDamp);
+      }
+
+      // Upper arm raised naturally out/forward (never folded back into chest)
+      const waveArmZ = rightArmDownZ * 0.42 + waveUpper * 0.05;
+      const selfArmZ = rightArmDownZ * 0.62;
+      const claspArmZ = rightArmDownZ * 0.58;
+      const beckonArmZ = rightArmDownZ * (0.50 - pullUpper * 0.12);
+      const walkArmZ = rightArmDownZ * 0.90;
+      const act1ArmZ =
+        waveArmZ * waveBlend +
+        selfArmZ * introSelfEnv +
+        claspArmZ * happyClaspEnv +
+        rightArmDownZ * Math.max(0, 1 - waveBlend - introSelfEnv - happyClaspEnv);
+      const activeArmZ =
+        act1ArmZ * (1 - toBeckon) +
+        beckonArmZ * beckonBlend +
+        walkArmZ * walkArmsWeight +
+        rightArmDownZ * Math.max(0, toBeckon - beckonBlend - walkArmsWeight);
+      const targetZ = THREE.MathUtils.lerp(rightArmDownZ, activeArmZ, raiseEnv);
+
+      const waveArmX = rightArmForwardXSign * (0.30 + Math.cos(wavePhase * 0.5) * 0.03);
+      const selfArmX = rightArmForwardXSign * 0.34;
+      const claspArmX = rightArmForwardXSign * 0.44;
+      const beckonArmX = rightArmForwardXSign * (0.48 + pullUpper * 0.24);
+      const walkArmX = rightArmForwardXSign * walkSwingR;
+      const act1ArmX =
+        waveArmX * waveBlend + selfArmX * introSelfEnv + claspArmX * happyClaspEnv;
+      const targetX =
+        (act1ArmX * (1 - toBeckon) + beckonArmX * beckonBlend + walkArmX * walkArmsWeight) *
+        raiseEnv;
+
+      const waveArmY = waveUpper * 0.08;
+      const selfArmY = 0.08;
+      const claspArmY = -0.10;
+      const beckonArmY = -rightArmForwardXSign * (0.14 - pullUpper * 0.24);
+      const act1ArmY =
+        waveArmY * waveBlend + selfArmY * introSelfEnv + claspArmY * happyClaspEnv;
+      const targetY = (act1ArmY * (1 - toBeckon) + beckonArmY * beckonBlend) * raiseEnv;
+
+      rightUpperArm.rotation.z = THREE.MathUtils.lerp(rightUpperArm.rotation.z, targetZ, fastDamp);
+      rightUpperArm.rotation.x = THREE.MathUtils.lerp(rightUpperArm.rotation.x, targetX, fastDamp);
+      rightUpperArm.rotation.y = THREE.MathUtils.lerp(rightUpperArm.rotation.y, targetY, fastDamp);
+
+      // Forearm bent forward cleanly & rotated so the palm faces the camera
+      const waveElbowY = rightElbowForwardYSign * (1.38 + Math.cos(wavePhase) * 0.06);
+      const selfElbowY = rightElbowForwardYSign * 1.02;
+      const claspElbowY = rightElbowForwardYSign * 1.18;
+      const beckonElbowY = rightElbowForwardYSign * (0.82 + pullElbow * 0.62);
+      const walkElbowY = rightElbowForwardYSign * (0.28 + Math.max(0, -walkS) * 0.28);
+      const act1ElbowY =
+        waveElbowY * waveBlend +
+        selfElbowY * introSelfEnv +
+        claspElbowY * happyClaspEnv +
+        rightElbowForwardYSign * 0.28 * Math.max(0, 1 - waveBlend - introSelfEnv - happyClaspEnv);
+      const activeElbowY =
+        act1ElbowY * (1 - toBeckon) +
+        beckonElbowY * beckonBlend +
+        walkElbowY * walkArmsWeight +
+        rightElbowForwardYSign * 0.28 * Math.max(0, toBeckon - beckonBlend - walkArmsWeight);
+      const targetElbowY = THREE.MathUtils.lerp(rightElbowForwardYSign * 0.2, activeElbowY, raiseEnv);
+
+      const waveElbowX = rightPalmForwardXSign * 0.98 + waveForearm * 0.08;
+      const selfElbowX = rightPalmForwardXSign * 1.04;
+      const claspElbowX = rightPalmForwardXSign * 0.78;
+      const beckonElbowX = rightPalmForwardXSign * 0.95;
+      const act1ElbowX =
+        waveElbowX * waveBlend + selfElbowX * introSelfEnv + claspElbowX * happyClaspEnv;
+      const targetElbowX =
+        (act1ElbowX * (1 - toBeckon) + beckonElbowX * beckonBlend + rightPalmForwardXSign * 0.08 * walkArmsWeight) *
+        raiseEnv;
+
+      const waveElbowZ = waveForearm * 0.14;
+      const beckonElbowZ = (pullElbow - 0.5) * 0.18;
+      const targetElbowZ = (waveElbowZ * waveBlend + beckonElbowZ * beckonBlend) * raiseEnv;
+
+      rightLowerArm.rotation.y = THREE.MathUtils.lerp(
+        rightLowerArm.rotation.y,
+        targetElbowY,
+        fastDamp
+      );
+      rightLowerArm.rotation.x = THREE.MathUtils.lerp(
+        rightLowerArm.rotation.x,
+        targetElbowX,
+        fastDamp
+      );
+      rightLowerArm.rotation.z = THREE.MathUtils.lerp(
+        rightLowerArm.rotation.z,
+        targetElbowZ,
+        fastDamp
+      );
+
+      // Wrist aligned so palm faces the camera cleanly, with expressive wave & beckon flexion
+      if (rightHand) {
+        const waveWristY = waveWrist * 0.44;
+        const selfWristY = -0.14;
+        const claspWristY = 0.14;
+        const beckonWristY = (pullWrist - 0.5) * 0.30;
+        const targetWristY =
+          (waveWristY * waveBlend +
+            selfWristY * introSelfEnv +
+            claspWristY * happyClaspEnv +
+            beckonWristY * beckonBlend) *
+          raiseEnv;
+
+        const waveWristZ = -rightCurlSign * 0.12;
+        const selfWristZ = -rightCurlSign * 0.10;
+        const claspWristZ = rightCurlSign * 0.18;
+        const beckonWristZ = rightCurlSign * (-0.22 + pullWrist * 0.76);
+        const walkWristZ = rightCurlSign * 0.14;
+        const targetWristZ =
+          (waveWristZ * waveBlend +
+            selfWristZ * introSelfEnv +
+            claspWristZ * happyClaspEnv +
+            beckonWristZ * beckonBlend +
+            walkWristZ * walkArmsWeight) *
+          raiseEnv;
+
+        const waveWristX = rightPalmForwardXSign * 0.32 + waveWrist * 0.12;
+        const selfWristX = rightPalmForwardXSign * 0.24;
+        const claspWristX = rightPalmForwardXSign * 0.16;
+        const beckonWristX = rightPalmForwardXSign * 0.26;
+        const targetWristX =
+          (waveWristX * waveBlend +
+            selfWristX * introSelfEnv +
+            claspWristX * happyClaspEnv +
+            beckonWristX * beckonBlend) *
+          raiseEnv;
+
+        rightHand.rotation.y = THREE.MathUtils.lerp(rightHand.rotation.y, targetWristY, fastDamp);
+        rightHand.rotation.z = THREE.MathUtils.lerp(rightHand.rotation.z, targetWristZ, fastDamp);
+        rightHand.rotation.x = THREE.MathUtils.lerp(rightHand.rotation.x, targetWristX, fastDamp);
+      }
+
+      // Fingers blended continuously: open wave ripple -> soft chest curl -> excited clasp -> beckon curl -> walk
+      for (const f of rightFingerBones) {
+        const waveRipple = rightCurlSign * (0.04 + Math.sin(wavePhase - 0.8 - f.fingerIdx * 0.32) * 0.05);
+        const selfCurl = rightCurlSign * (0.36 + f.fingerIdx * 0.055);
+        const claspCurl = rightCurlSign * (0.48 + f.fingerIdx * 0.06);
+        const fingerPull = Math.sin(beckonPhase - 0.92 - f.fingerIdx * 0.14) * 0.5 + 0.5;
+        const beckonCurl = rightCurlSign * (0.06 + fingerPull * 0.64 + f.fingerIdx * 0.035);
+        const walkCurl = rightCurlSign * (0.30 + f.fingerIdx * 0.045);
+        const restWeight = Math.max(
+          0,
+          1 - waveBlend - introSelfEnv - happyClaspEnv - beckonBlend - walkArmsWeight
         );
-        if (rightHand) {
-          rightHand.rotation.x = THREE.MathUtils.lerp(
-            rightHand.rotation.x,
-            beckonOsc * 0.42,
-            damp
-          );
-          rightHand.rotation.z = THREE.MathUtils.lerp(
-            rightHand.rotation.z,
-            beckonPull * 0.25,
-            damp
-          );
-        }
-      } else {
-        rightUpperArm.rotation.z = THREE.MathUtils.lerp(
-          rightUpperArm.rotation.z,
-          rightArmDownZ,
-          damp
+        const targetFingerZ =
+          waveRipple * waveBlend +
+          selfCurl * introSelfEnv +
+          claspCurl * happyClaspEnv +
+          beckonCurl * beckonBlend +
+          walkCurl * walkArmsWeight +
+          rightCurlSign * (0.14 + f.fingerIdx * 0.03) * restWeight;
+        f.bone.rotation.z = THREE.MathUtils.lerp(f.bone.rotation.z, targetFingerZ, fastDamp);
+      }
+      if (rightThumbProximal) {
+        const thumbY = -0.18 * waveBlend + (-0.12 + pullFingers * 0.28) * beckonBlend;
+        const thumbZ = 0.08 * waveBlend + rightCurlSign * pullFingers * 0.22 * beckonBlend;
+        rightThumbProximal.rotation.y = THREE.MathUtils.lerp(
+          rightThumbProximal.rotation.y,
+          thumbY,
+          fastDamp
         );
-        rightUpperArm.rotation.x = THREE.MathUtils.lerp(rightUpperArm.rotation.x, 0, damp);
-        rightLowerArm.rotation.y = THREE.MathUtils.lerp(rightLowerArm.rotation.y, 0.15, damp);
+        rightThumbProximal.rotation.z = THREE.MathUtils.lerp(
+          rightThumbProximal.rotation.z,
+          thumbZ,
+          fastDamp
+        );
+      }
+      if (rightThumbIntermediate) {
+        rightThumbIntermediate.rotation.y = THREE.MathUtils.lerp(
+          rightThumbIntermediate.rotation.y,
+          pullFingers * 0.25 * beckonBlend,
+          fastDamp
+        );
       }
     }
 
+    // 5) Full Lower-Body Articulation: smooth transition from contrapposto weight shift to exact StylizedWalk gait
     if (leftUpperLeg && rightUpperLeg && leftLowerLeg && rightLowerLeg) {
-      const stepOsc = isBeckonPhase ? Math.sin((introTime - 4.8) * 4.6) * 0.18 : 0;
+      const weightShift = Math.sin(introTime * 2.5);
+
+      const idleLUX = thighForwardXSign * (-0.04 + weightShift * 0.03);
+      const idleRUX = thighForwardXSign * (0.04 - weightShift * 0.03);
+      const walkLUX = thighForwardXSign * walkPose.leftThighX;
+      const walkRUX = thighForwardXSign * walkPose.rightThighX;
+
       leftUpperLeg.rotation.x = THREE.MathUtils.lerp(
         leftUpperLeg.rotation.x,
-        -0.04 + stepOsc,
+        THREE.MathUtils.lerp(idleLUX, walkLUX, walkWeight),
         damp
       );
       rightUpperLeg.rotation.x = THREE.MathUtils.lerp(
         rightUpperLeg.rotation.x,
-        0.04 - stepOsc,
+        THREE.MathUtils.lerp(idleRUX, walkRUX, walkWeight),
         damp
       );
+      leftUpperLeg.rotation.y = THREE.MathUtils.lerp(
+        leftUpperLeg.rotation.y,
+        -walkPose.hipsRotY * 0.85 * walkWeight,
+        damp
+      );
+      rightUpperLeg.rotation.y = THREE.MathUtils.lerp(
+        rightUpperLeg.rotation.y,
+        -walkPose.hipsRotY * 0.85 * walkWeight,
+        damp
+      );
+      leftUpperLeg.rotation.z = THREE.MathUtils.lerp(
+        leftUpperLeg.rotation.z,
+        THREE.MathUtils.lerp(-0.025, leftThighInwardZSign * walkPose.leftThighZ, walkWeight),
+        damp
+      );
+      rightUpperLeg.rotation.z = THREE.MathUtils.lerp(
+        rightUpperLeg.rotation.z,
+        THREE.MathUtils.lerp(0.025, rightThighInwardZSign * walkPose.rightThighZ, walkWeight),
+        damp
+      );
+
+      const idleLLX = kneeBackXSign * (0.06 + Math.max(0, weightShift) * 0.06);
+      const idleRLX = kneeBackXSign * (0.06 + Math.max(0, -weightShift) * 0.06);
+      const walkLLX = kneeBackXSign * walkPose.leftKneeX;
+      const walkRLX = kneeBackXSign * walkPose.rightKneeX;
+
       leftLowerLeg.rotation.x = THREE.MathUtils.lerp(
         leftLowerLeg.rotation.x,
-        0.06 + Math.max(0, stepOsc) * 0.25,
+        THREE.MathUtils.lerp(idleLLX, walkLLX, walkWeight),
         damp
       );
       rightLowerLeg.rotation.x = THREE.MathUtils.lerp(
         rightLowerLeg.rotation.x,
-        0.06 + Math.max(0, -stepOsc) * 0.25,
+        THREE.MathUtils.lerp(idleRLX, walkRLX, walkWeight),
         damp
       );
+
+      if (leftFoot && rightFoot) {
+        leftFoot.rotation.x = THREE.MathUtils.lerp(
+          leftFoot.rotation.x,
+          THREE.MathUtils.lerp(0, ankleDownXSign * walkPose.leftAnkleX, walkWeight),
+          damp
+        );
+        rightFoot.rotation.x = THREE.MathUtils.lerp(
+          rightFoot.rotation.x,
+          THREE.MathUtils.lerp(0, ankleDownXSign * walkPose.rightAnkleX, walkWeight),
+          damp
+        );
+      }
+      if (leftToes && rightToes) {
+        const toeRollL = THREE.MathUtils.lerp(0.04, -Math.max(0, -walkS) * 0.18, walkWeight);
+        const toeRollR = THREE.MathUtils.lerp(0.04, -Math.max(0, walkS) * 0.18, walkWeight);
+        leftToes.rotation.x = THREE.MathUtils.lerp(leftToes.rotation.x, toeRollL, damp);
+        rightToes.rotation.x = THREE.MathUtils.lerp(rightToes.rotation.x, toeRollR, damp);
+      }
     }
 
+    // 6) Phoneme-Accurate French Lip-Sync (`aa`, `ih`, `ou`, `ee`, `oh`) & Natural Eye Expressions
+    let activeIntroBlink = 0;
+    let introMouthQuiet = 1;
     if (vrm.expressionManager) {
-      vrm.expressionManager.setValue('blink', 0);
-      vrm.expressionManager.setValue('happy', 1.0);
-      const speakingActive =
-        (introTime > 0.35 && introTime < 4.4) || (introTime > 4.9 && introTime < 8.4);
-      const mouthOpen = speakingActive
-        ? (Math.sin(introTime * 14.5) * 0.5 + 0.5) * 0.55
-        : 0.12;
-      vrm.expressionManager.setValue('aa', mouthOpen);
+      const blinkCycle = introTime % 3.4;
+      const blinkWeight =
+        blinkCycle > 3.24 ? Math.sin(((blinkCycle - 3.24) / 0.16) * Math.PI) : 0;
+      activeIntroBlink = Math.max(0, Math.min(1, blinkWeight));
+      vrm.expressionManager.setValue('blink', activeIntroBlink);
+
+      const targetVisemes = sampleIntroVisemes(introTime);
+      let totalVisemeEnergy = 0;
+      for (const vk of ['aa', 'ih', 'ou', 'ee', 'oh'] as VisemeKey[]) {
+        currentVisemes[vk] = THREE.MathUtils.lerp(
+          currentVisemes[vk],
+          targetVisemes[vk],
+          visemeDamp
+        );
+        vrm.expressionManager.setValue(vk, currentVisemes[vk]);
+        totalVisemeEnergy += currentVisemes[vk];
+      }
+
+      // Keep 'happy' (Fcl_ALL_Joy) at 0 so it never stacks over vowel visemes or squints the eyes.
+      vrm.expressionManager.setValue('happy', 0);
+      introMouthQuiet = Math.max(0, 1 - totalVisemeEnergy * 3.5);
+    }
+
+    ensureBlushSprites();
+    if (blushLeftMat && blushRightMat) {
+      blushLeftMat.opacity = THREE.MathUtils.lerp(blushLeftMat.opacity, 0.24, damp);
+      blushRightMat.opacity = blushLeftMat.opacity;
     }
 
     vrm.update(safeDt);
+
+    // Apply expressive eyebrows, open clear eyes (brief warm squint only on pause smiles),
+    // and gentle mouth-corner smile only when not speaking so vowel visemes never deform.
+    if (faceMorphDict && faceMorphInfluences) {
+      const brwJoyIdx = faceMorphDict['Fcl_BRW_Joy'];
+      const brwSurpIdx = faceMorphDict['Fcl_BRW_Surprised'];
+      const eyeFunIdx = faceMorphDict['Fcl_EYE_Fun'];
+      const mthFunIdx = faceMorphDict['Fcl_MTH_Fun'];
+      const excitedBurst =
+        (introTime < 1.2 || (introTime >= 6.2 && introTime < 7.3)) ? 0.32 : 0;
+      const briefEyeSmile =
+        smoothstep(5.15, 5.4, introTime) * (1 - smoothstep(5.9, 6.2, introTime)) +
+        smoothstep(11.35, 11.65, introTime);
+      if (brwJoyIdx !== undefined) faceMorphInfluences[brwJoyIdx] = 0.65;
+      if (brwSurpIdx !== undefined) faceMorphInfluences[brwSurpIdx] = excitedBurst;
+      if (eyeFunIdx !== undefined) {
+        faceMorphInfluences[eyeFunIdx] = Math.min(0.22, briefEyeSmile * 0.22) * (1 - activeIntroBlink * 0.85);
+      }
+      if (mthFunIdx !== undefined) {
+        faceMorphInfluences[mthFunIdx] = 0.16 * introMouthQuiet;
+      }
+    }
 
     const clothSmoothAlpha = 1 - Math.exp(-10 * safeDt);
     for (const tj of tunedJoints) {
@@ -977,5 +2735,7 @@ export async function parseFlorieVrmFromBuffer(
     sourceLabel,
     update,
     updateIntroCutscene,
+    setNpcDialogueVisuals,
+    setCutsceneOverride,
   };
 }

@@ -1,34 +1,41 @@
 [
   {
     "id": "npc-receptionist",
-    "name": "Mme Clara Vance",
-    "role": "Agente d'accueil",
+    "name": "Mme Parker",
+    "role": "Agente d'Accueil",
+    "promptLabel": "Appuie sur E pour parler à Mme Parker",
     "roomId": "lobby",
+    "vrmUrl": "/assets/models/Helen.vrm",
     "shirtColor": "#1F3864",
     "pantsColor": "#2A2E39",
     "skinColor": "#E5B89B",
     "hairColor": "#4A3222",
     "questId": "quest-find-room",
+    "seated": true,
+    "seatYaw": -2.5616,
     "waypoints": [
-      { "x": -3.2, "z": -9.0 },
-      { "x": -2.2, "z": -9.0 }
+      { "x": -5.43, "z": -20.74 }
     ],
-    "greeting": "Bonjour et bienvenue à Maplewood High School ! Je suis Mme Vance. Vous cherchez une salle en particulier ?",
+    "greeting": "Bonjour ! Comment puis-je vous aider aujourd'hui ?",
+    "greetingAudioUrl": "/assets/audio/helen_greeting.mp3",
     "choices": [
       {
-        "label": "Où se trouve la salle de chimie ?",
-        "reply": "Prenez le couloir principal vers l'est jusqu'à l'Aile Sciences : le laboratoire de chimie est la première porte à gauche. Passez donc inspecter le tableau périodique !",
-        "action": "start-quest-find-room"
+        "label": "Qui êtes vous ?",
+        "reply": "Je suis l'Agente d'Accueil de Maplewood, Mme Parker.",
+        "action": "helen-who",
+        "audioUrl": "/assets/audio/helen_who.mp3"
       },
       {
-        "label": "Comment rejoindre le gymnase ?",
-        "reply": "Traversez le hall et prenez le couloir central tout droit vers le nord, entre les toilettes. Le Coach Miller vous attend sur le parquet !",
-        "action": "none"
+        "label": "Puis je avoir mon emploi du temps ?",
+        "reply": "Oui, bien sûr !",
+        "action": "show-schedule",
+        "audioUrl": "/assets/audio/helen_schedule.mp3"
       },
       {
-        "label": "Merci, je visite le campus.",
-        "reply": "Bonne exploration ! N'oubliez pas de passer voir le Principal Donovan dans l'aile ouest.",
-        "action": "none"
+        "label": "Au revoir !",
+        "reply": "Au revoir, bonne journée!",
+        "action": "helen-bye",
+        "audioUrl": "/assets/audio/helen_bye.mp3"
       }
     ]
   },

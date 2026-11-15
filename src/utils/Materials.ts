@@ -657,29 +657,36 @@ export function createSignTexture(
   title: string,
   subtitle: string,
   bgColor = '#1F3864',
-  textColor = '#D4AF37'
+  textColor = '#D4AF37',
+  width = 512,
+  height = 160
 ): THREE.CanvasTexture {
-  const [canvas, ctx] = makeCanvas(512, 160);
+  const [canvas, ctx] = makeCanvas(width, height);
+  const s = height / 160;
+  const margin = Math.round(10 * s);
+
   ctx.fillStyle = bgColor;
-  ctx.fillRect(0, 0, 512, 160);
+  ctx.fillRect(0, 0, width, height);
   ctx.strokeStyle = textColor;
-  ctx.lineWidth = 8;
-  ctx.strokeRect(10, 10, 492, 140);
+  ctx.lineWidth = Math.round(8 * s);
+  ctx.strokeRect(margin, margin, width - margin * 2, height - margin * 2);
 
   ctx.fillStyle = textColor;
-  ctx.font = 'bold 34px sans-serif';
+  ctx.font = `bold ${Math.round(34 * s)}px sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(title, 256, subtitle ? 62 : 82, 464);
+  const maxTextW = width - margin * 4;
+  ctx.fillText(title, width / 2, subtitle ? Math.round(height * 0.39) : Math.round(height * 0.51), maxTextW);
 
   if (subtitle) {
     ctx.fillStyle = '#F8FAFC';
-    ctx.font = '600 20px sans-serif';
-    ctx.fillText(subtitle, 256, 114, 464);
+    ctx.font = `600 ${Math.round(20 * s)}px sans-serif`;
+    ctx.fillText(subtitle, width / 2, Math.round(height * 0.71), maxTextW);
   }
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
   tex.needsUpdate = true;
   return tex;
 }

@@ -1,4 +1,5 @@
 import React from 'react';
+import { OneMoreLineLogo } from './OneMoreLineLogo';
 
 interface LoadingScreenProps {
   progress: number;
@@ -9,69 +10,54 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({ progress, tip }) =
   const pct = Math.min(100, Math.max(0, Math.round(progress)));
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col items-center justify-center px-6"
-      style={{ backgroundColor: '#0b1322', color: '#f8fafc' }}
+      className="fixed inset-0 z-50 flex flex-col items-center justify-center px-6 overflow-hidden"
+      style={{
+        background:
+          'radial-gradient(circle at 50% 42%, rgba(225, 29, 72, 0.16) 0%, rgba(16, 12, 24, 0.96) 52%, #09080f 100%)',
+        color: '#fff8f3',
+      }}
       role="status"
       aria-live="polite"
     >
-      {/* Bespoke Maplewood Eagles Crest SVG */}
-      <svg
-        width="84"
-        height="96"
-        viewBox="0 0 84 96"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-        className="mb-6"
-        aria-hidden="true"
-      >
-        <path
-          d="M42 4L78 16V48C78 69.5 62.6 86.2 42 92C21.4 86.2 6 69.5 6 48V16L42 4Z"
-          fill="#1F3864"
-          stroke="#D4AF37"
-          strokeWidth="4"
-        />
-        <path
-          d="M22 40L42 26L62 40L54 58H30L22 40Z"
-          fill="#D4AF37"
-        />
-        <path
-          d="M42 32L50 44H34L42 32Z"
-          fill="#1F3864"
-        />
-        <text
-          x="42"
-          y="75"
-          textAnchor="middle"
-          fill="#D4AF37"
-          fontSize="11"
-          fontWeight="800"
-          fontFamily="sans-serif"
-          letterSpacing="1.5"
-        >
-          MHS
-        </text>
-      </svg>
+      {/* Subtle anime bokeh / red-thread ambient glow */}
+      <div
+        className="pointer-events-none absolute inset-0 opacity-30"
+        style={{
+          backgroundImage:
+            'radial-gradient(circle at 22% 24%, rgba(251, 113, 133, 0.18), transparent 34%), radial-gradient(circle at 78% 74%, rgba(239, 35, 60, 0.2), transparent 38%)',
+        }}
+      />
 
-      <h1 className="font-display text-3xl font-bold tracking-wide text-white mb-2">
-        Maplewood High School
-      </h1>
-      <p className="text-sm text-slate-300 mb-8">
-        Préparation du campus en 3D · <span className="font-mono-tabular text-[#D4AF37]">{pct}%</span>
-      </p>
-
-      <div className="w-full max-w-md h-2.5 rounded-sm overflow-hidden bg-slate-800 border border-slate-700 mb-5">
-        <div
-          className="h-full transition-transform duration-150 origin-left"
-          style={{
-            backgroundColor: '#D4AF37',
-            transform: `scaleX(${pct / 100})`,
-          }}
+      <div className="relative z-10 flex flex-col items-center">
+        {/* Custom "One More Line" Logo with animated red thread weaving around it */}
+        <OneMoreLineLogo
+          size="lg"
+          variant="light"
+          animatedThread
+          progress={pct / 100}
+          className="mb-4"
         />
+
+        <p className="text-sm text-rose-100/80 mb-7">
+          Chargement du lycée en 3D…{' '}
+          <span className="font-mono-tabular font-bold text-rose-400">{pct}%</span>
+        </p>
+
+        {/* Red-thread progress bar */}
+        <div className="w-72 sm:w-96 h-2 rounded-full overflow-hidden bg-white/10 border border-rose-500/30 mb-6 shadow-[0_0_20px_rgba(239,35,60,0.22)]">
+          <div
+            className="h-full transition-transform duration-150 origin-left rounded-full"
+            style={{
+              background: 'linear-gradient(90deg, #e11d48 0%, #fb7185 65%, #fda4af 100%)',
+              transform: `scaleX(${pct / 100})`,
+            }}
+          />
+        </div>
+
+        <p className="text-xs text-slate-300/80 text-center max-w-md leading-relaxed px-4">
+          <span className="text-rose-400 font-semibold">Astuce :</span> {tip}
+        </p>
       </div>
-
-      <p className="text-xs text-slate-400 text-center max-w-md leading-relaxed">
-        Conseil : {tip}
-      </p>
     </div>
   );
 };

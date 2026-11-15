@@ -18,6 +18,7 @@ interface SettingsMenuProps {
   onOpenMap: () => void;
   onRespawn: () => void;
   onQuitToTitle: () => void;
+  titleMode?: boolean;
 }
 
 const ACTION_LABELS: Record<ActionName, string> = {
@@ -39,8 +40,11 @@ export const SettingsMenu: React.FC<SettingsMenuProps> = ({
   onOpenMap,
   onRespawn,
   onQuitToTitle,
+  titleMode = false,
 }) => {
-  const [tab, setTab] = useState<'main' | 'settings' | 'controls'>('main');
+  const [tab, setTab] = useState<'main' | 'settings' | 'controls'>(
+    titleMode ? 'settings' : 'main'
+  );
   const [listeningAction, setListeningAction] = useState<ActionName | null>(null);
 
   const handleCaptureKey = (action: ActionName, e: React.KeyboardEvent) => {
@@ -59,18 +63,22 @@ export const SettingsMenu: React.FC<SettingsMenuProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center p-4"
-      style={{ backgroundColor: 'rgba(6, 11, 20, 0.78)' }}
+      className="fixed inset-0 z-40 flex items-center justify-center p-4 backdrop-blur-sm"
+      style={{ backgroundColor: 'rgba(20, 16, 28, 0.55)' }}
       role="dialog"
       aria-modal="true"
       aria-label="Menu Pause et Paramètres"
     >
       <div
-        className="w-full max-w-lg rounded-xl border border-[#D4AF37] p-6 text-slate-100 shadow-2xl"
-        style={{ backgroundColor: '#0f172a' }}
+        className="w-full max-w-lg rounded-2xl border-2 border-rose-200 p-6 text-[#1e1b2e] shadow-xl"
+        style={{
+          backgroundColor: '#fffaf7',
+          backgroundImage:
+            'repeating-linear-gradient(transparent, transparent 27px, rgba(244, 63, 94, 0.06) 28px)',
+        }}
       >
-        <div className="flex items-center justify-between gap-4 mb-5">
-          <h2 className="font-display text-2xl font-bold text-white">
+        <div className="flex items-center justify-between gap-4 mb-5 pb-3 border-b border-rose-200">
+          <h2 className="font-display text-2xl font-bold text-[#1e1b2e]">
             {tab === 'main'
               ? t(settings.language, 'pausedTitle')
               : tab === 'settings'
@@ -78,13 +86,24 @@ export const SettingsMenu: React.FC<SettingsMenuProps> = ({
                 : 'Configuration des touches'}
           </h2>
           {tab !== 'main' && (
-            <button
-              type="button"
-              onClick={() => setTab('main')}
-              className="px-3 py-1.5 rounded-md border border-slate-600 text-xs font-medium text-slate-200 hover:border-[#D4AF37] cursor-pointer"
-            >
-              Retour
-            </button>
+            <div className="flex items-center gap-2">
+              {titleMode && (
+                <button
+                  type="button"
+                  onClick={() => setTab(tab === 'settings' ? 'controls' : 'settings')}
+                  className="px-3 py-1.5 rounded-lg border border-rose-300 bg-rose-50 text-xs font-semibold text-rose-700 hover:bg-rose-100 cursor-pointer transition-colors"
+                >
+                  {tab === 'settings' ? 'Touches & Clavier' : 'Paramètres'}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => (titleMode ? onResume() : setTab('main'))}
+                className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:border-rose-400 hover:text-rose-700 cursor-pointer transition-colors"
+              >
+                {titleMode ? 'Fermer' : 'Retour'}
+              </button>
+            </div>
           )}
         </div>
 
@@ -93,43 +112,42 @@ export const SettingsMenu: React.FC<SettingsMenuProps> = ({
             <button
               type="button"
               onClick={onResume}
-              className="w-full py-2.5 px-4 rounded-md text-sm font-semibold text-[#0F172A] cursor-pointer"
-              style={{ backgroundColor: '#D4AF37' }}
+              className="w-full py-2.5 px-4 rounded-xl text-sm font-bold text-white bg-rose-600 hover:bg-rose-700 transition-colors cursor-pointer"
             >
               {t(settings.language, 'resume')}
             </button>
             <button
               type="button"
               onClick={onOpenMap}
-              className="w-full py-2.5 px-4 rounded-md border border-slate-700 hover:border-[#D4AF37] text-sm font-medium text-white cursor-pointer"
+              className="w-full py-2.5 px-4 rounded-xl border border-rose-200 bg-white hover:border-rose-400 text-sm font-semibold text-[#1e1b2e] transition-colors cursor-pointer"
             >
               {t(settings.language, 'fullMap')}
             </button>
             <button
               type="button"
               onClick={() => setTab('settings')}
-              className="w-full py-2.5 px-4 rounded-md border border-slate-700 hover:border-[#D4AF37] text-sm font-medium text-white cursor-pointer"
+              className="w-full py-2.5 px-4 rounded-xl border border-rose-200 bg-white hover:border-rose-400 text-sm font-semibold text-[#1e1b2e] transition-colors cursor-pointer"
             >
               {t(settings.language, 'settings')}
             </button>
             <button
               type="button"
               onClick={() => setTab('controls')}
-              className="w-full py-2.5 px-4 rounded-md border border-slate-700 hover:border-[#D4AF37] text-sm font-medium text-white cursor-pointer"
+              className="w-full py-2.5 px-4 rounded-xl border border-rose-200 bg-white hover:border-rose-400 text-sm font-semibold text-[#1e1b2e] transition-colors cursor-pointer"
             >
               Touches & Clavier
             </button>
             <button
               type="button"
               onClick={onRespawn}
-              className="w-full py-2.5 px-4 rounded-md border border-slate-700 hover:border-[#D4AF37] text-sm font-medium text-white cursor-pointer"
+              className="w-full py-2.5 px-4 rounded-xl border border-rose-200 bg-white hover:border-rose-400 text-sm font-semibold text-[#1e1b2e] transition-colors cursor-pointer"
             >
               {t(settings.language, 'restart')}
             </button>
             <button
               type="button"
               onClick={onQuitToTitle}
-              className="w-full py-2.5 px-4 rounded-md border border-slate-700 hover:border-red-400 text-sm font-medium text-slate-300 cursor-pointer"
+              className="w-full py-2.5 px-4 rounded-xl border border-rose-200 bg-rose-50/70 hover:bg-rose-100 text-sm font-semibold text-rose-700 transition-colors cursor-pointer"
             >
               {t(settings.language, 'quitToTitle')}
             </button>
@@ -139,9 +157,9 @@ export const SettingsMenu: React.FC<SettingsMenuProps> = ({
         {tab === 'settings' && (
           <div className="space-y-4 text-sm max-h-[65vh] overflow-y-auto pr-1">
             <div>
-              <label className="flex justify-between text-xs text-slate-300 mb-1">
+              <label className="flex justify-between text-xs font-semibold text-slate-700 mb-1">
                 <span>Volume principal</span>
-                <span className="font-mono-tabular">{Math.round(settings.masterVolume * 100)}%</span>
+                <span className="font-mono-tabular text-rose-600">{Math.round(settings.masterVolume * 100)}%</span>
               </label>
               <input
                 type="range"
@@ -152,14 +170,14 @@ export const SettingsMenu: React.FC<SettingsMenuProps> = ({
                 onChange={(e) =>
                   onUpdateSettings({ ...settings, masterVolume: Number(e.target.value) })
                 }
-                className="w-full accent-[#D4AF37]"
+                className="w-full accent-rose-600"
               />
             </div>
 
             <div>
-              <label className="flex justify-between text-xs text-slate-300 mb-1">
+              <label className="flex justify-between text-xs font-semibold text-slate-700 mb-1">
                 <span>Sensibilité souris</span>
-                <span className="font-mono-tabular">{settings.mouseSensitivity.toFixed(1)}x</span>
+                <span className="font-mono-tabular text-rose-600">{settings.mouseSensitivity.toFixed(1)}x</span>
               </label>
               <input
                 type="range"
@@ -170,13 +188,13 @@ export const SettingsMenu: React.FC<SettingsMenuProps> = ({
                 onChange={(e) =>
                   onUpdateSettings({ ...settings, mouseSensitivity: Number(e.target.value) })
                 }
-                className="w-full accent-[#D4AF37]"
+                className="w-full accent-rose-600"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs text-slate-300 mb-1">Qualité graphique</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Qualité graphique</label>
                 <select
                   value={settings.graphicsQuality}
                   onChange={(e) =>
@@ -185,7 +203,7 @@ export const SettingsMenu: React.FC<SettingsMenuProps> = ({
                       graphicsQuality: e.target.value as GraphicsQuality,
                     })
                   }
-                  className="w-full rounded-md bg-slate-800 border border-slate-600 px-2.5 py-2 text-xs text-white"
+                  className="w-full rounded-lg bg-white border border-rose-200 px-2.5 py-2 text-xs font-medium text-[#1e1b2e] focus:outline-none focus:border-rose-400"
                 >
                   <option value="low">Basse</option>
                   <option value="medium">Moyenne</option>
@@ -193,7 +211,7 @@ export const SettingsMenu: React.FC<SettingsMenuProps> = ({
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-slate-300 mb-1">Mode daltonien</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Mode daltonien</label>
                 <select
                   value={settings.colorblindMode}
                   onChange={(e) =>
@@ -202,7 +220,7 @@ export const SettingsMenu: React.FC<SettingsMenuProps> = ({
                       colorblindMode: e.target.value as ColorblindMode,
                     })
                   }
-                  className="w-full rounded-md bg-slate-800 border border-slate-600 px-2.5 py-2 text-xs text-white"
+                  className="w-full rounded-lg bg-white border border-rose-200 px-2.5 py-2 text-xs font-medium text-[#1e1b2e] focus:outline-none focus:border-rose-400"
                 >
                   <option value="none">Désactivé</option>
                   <option value="protanopia">Protanopie</option>
@@ -214,7 +232,7 @@ export const SettingsMenu: React.FC<SettingsMenuProps> = ({
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs text-slate-300 mb-1">Taille de police</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Taille de police</label>
                 <select
                   value={settings.fontScale}
                   onChange={(e) =>
@@ -223,7 +241,7 @@ export const SettingsMenu: React.FC<SettingsMenuProps> = ({
                       fontScale: e.target.value as FontScale,
                     })
                   }
-                  className="w-full rounded-md bg-slate-800 border border-slate-600 px-2.5 py-2 text-xs text-white"
+                  className="w-full rounded-lg bg-white border border-rose-200 px-2.5 py-2 text-xs font-medium text-[#1e1b2e] focus:outline-none focus:border-rose-400"
                 >
                   <option value="normal">Normale</option>
                   <option value="large">Grande</option>
@@ -231,7 +249,7 @@ export const SettingsMenu: React.FC<SettingsMenuProps> = ({
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-slate-300 mb-1">Langue / Language</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Langue / Language</label>
                 <select
                   value={settings.language}
                   onChange={(e) =>
@@ -240,7 +258,7 @@ export const SettingsMenu: React.FC<SettingsMenuProps> = ({
                       language: e.target.value as Language,
                     })
                   }
-                  className="w-full rounded-md bg-slate-800 border border-slate-600 px-2.5 py-2 text-xs text-white"
+                  className="w-full rounded-lg bg-white border border-rose-200 px-2.5 py-2 text-xs font-medium text-[#1e1b2e] focus:outline-none focus:border-rose-400"
                 >
                   <option value="fr">Français</option>
                   <option value="en">English</option>
@@ -248,8 +266,8 @@ export const SettingsMenu: React.FC<SettingsMenuProps> = ({
               </div>
             </div>
 
-            <div className="space-y-2 pt-1">
-              <label className="flex items-center justify-between text-xs text-slate-200 cursor-pointer">
+            <div className="space-y-2.5 pt-2 border-t border-rose-100">
+              <label className="flex items-center justify-between text-xs font-medium text-slate-800 cursor-pointer">
                 <span>Sous-titres des dialogues</span>
                 <input
                   type="checkbox"
@@ -257,10 +275,10 @@ export const SettingsMenu: React.FC<SettingsMenuProps> = ({
                   onChange={(e) =>
                     onUpdateSettings({ ...settings, subtitlesEnabled: e.target.checked })
                   }
-                  className="accent-[#D4AF37]"
+                  className="accent-rose-600 w-4 h-4"
                 />
               </label>
-              <label className="flex items-center justify-between text-xs text-slate-200 cursor-pointer">
+              <label className="flex items-center justify-between text-xs font-medium text-slate-800 cursor-pointer">
                 <span>Réduire les mouvements de caméra</span>
                 <input
                   type="checkbox"
@@ -268,10 +286,10 @@ export const SettingsMenu: React.FC<SettingsMenuProps> = ({
                   onChange={(e) =>
                     onUpdateSettings({ ...settings, reducedMotion: e.target.checked })
                   }
-                  className="accent-[#D4AF37]"
+                  className="accent-rose-600 w-4 h-4"
                 />
               </label>
-              <label className="flex items-center justify-between text-xs text-slate-200 cursor-pointer">
+              <label className="flex items-center justify-between text-xs font-medium text-slate-800 cursor-pointer">
                 <span>Cycle jour / nuit progressif</span>
                 <input
                   type="checkbox"
@@ -279,7 +297,21 @@ export const SettingsMenu: React.FC<SettingsMenuProps> = ({
                   onChange={(e) =>
                     onUpdateSettings({ ...settings, dayCycleEnabled: e.target.checked })
                   }
-                  className="accent-[#D4AF37]"
+                  className="accent-rose-600 w-4 h-4"
+                />
+              </label>
+              <label className="flex items-center justify-between text-xs font-medium text-slate-800 cursor-pointer">
+                <span>Traveling caméra sur l'accueil</span>
+                <input
+                  type="checkbox"
+                  checked={settings.titleTravelingEnabled}
+                  onChange={(e) =>
+                    onUpdateSettings({
+                      ...settings,
+                      titleTravelingEnabled: e.target.checked,
+                    })
+                  }
+                  className="accent-rose-600 w-4 h-4"
                 />
               </label>
             </div>
@@ -291,16 +323,16 @@ export const SettingsMenu: React.FC<SettingsMenuProps> = ({
             {(Object.keys(ACTION_LABELS) as ActionName[]).map((action) => (
               <div
                 key={action}
-                className="flex items-center justify-between py-1.5 border-b border-slate-800"
+                className="flex items-center justify-between py-1.5 border-b border-rose-100"
               >
-                <span className="text-slate-200">{ACTION_LABELS[action]}</span>
+                <span className="font-medium text-slate-800">{ACTION_LABELS[action]}</span>
                 <button
                   type="button"
                   onClick={() => setListeningAction(action)}
                   onKeyDown={(e) => {
                     if (listeningAction === action) handleCaptureKey(action, e);
                   }}
-                  className="px-3 py-1 rounded border border-slate-600 hover:border-[#D4AF37] font-mono-tabular text-white cursor-pointer"
+                  className="px-3 py-1 rounded-lg border border-rose-200 bg-white hover:border-rose-400 font-mono-tabular text-[#1e1b2e] cursor-pointer"
                 >
                   {listeningAction === action
                     ? 'Appuyez sur une touche...'
@@ -314,7 +346,7 @@ export const SettingsMenu: React.FC<SettingsMenuProps> = ({
                 onClick={() =>
                   onUpdateSettings({ ...settings, bindings: DEFAULT_KEY_BINDINGS })
                 }
-                className="px-3 py-1.5 rounded border border-slate-600 text-slate-300 hover:border-[#D4AF37] cursor-pointer"
+                className="px-3 py-1.5 rounded-lg border border-rose-200 bg-white text-rose-700 hover:border-rose-400 cursor-pointer font-semibold"
               >
                 {t(settings.language, 'resetKeys')}
               </button>

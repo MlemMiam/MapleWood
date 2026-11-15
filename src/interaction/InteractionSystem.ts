@@ -9,7 +9,7 @@ const _toTarget = new THREE.Vector3();
 export class InteractionSystem {
   private interactables: Interactable[] = [];
   private raycaster = new THREE.Raycaster();
-  private hitMeshes: THREE.Object3D[] = [];
+  private nearbyHitMeshes: THREE.Object3D[] = [];
   private currentTarget: Interactable | null = null;
 
   public register(item: Interactable): void {
@@ -18,16 +18,12 @@ export class InteractionSystem {
     item.targetObject.traverse((child) => {
       child.userData.interactable = item;
     });
-    this.hitMeshes.push(item.targetObject);
   }
 
   public unregister(id: string): void {
     const idx = this.interactables.findIndex((i) => i.id === id);
     if (idx !== -1) {
-      const removed = this.interactables[idx];
       this.interactables.splice(idx, 1);
-      const mIdx = this.hitMeshes.indexOf(removed.targetObject);
-      if (mIdx !== -1) this.hitMeshes.splice(mIdx, 1);
     }
   }
 
@@ -36,23 +32,38 @@ export class InteractionSystem {
     playerPos: THREE.Vector3,
     playerYaw: number
   ): Interactable | null {
-    // 1. Raycast from camera center toward world (max 6.5m from camera, within 3.2m of player)
-    _rayOrigin.copy(camera.position);
-    camera.getWorldDirection(_rayDir);
-    this.raycaster.set(_rayOrigin, _rayDir);
-    this.raycaster.near = 0.2;
-    this.raycaster.far = 8.5;
+    // Pre-filter non-NPC interactables within range so we never raycast distant rooms or heavy VRM meshes
+    this.nearbyHitMeshes.length = 0;
+    for (let i = 0; i < this.interactables.length; i++) {
+      const item = this.interactables[i];
+      if (item.type === 'npc') continue;
+      const limit = (item.maxDistance ?? 3.1) + 1.5;
+      const dx = item.worldPosition.x - playerPos.x;
+      const dz = item.worldPosition.z - playerPos.z;
+      if (dx * dx + dz * dz <= limit * limit) {
+        this.nearbyHitMeshes.push(item.targetObject);
+      }
+    }
 
+    // 1. Raycast from camera center toward nearby interactables
     let best: Interactable | null = null;
-    const hits = this.raycaster.intersectObjects(this.hitMeshes, true);
-    for (const hit of hits) {
-      const item = hit.object.userData.interactable as Interactable | undefined;
-      if (!item) continue;
-      const distToPlayer = playerPos.distanceTo(item.worldPosition);
-      const limit = item.maxDistance ?? 3.1;
-      if (distToPlayer <= limit) {
-        best = item;
-        break;
+    if (this.nearbyHitMeshes.length > 0) {
+      _rayOrigin.copy(camera.position);
+      camera.getWorldDirection(_rayDir);
+      this.raycaster.set(_rayOrigin, _rayDir);
+      this.raycaster.near = 0.2;
+      this.raycaster.far = 8.5;
+
+      const hits = this.raycaster.intersectObjects(this.nearbyHitMeshes, true);
+      for (const hit of hits) {
+        const item = hit.object.userData.interactable as Interactable | undefined;
+        if (!item) continue;
+        const distToPlayer = playerPos.distanceTo(item.worldPosition);
+        const limit = item.maxDistance ?? 3.1;
+        if (distToPlayer <= limit) {
+          best = item;
+          break;
+        }
       }
     }
 

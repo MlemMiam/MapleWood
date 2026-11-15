@@ -1,823 +1,711 @@
 import * as THREE from 'three';
-import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import {
-  addBuildingParapetAndHVAC,
-  addFacadeDetailing,
-  buildFlutedColumnGeo,
-  buildWallWithOpenings,
-  createExitSign,
-  createExteriorNoticeBoard,
-  createExteriorPoster,
-  createFireExtinguisher,
-  createWallClock,
-} from '../../utils/Geometry';
-import { createSignTexture, createUSFlagTexture } from '../../utils/Materials';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import type { WorldBuildContext } from '../WorldContext';
-import { createDoor } from '../props/Door';
-import { buildLockerBank, type LockerTransform } from '../props/Locker';
-import { buildInstancedDesks, createTeacherDesk, type DeskTransform } from '../props/Desk';
-import { buildInstancedChairs, type ChairTransform } from '../props/Chair';
-import { createWhiteboard } from '../props/Whiteboard';
 
+interface CarpetZone {
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+}
+
+const carpetZones: CarpetZone[] = [];
+
+export function isOnCarpet(x: number, z: number): boolean {
+  for (let i = 0; i < carpetZones.length; i++) {
+    const zBox = carpetZones[i];
+    if (x >= zBox.minX && x <= zBox.maxX && z >= zBox.minZ && z <= zBox.maxZ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Builds the new Grand American Campus MainBuilding exported from Blender (`main_building.glb`),
+ * with shared materials, static matrix optimization, selective shadow casting, walkable Rapier
+ * trimesh colliders, and the new Grand Reception Desk inside the Hall d'accueil.
+ */
 export function buildMainBuilding(ctx: WorldBuildContext): THREE.Group {
+  carpetZones.length = 0;
   const group = new THREE.Group();
   group.name = 'MainBuilding';
 
-  const { physics, mats, interactions, doors, clocks, callbacks } = ctx;
-  const wallH = 4.2;
+  const { physics, mats, cameraColliders } = ctx;
   const floorY = 0.05;
 
-  // Floor slab (X: -32..32 = 64m, Z: -23..-6 = 17m)
-  const floorGeo = new THREE.BoxGeometry(64, 0.1, 17);
-  const floor = new THREE.Mesh(floorGeo, mats.linoleum);
-  floor.position.set(0, floorY - 0.05, -14.5);
-  floor.receiveShadow = true;
-  group.add(floor);
-  physics.addStaticBox(0, floorY - 0.05, -14.5, 32, 0.05, 8.5);
-
-  // Roof slab + parapet + HVAC units + central skylight
-  const roof = new THREE.Mesh(new THREE.BoxGeometry(64.4, 0.25, 17.4), mats.roof);
-  roof.position.set(0, floorY + wallH + 0.12, -14.5);
-  roof.castShadow = true;
-  roof.receiveShadow = true;
-  group.add(roof);
-  addBuildingParapetAndHVAC(group, mats, 0, -14.5, 64.4, 17.4, floorY + wallH + 0.245, {
-    hvacCount: 4,
-    addSkylight: true,
+  // Shared transparent glass material (fast alpha blend, no expensive transmission pass)
+  const glassMat = new THREE.MeshStandardMaterial({
+    color: 0x9ecae1,
+    transparent: true,
+    opacity: 0.34,
+    roughness: 0.08,
+    metalness: 0.12,
+    depthWrite: false,
+  });
+  const copperMat = new THREE.MeshStandardMaterial({
+    color: 0x458b74,
+    roughness: 0.42,
+    metalness: 0.45,
+  });
+  const steelMat = new THREE.MeshStandardMaterial({
+    color: 0x383c44,
+    roughness: 0.35,
+    metalness: 0.85,
+  });
+  const signCrimsonMat = new THREE.MeshStandardMaterial({
+    color: 0x731014,
+    roughness: 0.35,
+  });
+  // Clean matte architectural floor material (avoids stretched/z-fighting checkerboard linoleum UVs)
+  const cleanFloorMat = new THREE.MeshStandardMaterial({
+    color: 0xd6d1c7,
+    roughness: 0.72,
+    metalness: 0.04,
   });
 
-  // Finished acoustic plaster interior ceiling soffit (faces downward into rooms/corridors)
-  const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(63.6, 16.6), mats.plasterWall);
-  ceiling.rotation.x = Math.PI / 2;
-  ceiling.position.set(0, floorY + wallH - 0.015, -14.5);
-  group.add(ceiling);
+  // Fallback ground slab under the 132m x 26m footprint while GLB streams in (recessed 3cm to avoid z-fighting)
+  const baseFloor = new THREE.Mesh(new THREE.BoxGeometry(132, 0.1, 26), cleanFloorMat);
+  baseFloor.position.set(0, floorY - 0.08, -24.0);
+  baseFloor.receiveShadow = true;
+  baseFloor.matrixAutoUpdate = false;
+  baseFloor.updateMatrix();
+  group.add(baseFloor);
+  physics.addStaticBox(0, floorY - 0.05, -24.0, 66, 0.05, 13);
 
-  // Architectural Entrance Sign mounted cleanly on front portico fascia (unobstructed by columns)
-  const signTex = createSignTexture('MAPLEWOOD HIGH SCHOOL', 'LES AIGLES DE MAPLEWOOD · EST. 1994');
-  const signMesh = new THREE.Mesh(
-    new RoundedBoxGeometry(7.6, 1.15, 0.2, 2, 0.03),
-    new THREE.MeshStandardMaterial({ map: signTex, roughness: 0.4, metalness: 0.2 })
-  );
-  signMesh.position.set(0, floorY + wallH + 0.48, -3.52);
-  signMesh.castShadow = true;
-  group.add(signMesh);
+  // Lightweight camera collider box for the exterior shell
+  const camBox1 = new THREE.Mesh(new THREE.BoxGeometry(132, 22, 23));
+  camBox1.position.set(0, 11, -24.0);
+  camBox1.visible = false;
+  camBox1.updateMatrixWorld(true);
+  cameraColliders.push(camBox1);
 
-  // Grand Entrance Portico with 16-Flute Classical Columns, Fluted Doorway Pilasters, Dentil Entablature & Molded Pediment
-  const ensureNonIndexedCol = (g: THREE.BufferGeometry) => (g.index ? g.toNonIndexed() : g);
-  const porticoColGeo = buildFlutedColumnGeo(wallH, 0.27, 16);
-  const porticoLimestoneParts: THREE.BufferGeometry[] = [];
-  const porticoDarkParts: THREE.BufferGeometry[] = [];
+  const EXTERIOR_SHADOW_CASTERS = new Set([
+    'MW_Walls',
+    'MW_Walls_Pediment',
+    'MW_Roof',
+    'MW_Columns',
+    'MW_Stone',
+    'MW_Trim_Main',
+    'MW_Trim_Portico',
+    'MW_Cupola_White',
+    'MW_Cupola_Copper',
+    'MW_Cupola_Finials',
+  ]);
+  const COLLIDER_MESHES = new Set([
+    'MW_Floors',
+    'MW_Walls',
+    'MW_InteriorWalls',
+    'MW_InteriorStairs',
+    'MW_Stone',
+  ]);
 
-  for (const cx of [-4.2, 4.2]) {
-    const cGeo = porticoColGeo.clone();
-    cGeo.translate(cx, floorY, -4.3);
-    porticoLimestoneParts.push(cGeo);
-    physics.addStaticBox(cx, floorY + wallH * 0.5, -4.3, 0.34, wallH * 0.5, 0.34);
-  }
-  // Engaged fluted pilasters framing the main double entrance doors on the South wall
-  for (const px of [-1.72, 1.72]) {
-    const pil = ensureNonIndexedCol(new RoundedBoxGeometry(0.32, wallH - 0.15, 0.18, 2, 0.02));
-    pil.translate(px, floorY + (wallH - 0.15) * 0.5, -5.82);
-    porticoLimestoneParts.push(pil);
-    for (let pf = -2; pf <= 2; pf++) {
-      const pRib = ensureNonIndexedCol(new THREE.CylinderGeometry(0.014, 0.016, wallH - 0.75, 5));
-      pRib.translate(px + pf * 0.052, floorY + (wallH - 0.15) * 0.5, -5.73);
-      porticoLimestoneParts.push(pRib);
-    }
-  }
+  const loader = new GLTFLoader();
+  loader.load(
+    '/assets/models/main_building.glb',
+    (gltf) => {
+      const building = gltf.scene;
+      building.name = 'MainBuilding_Blender';
+      // 1:1 monumental scale (132m x 26m, 4.3m ceilings, spacious rooms for 10+ NPCs)
+      building.scale.set(1, 1, 1);
+      // Align Blender Level 0 (Z=0.6m) to floorY (0.05m) -> Y = -0.55m, North of Courtyard
+      building.position.set(0, floorY - 0.6, -24.0);
+      building.updateMatrixWorld(true);
 
-  // Stepped architrave & dentil frieze under the portico entablature
-  const porticoArchitrave = ensureNonIndexedCol(new RoundedBoxGeometry(9.3, 0.14, 2.55, 2, 0.02));
-  porticoArchitrave.translate(0, floorY + wallH - 0.28, -4.7);
-  porticoLimestoneParts.push(porticoArchitrave);
-  for (let dx = -4.4; dx <= 4.4; dx += 0.32) {
-    const dent = ensureNonIndexedCol(new THREE.BoxGeometry(0.14, 0.085, 0.1));
-    dent.translate(dx, floorY + wallH + 1.0, -3.38);
-    porticoLimestoneParts.push(dent);
-  }
+      const tmpPos = new THREE.Vector3();
 
-  const porticoRoof = new THREE.Mesh(new RoundedBoxGeometry(9.6, 0.28, 2.7, 2, 0.03), mats.concreteDark);
-  porticoRoof.position.set(0, floorY + wallH - 0.1, -4.7);
-  porticoRoof.castShadow = true;
-  group.add(porticoRoof);
+      building.traverse((obj) => {
+        if (!(obj as THREE.Mesh).isMesh) return;
+        const mesh = obj as THREE.Mesh;
+        const name = mesh.name || '';
+        const baseName = name.replace(/\.\d+$/, '');
 
-  // Molded Triangular Pediment (Fronton mouluré) crowning the entrance sign
-  const pedBaseY = floorY + wallH + 1.04;
-  const pedShape = new THREE.Shape();
-  pedShape.moveTo(-4.45, 0);
-  pedShape.lineTo(0, 1.08);
-  pedShape.lineTo(4.45, 0);
-  pedShape.closePath();
-  const pedGeo = ensureNonIndexedCol(
-    new THREE.ExtrudeGeometry(pedShape, {
-      depth: 0.35,
-      bevelEnabled: true,
-      bevelThickness: 0.05,
-      bevelSize: 0.04,
-      bevelSegments: 2,
-    })
-  );
-  pedGeo.translate(0, pedBaseY, -3.72);
-  porticoLimestoneParts.push(pedGeo);
+        // Map to shared campus materials to cut shader & draw-call overhead
+        const origMatName = Array.isArray(mesh.material)
+          ? mesh.material[0]?.name || ''
+          : mesh.material?.name || '';
 
-  // Recessed Tympanum panel inside the pediment
-  const tympShape = new THREE.Shape();
-  tympShape.moveTo(-3.55, 0.09);
-  tympShape.lineTo(0, 0.86);
-  tympShape.lineTo(3.55, 0.09);
-  tympShape.closePath();
-  const tympGeo = ensureNonIndexedCol(
-    new THREE.ExtrudeGeometry(tympShape, {
-      depth: 0.06,
-      bevelEnabled: true,
-      bevelThickness: 0.015,
-      bevelSize: 0.015,
-      bevelSegments: 1,
-    })
-  );
-  tympGeo.translate(0, pedBaseY, -3.39);
-  porticoDarkParts.push(tympGeo);
+        if (origMatName.startsWith('MW_Brick')) mesh.material = mats.brick;
+        else if (origMatName.startsWith('MW_Slate')) mesh.material = mats.roof;
+        else if (origMatName.startsWith('MW_Stone')) mesh.material = mats.limestone;
+        else if (origMatName.startsWith('MW_WhiteTrim')) mesh.material = mats.plasterWall;
+        else if (origMatName.startsWith('MW_InteriorPlaster')) mesh.material = mats.plasterWall;
+        else if (origMatName.startsWith('MW_Concrete')) mesh.material = cleanFloorMat;
+        else if (origMatName.startsWith('MW_Glass')) mesh.material = glassMat;
+        else if (origMatName.startsWith('MW_Copper')) mesh.material = copperMat;
+        else if (origMatName.startsWith('MW_Gold')) mesh.material = mats.gold;
+        else if (origMatName.startsWith('MW_ElevSteel')) mesh.material = steelMat;
+        else if (origMatName.startsWith('MW_SignCrimson')) mesh.material = signCrimsonMat;
 
-  // Projecting Molded Raking Cornices (Corniches rampantes moulurées + denticules rampants)
-  const rakingLen = Math.hypot(4.62, 1.12);
-  const rakingAng = Math.atan2(1.08, 4.45);
-  for (const side of [-1, 1]) {
-    const rakingCornice = ensureNonIndexedCol(
-      new RoundedBoxGeometry(rakingLen, 0.12, 0.56, 2, 0.025)
-    );
-    rakingCornice.rotateZ(-side * rakingAng);
-    rakingCornice.translate(side * 2.24, pedBaseY + 0.58, -3.54);
-    porticoLimestoneParts.push(rakingCornice);
-  }
+        const isSign = baseName.startsWith('Sign_');
+        mesh.castShadow = EXTERIOR_SHADOW_CASTERS.has(baseName);
+        mesh.receiveShadow = !isSign && !baseName.includes('Glass');
+        mesh.frustumCulled = true;
+        mesh.matrixAutoUpdate = false;
+        mesh.updateMatrix();
 
-  // Classical Acroteria ornaments at the apex and eaves of the pediment
-  const goldOrnamentParts: THREE.BufferGeometry[] = [];
-  for (const [ax, ay] of [
-    [0, pedBaseY + 1.18],
-    [-4.42, pedBaseY + 0.12],
-    [4.42, pedBaseY + 0.12],
-  ]) {
-    const acroBase = ensureNonIndexedCol(new RoundedBoxGeometry(0.28, 0.12, 0.28, 2, 0.02));
-    acroBase.translate(ax, ay, -3.52);
-    porticoDarkParts.push(acroBase);
-    const acroPalmette = ensureNonIndexedCol(new THREE.ConeGeometry(0.12, 0.26, 8));
-    acroPalmette.translate(ax, ay + 0.17, -3.52);
-    goldOrnamentParts.push(acroPalmette);
-  }
-
-  // Pediment Tympanum Crest Medallion with sculpted sunburst relief rays & flanking laurel scrolls
-  const medY = floorY + wallH + 1.48;
-  const medallionDisc = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.05, 20), mats.navy);
-  medallionDisc.rotation.x = Math.PI / 2;
-  medallionDisc.position.set(0, medY, -3.31);
-
-  const medRim = ensureNonIndexedCol(new THREE.TorusGeometry(0.32, 0.045, 10, 20));
-  medRim.translate(0, medY, -3.29);
-  const medStar = ensureNonIndexedCol(new THREE.CylinderGeometry(0.16, 0.16, 0.06, 5));
-  medStar.rotateX(Math.PI / 2);
-  medStar.translate(0, medY, -3.28);
-  goldOrnamentParts.push(medRim, medStar);
-
-  for (let r = 0; r < 12; r++) {
-    const ang = (r / 12) * Math.PI * 2;
-    const ray = ensureNonIndexedCol(new THREE.ConeGeometry(0.025, 0.22, 5));
-    ray.rotateZ(-ang);
-    ray.translate(Math.sin(ang) * 0.38, medY + Math.cos(ang) * 0.38, -3.31);
-    goldOrnamentParts.push(ray);
-  }
-  for (const side of [-1, 1]) {
-    for (let w = 0; w < 4; w++) {
-      const wingRelief = ensureNonIndexedCol(
-        new RoundedBoxGeometry(0.55 - w * 0.09, 0.05, 0.04, 2, 0.01)
-      );
-      wingRelief.rotateZ(-side * (0.12 + w * 0.06));
-      wingRelief.translate(side * (0.72 + w * 0.14), medY - 0.04 - w * 0.05, -3.31);
-      goldOrnamentParts.push(wingRelief);
-    }
-  }
-
-  const porticoLimestoneMesh = new THREE.Mesh(mergeGeometries(porticoLimestoneParts), mats.limestone);
-  porticoLimestoneMesh.castShadow = true;
-  porticoLimestoneMesh.receiveShadow = true;
-  const porticoDarkMesh = new THREE.Mesh(mergeGeometries(porticoDarkParts), mats.concreteDark);
-  porticoDarkMesh.castShadow = true;
-  const porticoGoldMesh = new THREE.Mesh(mergeGeometries(goldOrnamentParts), mats.gold);
-  porticoGoldMesh.castShadow = true;
-  group.add(porticoLimestoneMesh, porticoDarkMesh, medallionDisc, porticoGoldMesh);
-
-  // Hanging Campus Banners & Exterior Wall Lantern Sconces + Portico Handrails
-  const bannerTex = createSignTexture('AIGLES', '1994', '#1F3864', '#D4AF37');
-  const bannerMat = new THREE.MeshStandardMaterial({ map: bannerTex, roughness: 0.72, side: THREE.DoubleSide });
-  for (const side of [-1, 1]) {
-    // Portico column banner arm, gold finial & cloth pennant (clear of column shaft)
-    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.86, 8), mats.gold);
-    arm.rotation.z = Math.PI / 2;
-    arm.position.set(side * 4.86, floorY + 3.15, -4.3);
-    const armFinial = new THREE.Mesh(new THREE.SphereGeometry(0.042, 8, 8), mats.gold);
-    armFinial.position.set(side * 5.29, floorY + 3.15, -4.3);
-    const banner = new THREE.Mesh(new THREE.PlaneGeometry(0.58, 1.22), bannerMat);
-    banner.position.set(side * 4.9, floorY + 2.48, -4.3);
-    group.add(arm, armFinial, banner);
-
-    // Wrought-iron exterior lantern sconces flanking main entrance
-    const sconceX = side * 2.15;
-    const backplate = new THREE.Mesh(new RoundedBoxGeometry(0.18, 0.3, 0.05, 2, 0.015), mats.navy);
-    backplate.position.set(sconceX, floorY + 2.45, -5.82);
-    const lanternCap = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.14, 6), mats.navy);
-    lanternCap.position.set(sconceX, floorY + 2.58, -5.66);
-    const lanternGlass = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.09, 0.24, 6), mats.neonCeiling);
-    lanternGlass.position.set(sconceX, floorY + 2.4, -5.66);
-    group.add(backplate, lanternCap, lanternGlass);
-
-    // Curved chrome portico threshold handrails
-    const railCurve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(side * 1.78, floorY, -3.85),
-      new THREE.Vector3(side * 1.78, floorY + 0.88, -3.85),
-      new THREE.Vector3(side * 1.78, floorY + 0.9, -5.65),
-      new THREE.Vector3(side * 1.78, floorY, -5.65),
-    ]);
-    const rail = new THREE.Mesh(new THREE.TubeGeometry(railCurve, 18, 0.028, 8, false), mats.chrome);
-    rail.castShadow = true;
-    group.add(rail);
-  }
-
-  // Exterior South Wall (Z = -6) with double entrance opening at X = 0 (width 3.0m) + classroom windows
-  buildWallWithOpenings(group, physics, mats, {
-    x: 0,
-    z: -6,
-    length: 64,
-    height: wallH,
-    thickness: 0.3,
-    axis: 'x',
-    material: mats.brick,
-    baseY: floorY,
-    openings: [
-      { offset: -28, width: 3.4, height: 1.6, sillHeight: 1.0, glazed: true },
-      { offset: -20, width: 3.4, height: 1.6, sillHeight: 1.0, glazed: true },
-      { offset: -12, width: 3.4, height: 1.6, sillHeight: 1.0, glazed: true },
-      { offset: 0, width: 3.0, height: 2.6, sillHeight: 0, glazed: false },
-      { offset: 12, width: 3.4, height: 1.6, sillHeight: 1.0, glazed: true },
-      { offset: 20, width: 3.4, height: 1.6, sillHeight: 1.0, glazed: true },
-      { offset: 28, width: 3.4, height: 1.6, sillHeight: 1.0, glazed: true },
-    ],
-  });
-  addFacadeDetailing(group, mats, {
-    x: 0,
-    z: -6,
-    length: 64,
-    height: wallH,
-    baseY: floorY,
-    facingSign: 1,
-    pilasterOffsets: [-24, -16, -8, 8, 16, 24],
-    skipPlinthRange: [-4.4, 4.4],
-    vents: [
-      { offset: -6.65, y: 3.2, scale: 0.82 },
-      { offset: 6.65, y: 3.2, scale: 0.82 },
-    ],
-  });
-
-  // Sheltered Exterior Portico Notice Board (left) & Event Posters (right)
-  createExteriorNoticeBoard(group, mats, interactions, {
-    id: 'ext-board-main-portico',
-    title: 'Panneau d\'affichage principal',
-    details:
-      'Annonces de la semaine : Bal de Promo (Samedi 20h, Gymnase), Science Fair (Vendredi 14h, Labo Chimie), Examens blancs en salles 101–103 et Finale des Aigles !',
-    variant: 'courtyard',
-    x: -3.08,
-    y: 1.65,
-    z: -5.81,
-    rotY: 0,
-    width: 1.48,
-    height: 0.96,
-    onReadNotice: callbacks.onReadNotice,
-  });
-  createExteriorPoster(group, mats, interactions, {
-    id: 'ext-poster-prom-main',
-    theme: 'prom',
-    x: 2.66,
-    y: 1.68,
-    z: -5.82,
-    rotY: 0,
-    width: 0.68,
-    height: 0.92,
-    onReadNotice: callbacks.onReadNotice,
-  });
-  createExteriorPoster(group, mats, interactions, {
-    id: 'ext-poster-science-main',
-    theme: 'science',
-    x: 3.5,
-    y: 1.68,
-    z: -5.82,
-    rotY: 0,
-    width: 0.68,
-    height: 0.92,
-    onReadNotice: callbacks.onReadNotice,
-  });
-
-  // Main Entrance Double Glass Doors
-  doors.push(
-    createDoor(group, physics, mats, interactions, {
-      id: 'main-entrance-left',
-      label: 'Entrée Principale (Gauche)',
-      x: -0.75,
-      y: floorY,
-      z: -6,
-      width: 1.45,
-      height: 2.55,
-      isGlass: true,
-      onToggle: callbacks.onDoorToggle,
-    }),
-    createDoor(group, physics, mats, interactions, {
-      id: 'main-entrance-right',
-      label: 'Entrée Principale (Droite)',
-      x: 0.75,
-      y: floorY,
-      z: -6,
-      rotY: Math.PI,
-      width: 1.45,
-      height: 2.55,
-      isGlass: true,
-      onToggle: callbacks.onDoorToggle,
-    })
-  );
-
-  // Exterior North Wall (Z = -23) with central opening for Gym Connector (X = 0, width 4.0m)
-  buildWallWithOpenings(group, physics, mats, {
-    x: 0,
-    z: -23,
-    length: 64,
-    height: wallH,
-    thickness: 0.3,
-    axis: 'x',
-    material: mats.brick,
-    baseY: floorY,
-    openings: [
-      { offset: -27.5, width: 3.6, height: 1.6, sillHeight: 1.0, glazed: true },
-      { offset: -18.5, width: 3.6, height: 1.6, sillHeight: 1.0, glazed: true },
-      { offset: -9.5, width: 3.6, height: 1.6, sillHeight: 1.0, glazed: true },
-      { offset: 0, width: 4.0, height: 2.8, sillHeight: 0, glazed: false },
-      { offset: 9.5, width: 3.6, height: 1.6, sillHeight: 1.0, glazed: true },
-      { offset: 18.5, width: 3.6, height: 1.6, sillHeight: 1.0, glazed: true },
-      { offset: 27.5, width: 3.6, height: 1.6, sillHeight: 1.0, glazed: true },
-    ],
-  });
-  addFacadeDetailing(group, mats, {
-    x: 0,
-    z: -23,
-    length: 64,
-    height: wallH,
-    baseY: floorY,
-    facingSign: -1,
-    pilasterOffsets: [-23, -14, -5, 5, 14, 23],
-    skipPlinthRange: [-2.2, 2.2],
-    vents: [
-      { offset: -3.5, y: 3.15, scale: 0.9 },
-      { offset: 3.5, y: 3.15, scale: 0.9 },
-    ],
-  });
-
-  // North Corridor Wall (Z = -15.75) separating Main Corridor from North Rooms & Gym Connector
-  const northDoors = [-27.5, -18.5, -9.5, -3.5, 3.5, 9.5, 18.5, 27.5];
-  buildWallWithOpenings(group, physics, mats, {
-    x: 0,
-    z: -15.75,
-    length: 64,
-    height: wallH,
-    thickness: 0.2,
-    axis: 'x',
-    material: mats.plasterWall,
-    baseY: floorY,
-    openings: [
-      ...northDoors.map((dx) => ({ offset: dx, width: 1.4, height: 2.45, sillHeight: 0 })),
-      { offset: 0, width: 3.8, height: 2.7, sillHeight: 0 },
-    ],
-  });
-
-  const northLabels = [
-    'Salle 101 — Mathématiques',
-    'Salle 102 — Histoire',
-    'Salle 103 — Anglais',
-    'Toilettes Hommes',
-    'Toilettes Femmes',
-    'Salle 104 — Informatique',
-    'Salle 105 — Arts Plastiques',
-    'Salle 106 — Musique',
-  ];
-  northDoors.forEach((dx, idx) => {
-    doors.push(
-      createDoor(group, physics, mats, interactions, {
-        id: `north-room-${idx}`,
-        label: northLabels[idx],
-        x: dx,
-        y: floorY,
-        z: -15.75,
-        width: 1.35,
-        height: 2.4,
-        onToggle: callbacks.onDoorToggle,
-      })
-    );
-  });
-
-  // South Corridor Wall (Z = -12.25) with open arch into Lobby (X = 0, width 10m) & doors to South Classrooms
-  const southDoors = [-28, -20, -12, 12, 20, 28];
-  buildWallWithOpenings(group, physics, mats, {
-    x: 0,
-    z: -12.25,
-    length: 64,
-    height: wallH,
-    thickness: 0.2,
-    axis: 'x',
-    material: mats.plasterWall,
-    baseY: floorY,
-    openings: [
-      ...southDoors.map((dx) => ({ offset: dx, width: 1.4, height: 2.45, sillHeight: 0 })),
-      { offset: 0, width: 9.0, height: 3.1, sillHeight: 0 },
-    ],
-  });
-
-  const southLabels = [
-    'Salle 107 — Langues Vivantes',
-    'Salle 108 — Sciences Sociales',
-    'Salle 109 — Économie',
-    'Salle 110 — Littérature',
-    'Salle 111 — Philosophie',
-    'Salle 112 — Salle d\'Étude',
-  ];
-  southDoors.forEach((dx, idx) => {
-    doors.push(
-      createDoor(group, physics, mats, interactions, {
-        id: `south-room-${idx}`,
-        label: southLabels[idx],
-        x: dx,
-        y: floorY,
-        z: -12.25,
-        width: 1.35,
-        height: 2.4,
-        onToggle: callbacks.onDoorToggle,
-      })
-    );
-  });
-
-  // Partition walls between North rooms (Z: -23..-15.75)
-  for (const px of [-23, -14, -5, -2, 2, 5, 14, 23]) {
-    buildWallWithOpenings(group, physics, mats, {
-      x: px,
-      z: -19.375,
-      length: 7.25,
-      height: wallH,
-      thickness: 0.18,
-      axis: 'z',
-      material: mats.plasterWall,
-      baseY: floorY,
-    });
-  }
-
-  // Partition walls between South rooms & Lobby (Z: -12.25..-6)
-  for (const px of [-24, -16, -8, 8, 16, 24]) {
-    buildWallWithOpenings(group, physics, mats, {
-      x: px,
-      z: -9.125,
-      length: 6.25,
-      height: wallH,
-      thickness: 0.18,
-      axis: 'z',
-      material: mats.plasterWall,
-      baseY: floorY,
-    });
-  }
-
-  // West boundary wall (X = -32) connecting to Admin Office via corridor opening at Z = -14
-  buildWallWithOpenings(group, physics, mats, {
-    x: -32,
-    z: -14.5,
-    length: 17,
-    height: wallH,
-    thickness: 0.24,
-    axis: 'z',
-    material: mats.brick,
-    baseY: floorY,
-    openings: [{ offset: 0.5, width: 3.1, height: 2.7, sillHeight: 0 }],
-  });
-
-  // East boundary wall (X = +32) connecting to Science Wing via corridor opening at Z = -14
-  buildWallWithOpenings(group, physics, mats, {
-    x: 32,
-    z: -14.5,
-    length: 17,
-    height: wallH,
-    thickness: 0.24,
-    axis: 'z',
-    material: mats.brick,
-    baseY: floorY,
-    openings: [{ offset: 0.5, width: 3.1, height: 2.7, sillHeight: 0 }],
-  });
-
-  // --- Lobby Details: Reception Desk, Trophy Cases, US Flag, Bulletin Board ---
-  const recepCounter = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.05, 0.9), mats.woodDark);
-  recepCounter.position.set(-2.8, floorY + 0.525, -8.3);
-  recepCounter.castShadow = true;
-  recepCounter.receiveShadow = true;
-  group.add(recepCounter);
-  physics.addStaticBox(-2.8, floorY + 0.525, -8.3, 1.6, 0.525, 0.45);
-
-  // Glass trophy display cases along East Lobby wall
-  for (const tz of [-10.2, -8.2]) {
-    const base = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.7, 1.6), mats.navy);
-    base.position.set(7.4, floorY + 0.35, tz);
-    const vitrine = new THREE.Mesh(new THREE.BoxGeometry(0.55, 1.3, 1.55), mats.tintedGlass);
-    vitrine.position.set(7.4, floorY + 1.35, tz);
-    const trophy = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.06, 0.32, 10), mats.gold);
-    trophy.position.set(7.4, floorY + 1.05, tz);
-    group.add(base, vitrine, trophy);
-    physics.addStaticBox(7.4, floorY + 1.0, tz, 0.3, 1.0, 0.8);
-  }
-
-  // US Flag & Maplewood Banner in Lobby
-  const flagMesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.5, 0.9),
-    new THREE.MeshStandardMaterial({ map: createUSFlagTexture(), side: THREE.DoubleSide, roughness: 0.7 })
-  );
-  flagMesh.position.set(-7.75, floorY + 2.3, -9.2);
-  flagMesh.rotation.y = Math.PI / 2;
-  group.add(flagMesh);
-
-  // Bulletin board in Lobby
-  const boardTex = createSignTexture('INFOS DU LYCÉE', 'CLUBS · SPORT · EXAMENS', '#F4EFE6', '#1F3864');
-  const bulletin = new THREE.Mesh(
-    new THREE.BoxGeometry(0.08, 1.2, 2.2),
-    new THREE.MeshStandardMaterial({ map: boardTex, roughness: 0.8 })
-  );
-  bulletin.position.set(-7.82, floorY + 1.85, -11.0);
-  group.add(bulletin);
-
-  // --- Corridor Lockers (InstancedMesh) ---
-  const lockers: LockerTransform[] = [];
-  let lockerNum = 101;
-  for (let x = -30.5; x <= 30.5; x += 0.46) {
-    // Skip doorway gaps on North wall
-    const nearNorthDoor =
-      northDoors.some((d) => Math.abs(x - d) < 1.1) || Math.abs(x) < 2.4;
-    if (!nearNorthDoor) {
-      lockers.push({
-        x,
-        y: floorY,
-        z: -15.42,
-        rotY: 0,
-        interactiveLabel: lockerNum % 14 === 0 ? `Casier #${lockerNum}` : undefined,
-      });
-      lockerNum++;
-    }
-    // Skip doorway gaps on South wall & Lobby opening
-    const nearSouthDoor =
-      southDoors.some((d) => Math.abs(x - d) < 1.1) || Math.abs(x) < 5.0;
-    if (!nearSouthDoor) {
-      lockers.push({
-        x,
-        y: floorY,
-        z: -12.58,
-        rotY: Math.PI,
-        interactiveLabel: lockerNum % 17 === 0 ? `Casier #${lockerNum}` : undefined,
-      });
-      lockerNum++;
-    }
-  }
-  buildLockerBank(group, physics, mats, interactions, lockers, callbacks.onInspectLocker);
-
-  // --- Corridor Details: Clocks, EXIT signs, Fire Extinguishers, Light Switch, Fire Alarm, Fluorescent Strips ---
-  const corridorLights: THREE.PointLight[] = [];
-  for (const lx of [-24, -8, 8, 24]) {
-    const strip = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.08, 0.35), mats.neonCeiling);
-    strip.position.set(lx, floorY + wallH - 0.12, -14);
-    group.add(strip);
-
-    const pt = new THREE.PointLight(0xfff1d6, 2.2, 18, 1.5);
-    pt.position.set(lx, floorY + wallH - 0.5, -14);
-    group.add(pt);
-    corridorLights.push(pt);
-  }
-  ctx.wingLights['main'] = corridorLights;
-
-  const lobbyClock = createWallClock(mats, 0, floorY + 2.9, -12.08, 0);
-  group.add(lobbyClock.group);
-  clocks.push(lobbyClock.clockRef);
-
-  group.add(
-    createExitSign(mats, 0, floorY + 3.05, -6.2, Math.PI),
-    createExitSign(mats, -31.7, floorY + 3.05, -14, Math.PI / 2),
-    createExitSign(mats, 31.7, floorY + 3.05, -14, -Math.PI / 2),
-    createFireExtinguisher(mats, -6.2, floorY + 0.95, -12.4, Math.PI),
-    createFireExtinguisher(mats, 6.2, floorY + 0.95, -15.6, 0)
-  );
-
-  // Interactive Light Switch & Fire Alarm in Corridor
-  const switchBox = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.22, 0.06), mats.chrome);
-  switchBox.position.set(-4.8, floorY + 1.35, -12.38);
-  group.add(switchBox);
-  interactions.register({
-    id: 'switch-main',
-    label: 'actionner l\'interrupteur du couloir',
-    type: 'switch',
-    targetObject: switchBox,
-    worldPosition: new THREE.Vector3(-4.8, floorY + 1.35, -12.38),
-    onInteract: () => callbacks.onToggleLights('main'),
-  });
-
-  const alarmBox = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.24, 0.08), mats.exitSign);
-  alarmBox.position.set(4.8, floorY + 1.4, -12.38);
-  group.add(alarmBox);
-  interactions.register({
-    id: 'fire-alarm-main',
-    label: 'inspecter l\'alarme incendie',
-    type: 'fire_alarm',
-    targetObject: alarmBox,
-    worldPosition: new THREE.Vector3(4.8, floorY + 1.4, -12.38),
-    onInteract: callbacks.onPullFireAlarm,
-  });
-
-  // --- Populate Classrooms (Desks, Chairs, Teacher Desks, Whiteboards, Clocks) ---
-  const studentDesks: DeskTransform[] = [];
-  const studentChairs: ChairTransform[] = [];
-
-  const northClassrooms = [
-    { x: -27.5, name: 'Mathématiques' },
-    { x: -18.5, name: 'Histoire' },
-    { x: -9.5, name: 'Anglais' },
-    { x: 18.5, name: 'Arts Plastiques' },
-    { x: 27.5, name: 'Musique' },
-  ];
-
-  northClassrooms.forEach((cls, idx) => {
-    const boardOnWest = cls.x > 25;
-    const boardX = boardOnWest ? cls.x - 4.38 : cls.x + 4.38;
-    const boardRotY = boardOnWest ? Math.PI / 2 : -Math.PI / 2;
-    const teacherX = boardOnWest ? cls.x - 2.75 : cls.x + 2.75;
-    const deskRotY = boardOnWest ? -Math.PI / 2 : Math.PI / 2;
-    const chairDx = boardOnWest ? 0.48 : -0.48;
-
-    createWhiteboard(group, mats, interactions, {
-      id: `n-cls-${idx}`,
-      subject: cls.name,
-      x: boardX,
-      y: floorY + 1.65,
-      z: -19.375,
-      rotY: boardRotY,
-      onInspect: callbacks.onInspectWhiteboard,
-    });
-    createTeacherDesk(group, physics, mats, teacherX, floorY, -17.3, -boardRotY);
-    const c = createWallClock(mats, boardX, floorY + 2.8, -17.0, boardRotY);
-    group.add(c.group);
-    clocks.push(c.clockRef);
-
-    // Flush ceiling fluorescent light panel inside each north classroom
-    const troffer = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.035, 0.55), mats.neonCeiling);
-    troffer.position.set(cls.x, floorY + wallH - 0.03, -19.375);
-    group.add(troffer);
-
-    if (cls.name === 'Musique') {
-      // Stage riser + Upright Piano placed cleanly along East wall away from North window
-      const stage = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.25, 5.8), mats.woodDark);
-      stage.position.set(cls.x + 2.9, floorY + 0.125, -19.4);
-      const pianoBody = new THREE.Mesh(new THREE.BoxGeometry(0.65, 1.25, 1.5), mats.woodDark);
-      pianoBody.position.set(cls.x + 3.0, floorY + 0.875, -19.4);
-      const keys = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.08, 1.3), mats.whiteboard);
-      keys.position.set(cls.x + 2.62, floorY + 0.98, -19.4);
-      group.add(stage, pianoBody, keys);
-      physics.addStaticBox(cls.x + 3.0, floorY + 0.875, -19.4, 0.35, 0.625, 0.75);
-    } else {
-      // 3 columns x 4 rows facing the whiteboard partition, keeping center Z = -19.375 aisle open
-      const rowZs = [-21.6, -20.4, -18.35, -17.15];
-      for (const dz of rowZs) {
-        for (let col = 0; col < 3; col++) {
-          const dx = cls.x - 2.6 + col * 1.65;
-          studentDesks.push({ x: dx, y: floorY, z: dz, rotY: deskRotY });
-          studentChairs.push({ x: dx + chairDx, y: floorY, z: dz, rotY: deskRotY });
+        // Register walkable & wall trimesh colliders in Rapier
+        if (COLLIDER_MESHES.has(baseName) && mesh.geometry) {
+          const posAttr = mesh.geometry.getAttribute('position');
+          if (posAttr) {
+            const worldMat = mesh.matrixWorld;
+            const verts = new Float32Array(posAttr.count * 3);
+            for (let i = 0; i < posAttr.count; i++) {
+              tmpPos.fromBufferAttribute(posAttr, i).applyMatrix4(worldMat);
+              verts[i * 3] = tmpPos.x;
+              verts[i * 3 + 1] = tmpPos.y;
+              verts[i * 3 + 2] = tmpPos.z;
+            }
+            let indices: Uint32Array;
+            if (mesh.geometry.index) {
+              const idxArr = mesh.geometry.index.array;
+              indices = new Uint32Array(idxArr.length);
+              for (let i = 0; i < idxArr.length; i++) indices[i] = idxArr[i];
+            } else {
+              indices = new Uint32Array(posAttr.count);
+              for (let i = 0; i < posAttr.count; i++) indices[i] = i;
+            }
+            physics.addStaticTrimesh(verts, indices);
+          }
         }
-      }
+      });
+
+      group.add(building);
+    },
+    undefined,
+    (err) => {
+      console.warn('Failed to load main_building.glb:', err);
     }
-  });
+  );
 
-  // Computer Lab (Room 104: X = +9.5, Z = -19.375) with interactive PCs & server rack
-  createWhiteboard(group, mats, interactions, {
-    id: 'comp-lab',
-    subject: 'Informatique & Réseaux',
-    x: 13.88,
-    y: floorY + 1.65,
-    z: -19.375,
-    rotY: -Math.PI / 2,
-    onInspect: callbacks.onInspectWhiteboard,
-  });
-  const labTroffer = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.035, 0.55), mats.neonCeiling);
-  labTroffer.position.set(9.5, floorY + wallH - 0.03, -19.375);
-  group.add(labTroffer);
-
-  const serverRack = new THREE.Mesh(new THREE.BoxGeometry(0.9, 2.0, 0.8), mats.concreteDark);
-  serverRack.position.set(13.1, floorY + 1.0, -22.1);
-  group.add(serverRack);
-  physics.addStaticBox(13.1, floorY + 1.0, -22.1, 0.45, 1.0, 0.4);
-
-  for (const dz of [-21.4, -20.25, -18.4, -17.2]) {
-    for (let col = 0; col < 3; col++) {
-      const dx = 6.9 + col * 1.65;
-      studentDesks.push({ x: dx, y: floorY, z: dz, rotY: Math.PI / 2 });
-      studentChairs.push({ x: dx - 0.48, y: floorY, z: dz, rotY: Math.PI / 2 });
-
-      const monitor = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.3, 0.46), mats.concreteDark);
-      monitor.position.set(dx + 0.14, floorY + 0.96, dz);
-      const screen = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.25, 0.42), mats.navy);
-      screen.position.set(dx + 0.135, floorY + 0.96, dz);
-      group.add(monitor, screen);
-
-      if (dz === -20.25 && col === 1) {
-        interactions.register({
-          id: 'pc-lab-104',
-          label: 'utiliser un ordinateur (Salle 104)',
-          type: 'computer',
-          targetObject: monitor,
-          worldPosition: new THREE.Vector3(dx, floorY + 1.0, dz),
-          onInteract: () => callbacks.onUseComputer('Salle Informatique 104'),
-        });
-      }
-    }
-  }
-
-  // South Classrooms (X: -28, -20, -12, 12, 20, 28)
-  const southClassrooms = [
-    { x: -28, name: 'Langues Vivantes' },
-    { x: -20, name: 'Sciences Sociales' },
-    { x: -12, name: 'Économie' },
-    { x: 12, name: 'Littérature' },
-    { x: 20, name: 'Philosophie' },
-    { x: 28, name: 'Salle d\'Étude' },
-  ];
-
-  southClassrooms.forEach((cls, idx) => {
-    const boardOnWest = cls.x > 25;
-    const boardX = boardOnWest ? cls.x - 3.88 : cls.x + 3.88;
-    const boardRotY = boardOnWest ? Math.PI / 2 : -Math.PI / 2;
-    const teacherX = boardOnWest ? cls.x - 2.45 : cls.x + 2.45;
-    const deskRotY = boardOnWest ? -Math.PI / 2 : Math.PI / 2;
-    const chairDx = boardOnWest ? 0.46 : -0.46;
-
-    createWhiteboard(group, mats, interactions, {
-      id: `s-cls-${idx}`,
-      subject: cls.name,
-      x: boardX,
-      y: floorY + 1.65,
-      z: -9.125,
-      rotY: boardRotY,
-      onInspect: callbacks.onInspectWhiteboard,
-    });
-    const sTroffer = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.035, 0.55), mats.neonCeiling);
-    sTroffer.position.set(cls.x, floorY + wallH - 0.03, -9.125);
-    group.add(sTroffer);
-
-    createTeacherDesk(group, physics, mats, teacherX, floorY, -7.4, -boardRotY);
-    for (const dz of [-10.55, -7.75]) {
-      for (let col = 0; col < 3; col++) {
-        const dx = boardOnWest ? cls.x + 2.3 - col * 1.5 : cls.x - 2.3 + col * 1.5;
-        studentDesks.push({ x: dx, y: floorY, z: dz, rotY: deskRotY });
-        studentChairs.push({ x: dx + chairDx, y: floorY, z: dz, rotY: deskRotY });
-      }
-    }
-  });
-
-  buildInstancedDesks(group, physics, mats, studentDesks);
-  buildInstancedChairs(group, mats, studentChairs);
-
-  // Restroom Sinks (Men X = -3.5, Women X = +3.5)
-  for (const rx of [-3.5, 3.5]) {
-    const vanity = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.85, 0.55), mats.concrete);
-    vanity.position.set(rx, floorY + 0.425, -22.5);
-    const mirror = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.9, 0.04), mats.chrome);
-    mirror.position.set(rx, floorY + 1.45, -22.75);
-    group.add(vanity, mirror);
-    physics.addStaticBox(rx, floorY + 0.425, -22.5, 1.1, 0.425, 0.28);
-
-    interactions.register({
-      id: `sink-${rx > 0 ? 'f' : 'm'}`,
-      label: 'utiliser le lavabo',
-      type: 'sink',
-      targetObject: vanity,
-      worldPosition: new THREE.Vector3(rx, floorY + 0.9, -22.5),
-      onInteract: callbacks.onUseSink,
-    });
-  }
-
-  // Register solid wall meshes for camera spring-arm collision
-  group.traverse((obj) => {
-    if ((obj as THREE.Mesh).isMesh && obj !== floor) {
-      const mesh = obj as THREE.Mesh;
-      // Only register large structural meshes for camera collision to reduce raycast cost
-      if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
-      const bb = mesh.geometry.boundingBox!;
-      const size = new THREE.Vector3();
-      bb.getSize(size);
-      if (size.x < 0.6 && size.y < 0.6 && size.z < 0.6) return;
-      ctx.cameraColliders.push(obj);
-    }
-  });
+  // Load interactive Georgian double entrance door at the front portico doorway
+  loadMainEntranceDoor(ctx, group, floorY, glassMat);
+  // Load Blender-modeled Hall d'accueil furniture & decor
+  loadHallFurniture(ctx, group, floorY, glassMat);
 
   ctx.scene.add(group);
   return group;
+}
+
+function loadMainEntranceDoor(
+  ctx: WorldBuildContext,
+  parent: THREE.Group,
+  floorY: number,
+  glassMat: THREE.MeshStandardMaterial
+): void {
+  const { physics, mats, interactions, doors, callbacks } = ctx;
+  const doorX = 0.0;
+  const doorY = floorY;
+  const doorZ = -11.275; // Blender Y=-12.725 -> Three Z = -(-12.725) - 24.0
+
+  const doorWoodMat = new THREE.MeshStandardMaterial({
+    color: 0x3b1c10,
+    roughness: 0.36,
+    metalness: 0.04,
+  });
+
+  let leafLeft: THREE.Object3D | null = null;
+  let leafRight: THREE.Object3D | null = null;
+  let opened = false;
+  let openElapsed = 0;
+  let angle = 0;
+  const AUTO_CLOSE_DISTANCE = 6.0;
+  const MIN_OPEN_SECONDS = 0.8;
+
+  const leafW = 1.375;
+  const leafH = 3.13;
+  const leafT = 0.09;
+  const hingeOffset = 1.38;
+
+  const colL = physics.addKinematicDoorBox(
+    doorX - hingeOffset + leafW * 0.5,
+    doorY + leafH * 0.5,
+    doorZ,
+    leafW * 0.5,
+    leafH * 0.5,
+    leafT * 0.5
+  );
+  const colR = physics.addKinematicDoorBox(
+    doorX + hingeOffset - leafW * 0.5,
+    doorY + leafH * 0.5,
+    doorZ,
+    leafW * 0.5,
+    leafH * 0.5,
+    leafT * 0.5
+  );
+
+  const syncColliders = () => {
+    const cosA = Math.cos(angle);
+    const sinA = Math.sin(angle);
+    const halfW = leafW * 0.5;
+    const isSensor = Math.abs(angle) > 0.45;
+
+    // Left leaf swings +angle around +Y (inward toward -Z)
+    colL.body.setNextKinematicTranslation({
+      x: doorX - hingeOffset + halfW * cosA,
+      y: doorY + leafH * 0.5,
+      z: doorZ - halfW * sinA,
+    });
+    colL.body.setNextKinematicRotation({
+      x: 0,
+      y: Math.sin(angle * 0.5),
+      z: 0,
+      w: Math.cos(angle * 0.5),
+    });
+    colL.collider.setSensor(isSensor);
+
+    // Right leaf swings -angle around +Y (inward toward -Z)
+    colR.body.setNextKinematicTranslation({
+      x: doorX + hingeOffset - halfW * cosA,
+      y: doorY + leafH * 0.5,
+      z: doorZ - halfW * sinA,
+    });
+    colR.body.setNextKinematicRotation({
+      x: 0,
+      y: Math.sin(-angle * 0.5),
+      z: 0,
+      w: Math.cos(-angle * 0.5),
+    });
+    colR.collider.setSensor(isSensor);
+  };
+
+  syncColliders();
+
+  const toggle = () => {
+    opened = !opened;
+    openElapsed = 0;
+    callbacks.onDoorToggle(opened);
+  };
+
+  const doorRoot = new THREE.Group();
+  doorRoot.name = 'MainEntranceDoor';
+  doorRoot.position.set(doorX, doorY, doorZ);
+  parent.add(doorRoot);
+
+  // Invisible hit proxy so InteractionSystem raycast works immediately
+  const hitProxy = new THREE.Mesh(new THREE.BoxGeometry(3.0, 3.2, 0.35));
+  hitProxy.position.set(0, 1.6, 0);
+  hitProxy.visible = false;
+  doorRoot.add(hitProxy);
+
+  interactions.register({
+    id: 'door-main-entrance',
+    label: "ouvrir / fermer : Entrée du Hall d'accueil",
+    type: 'door',
+    targetObject: doorRoot,
+    worldPosition: new THREE.Vector3(doorX, doorY + 1.2, doorZ),
+    maxDistance: 3.6,
+    onInteract: toggle,
+  });
+
+  doors.push({
+    update(dt: number, playerPos?: THREE.Vector3) {
+      if (opened) {
+        openElapsed += dt;
+        if (playerPos && openElapsed >= MIN_OPEN_SECONDS) {
+          const dist = Math.hypot(
+            playerPos.x - doorX,
+            playerPos.y - doorY,
+            playerPos.z - doorZ
+          );
+          if (dist > AUTO_CLOSE_DISTANCE) {
+            opened = false;
+            openElapsed = 0;
+          }
+        }
+      }
+      const target = opened ? Math.PI * 0.48 : 0;
+      const diff = target - angle;
+      if (Math.abs(diff) > 0.002) {
+        angle += diff * Math.min(1, dt * 7.5);
+        if (leafLeft) leafLeft.rotation.y = angle;
+        if (leafRight) leafRight.rotation.y = -angle;
+        syncColliders();
+      } else if (angle !== target) {
+        angle = target;
+        if (leafLeft) leafLeft.rotation.y = angle;
+        if (leafRight) leafRight.rotation.y = -angle;
+        syncColliders();
+      }
+    },
+    isOpen: () => opened,
+    toggle,
+  });
+
+  const loader = new GLTFLoader();
+  loader.load(
+    '/assets/models/main_entrance_door.glb',
+    (gltf) => {
+      const model = gltf.scene;
+      model.traverse((obj) => {
+        if (!leafLeft && obj.name === 'Door_Leaf_Left') leafLeft = obj;
+        else if (!leafRight && obj.name === 'Door_Leaf_Right') leafRight = obj;
+
+        if (!(obj as THREE.Mesh).isMesh) return;
+        const mesh = obj as THREE.Mesh;
+        const applyMat = (m: THREE.Material): THREE.Material => {
+          const n = m.name || '';
+          if (n.startsWith('MW_DoorWood')) return doorWoodMat;
+          if (n.startsWith('MW_WhiteTrim')) return mats.plasterWall;
+          if (n.startsWith('MW_Stone')) return mats.limestone;
+          if (n.startsWith('MW_Brass')) return mats.gold;
+          if (n.startsWith('MW_Glass')) return glassMat;
+          return m;
+        };
+        mesh.material = Array.isArray(mesh.material)
+          ? mesh.material.map(applyMat)
+          : applyMat(mesh.material);
+        mesh.castShadow = !mesh.name.includes('Glass');
+        mesh.receiveShadow = true;
+      });
+      if (leafLeft) (leafLeft as THREE.Object3D).rotation.y = angle;
+      if (leafRight) (leafRight as THREE.Object3D).rotation.y = -angle;
+      doorRoot.add(model);
+      // Re-tag loaded meshes so InteractionSystem raycasts detect them
+      interactions.unregister('door-main-entrance');
+      interactions.register({
+        id: 'door-main-entrance',
+        label: "ouvrir / fermer : Entrée du Hall d'accueil",
+        type: 'door',
+        targetObject: doorRoot,
+        worldPosition: new THREE.Vector3(doorX, doorY + 1.2, doorZ),
+        maxDistance: 3.6,
+        onInteract: toggle,
+      });
+    },
+    undefined,
+    (err) => {
+      console.warn('Failed to load main_entrance_door.glb:', err);
+    }
+  );
+}
+
+function loadHallFurniture(
+  ctx: WorldBuildContext,
+  parent: THREE.Group,
+  floorY: number,
+  glassMat: THREE.MeshStandardMaterial
+): void {
+  const { physics, mats, interactions, callbacks, animatedObjects } = ctx;
+  const screenMat = createReceptionVideoScreenMaterial(animatedObjects);
+  const loader = new GLTFLoader();
+  loader.load(
+    '/assets/models/hall_furniture.glb',
+    (gltf) => {
+      const furniture = gltf.scene;
+      furniture.name = 'HallFurniture_Blender';
+      furniture.position.set(0, floorY, -24.0);
+      const receptionDesk = furniture.getObjectByName('Hall_ReceptionDesk');
+      if (receptionDesk) {
+        receptionDesk.position.x += 0.55;
+        receptionDesk.position.z -= 0.75;
+      }
+      furniture.updateMatrixWorld(true);
+
+      const tmpPos = new THREE.Vector3();
+      const NO_COLLIDER_PREFIXES = ['Hall_Carpet', 'Hall_Chandelier', 'Hall_Banner', 'Hall_Planter'];
+
+      furniture.traverse((obj) => {
+        if (obj.name.startsWith('Hall_Planter')) {
+          obj.getWorldPosition(tmpPos);
+          physics.addStaticBox(tmpPos.x, floorY + 0.35, tmpPos.z, 0.36, 0.35, 0.36);
+        }
+        if (!(obj as THREE.Mesh).isMesh) return;
+        const mesh = obj as THREE.Mesh;
+        const origMatName = Array.isArray(mesh.material)
+          ? mesh.material[0]?.name || ''
+          : mesh.material?.name || '';
+
+        if (origMatName.startsWith('MW_Glass')) mesh.material = glassMat;
+        else if (origMatName.startsWith('MW_Brass')) mesh.material = mats.gold;
+        else if (origMatName.startsWith('MW_Stone')) mesh.material = mats.limestone;
+        else if (origMatName.startsWith('MW_Screen')) mesh.material = screenMat;
+        else if (origMatName.startsWith('MW_Leaf') && !Array.isArray(mesh.material)) {
+          mesh.material.side = THREE.DoubleSide;
+        }
+
+        mesh.castShadow = false;
+        mesh.receiveShadow = true;
+        mesh.frustumCulled = true;
+        mesh.matrixAutoUpdate = false;
+        mesh.updateMatrix();
+
+        const objName = mesh.parent?.name || mesh.name;
+        const isCarpetMesh =
+          objName.endsWith('_Rug') ||
+          objName.startsWith('Hall_Carpet') ||
+          mesh.name.endsWith('_Rug') ||
+          mesh.name.startsWith('Hall_Carpet');
+        if (isCarpetMesh) {
+          const box = new THREE.Box3().setFromObject(mesh);
+          carpetZones.push({
+            minX: box.min.x,
+            maxX: box.max.x,
+            minZ: box.min.z,
+            maxZ: box.max.z,
+          });
+        }
+        const skipCol =
+          objName.endsWith('_Rug') || NO_COLLIDER_PREFIXES.some((p) => objName.startsWith(p));
+        if (!skipCol && !origMatName.startsWith('MW_Glass') && mesh.geometry) {
+          const posAttr = mesh.geometry.getAttribute('position');
+          if (posAttr) {
+            const worldMat = mesh.matrixWorld;
+            const verts = new Float32Array(posAttr.count * 3);
+            for (let i = 0; i < posAttr.count; i++) {
+              tmpPos.fromBufferAttribute(posAttr, i).applyMatrix4(worldMat);
+              verts[i * 3] = tmpPos.x;
+              verts[i * 3 + 1] = tmpPos.y;
+              verts[i * 3 + 2] = tmpPos.z;
+            }
+            let indices: Uint32Array;
+            if (mesh.geometry.index) {
+              const idxArr = mesh.geometry.index.array;
+              indices = new Uint32Array(idxArr.length);
+              for (let i = 0; i < idxArr.length; i++) indices[i] = idxArr[i];
+            } else {
+              indices = new Uint32Array(posAttr.count);
+              for (let i = 0; i < posAttr.count; i++) indices[i] = i;
+            }
+            physics.addStaticTrimesh(verts, indices);
+          }
+        }
+      });
+
+      parent.add(furniture);
+
+      // Register interactive bulletin board & trophy cases
+      const bulletin = furniture.getObjectByName('Hall_BulletinBoard');
+      if (bulletin) {
+        const wp = new THREE.Vector3();
+        bulletin.getWorldPosition(wp);
+        interactions.register({
+          id: 'hall-bulletin-board',
+          label: "lire le panneau d'affichage : Vie du Campus",
+          type: 'whiteboard',
+          targetObject: bulletin,
+          worldPosition: new THREE.Vector3(wp.x, floorY + 1.5, wp.z),
+          maxDistance: 3.2,
+          onInteract: () =>
+            callbacks.onReadNotice(
+              'Panneau du Hall — Vie du Campus',
+              '• Inscriptions aux clubs (Journal, Théâtre, Échecs, Robotique) au 2e étage\n• Tournoi inter-lycées des Aigles de MapleWood ce vendredi\n• Permanence de la Conseillère d’orientation : RDC Aile Ouest'
+            ),
+        });
+      }
+
+      const trophy1 = furniture.getObjectByName('Hall_TrophyCase_1');
+      if (trophy1) {
+        const wp = new THREE.Vector3();
+        trophy1.getWorldPosition(wp);
+        interactions.register({
+          id: 'hall-trophy-case',
+          label: 'admirer les trophées des Aigles',
+          type: 'book',
+          targetObject: trophy1,
+          worldPosition: new THREE.Vector3(wp.x, floorY + 1.3, wp.z),
+          maxDistance: 3.2,
+          onInteract: () =>
+            callbacks.onReadNotice(
+              'Vitrine des Trophées — Les Aigles de MapleWood',
+              'Coupes régionales de basketball (2022, 2024), championnat académique de débat et médailles d’excellence scientifique.'
+            ),
+        });
+      }
+
+      // Register sitting interactions on all 4 Chesterfield armchairs & 2 sofas
+      const seatNames = [
+        'Hall_Lounge_West_Armchair_1',
+        'Hall_Lounge_West_Armchair_2',
+        'Hall_Lounge_East_Armchair_1',
+        'Hall_Lounge_East_Armchair_2',
+        'Hall_Lounge_West_Sofa',
+        'Hall_Lounge_East_Sofa',
+      ];
+      const seatPos = new THREE.Vector3();
+      const seatQuat = new THREE.Quaternion();
+      const seatForward = new THREE.Vector3();
+      for (const sName of seatNames) {
+        const seatObj = furniture.getObjectByName(sName);
+        if (!seatObj) continue;
+        seatObj.getWorldPosition(seatPos);
+        seatObj.getWorldQuaternion(seatQuat);
+        // In glTF, Blender's local -Y (front of chair/sofa) becomes local +Z
+        seatForward.set(0, 0, 1).applyQuaternion(seatQuat).normalize();
+        const sitX = seatPos.x + seatForward.x * 0.10;
+        const sitZ = seatPos.z + seatForward.z * 0.10;
+        const sitYaw = Math.atan2(-seatForward.x, -seatForward.z);
+        const isSofa = sName.endsWith('_Sofa');
+        interactions.register({
+          id: `seat-${sName}`,
+          label: isSofa ? "s'asseoir / se lever : Canapé" : "s'asseoir / se lever : Fauteuil",
+          type: 'locker',
+          targetObject: seatObj,
+          worldPosition: new THREE.Vector3(seatPos.x, floorY + 0.65, seatPos.z),
+          maxDistance: 2.8,
+          onInteract: () => callbacks.onSit?.(sitX, floorY, sitZ, sitYaw),
+        });
+      }
+    },
+    undefined,
+    (err) => {
+      console.warn('Failed to load hall_furniture.glb:', err);
+    }
+  );
+
+  // Warm chandelier light in the Hall d'accueil (Blender Y=-5.2 -> Three Z = -24 + 5.2 = -18.8)
+  const hallLight = new THREE.PointLight(0xffe6ba, 2.4, 28, 1.4);
+  hallLight.position.set(0, floorY + 7.2, -18.8);
+  parent.add(hallLight);
+}
+
+function createReceptionVideoScreenMaterial(
+  animatedObjects: Array<(elapsed: number, dt: number) => void>
+): THREE.MeshBasicMaterial {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 320;
+  const c = canvas.getContext('2d');
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.flipY = false;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+
+  const drawFrame = (t: number) => {
+    if (!c) return;
+    const W = 512;
+    const H = 320;
+
+    // Desktop background
+    c.fillStyle = '#0d1b2a';
+    c.fillRect(0, 0, W, H);
+
+    // Top OS / MapleWood TV header bar
+    c.fillStyle = '#14263d';
+    c.fillRect(0, 0, W, 34);
+    c.fillStyle = '#d4af37';
+    c.font = 'bold 15px sans-serif';
+    c.fillText('MAPLEWOOD TV  •  CAMPUS LIVE', 14, 22);
+
+    // Blinking LIVE badge
+    if (Math.sin(t * 4.5) > -0.2) {
+      c.fillStyle = '#e63946';
+      c.beginPath();
+      c.arc(W - 62, 17, 6, 0, Math.PI * 2);
+      c.fill();
+    }
+    c.fillStyle = '#f8f9fa';
+    c.font = 'bold 13px sans-serif';
+    c.fillText('LIVE', W - 48, 22);
+
+    // Left main video player frame (332 x 238)
+    const vx = 12;
+    const vy = 44;
+    const vw = 332;
+    const vh = 238;
+    const skyGrad = c.createLinearGradient(vx, vy, vx, vy + vh);
+    skyGrad.addColorStop(0, '#1d3557');
+    skyGrad.addColorStop(0.65, '#457b9d');
+    skyGrad.addColorStop(1, '#a8dadc');
+    c.fillStyle = skyGrad;
+    c.fillRect(vx, vy, vw, vh);
+
+    // Animated drifting clouds
+    c.fillStyle = 'rgba(255,255,255,0.65)';
+    for (let i = 0; i < 3; i++) {
+      const cx = vx + (((t * (18 + i * 7) + i * 110) % (vw + 80)) - 40);
+      const cy = vy + 36 + i * 26;
+      c.beginPath();
+      c.ellipse(cx, cy, 28, 11, 0, 0, Math.PI * 2);
+      c.fill();
+    }
+
+    // Green campus lawn & silhouette building
+    c.fillStyle = '#2d6a4f';
+    c.fillRect(vx, vy + 168, vw, 70);
+    c.fillStyle = '#731014';
+    c.fillRect(vx + 72, vy + 108, 188, 62);
+    c.fillStyle = '#f1faee';
+    c.fillRect(vx + 136, vy + 98, 60, 72);
+
+    // Animated pulsing MapleWood Eagles crest & bouncing basketball
+    const pulse = 1 + Math.sin(t * 3.2) * 0.06;
+    c.save();
+    c.translate(vx + vw * 0.5, vy + 66);
+    c.scale(pulse, pulse);
+    c.fillStyle = '#d4af37';
+    c.beginPath();
+    c.arc(0, 0, 22, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = '#731014';
+    c.font = 'bold 14px sans-serif';
+    c.textAlign = 'center';
+    c.fillText('EAGLES', 0, 5);
+    c.restore();
+    c.textAlign = 'left';
+
+    const ballX = vx + 46 + ((t * 55) % (vw - 92));
+    const ballY = vy + 188 - Math.abs(Math.sin(t * 5.2)) * 42;
+    c.fillStyle = '#e76f51';
+    c.beginPath();
+    c.arc(ballX, ballY, 10, 0, Math.PI * 2);
+    c.fill();
+
+    // Video player scrubber bar at bottom of video
+    c.fillStyle = 'rgba(0,0,0,0.65)';
+    c.fillRect(vx, vy + vh - 26, vw, 26);
+    c.fillStyle = '#495057';
+    c.fillRect(vx + 12, vy + vh - 15, vw - 24, 5);
+    const prog = (t * 0.08) % 1;
+    c.fillStyle = '#e63946';
+    c.fillRect(vx + 12, vy + vh - 15, (vw - 24) * prog, 5);
+
+    // Right sidebar: Live visitor log / Helen's typing console
+    const rx = 354;
+    c.fillStyle = '#102030';
+    c.fillRect(rx, 44, W - rx - 12, 238);
+    c.fillStyle = '#a8dadc';
+    c.font = 'bold 12px monospace';
+    c.fillText('REGISTRE ACCUEIL', rx + 10, 64);
+
+    const logs = [
+      '> Florie : Entree OK',
+      '> Portes : Auto-Lock',
+      '> Hall : 21.5 C',
+      '> Club Journal 14h',
+      '> Match Aigles Ven.',
+      '> Helen : En ligne',
+    ];
+    const scrollShift = Math.floor(t * 0.9) % logs.length;
+    c.font = '11px monospace';
+    for (let i = 0; i < 6; i++) {
+      const line = logs[(i + scrollShift) % logs.length];
+      c.fillStyle = i === 5 ? '#70e000' : '#ced4da';
+      c.fillText(line, rx + 10, 92 + i * 28);
+    }
+
+    // Bottom scrolling news ticker
+    c.fillStyle = '#731014';
+    c.fillRect(0, H - 28, W, 28);
+    c.fillStyle = '#ffffff';
+    c.font = 'bold 13px sans-serif';
+    const ticker = 'BIENVENUE A MAPLEWOOD HIGH  •  TOURNOI DES AIGLES VENDREDI 17H  •  INSCRIPTIONS CLUBS OUVERTES  •  ';
+    const offset = (t * 68) % 520;
+    c.fillText(ticker + ticker, -offset, H - 9);
+
+    tex.needsUpdate = true;
+  };
+
+  drawFrame(0);
+  let accum = 0;
+  animatedObjects.push((elapsed, dt) => {
+    accum += dt;
+    if (accum >= 0.05) {
+      accum = 0;
+      drawFrame(elapsed);
+    }
+  });
+
+  return new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide });
 }

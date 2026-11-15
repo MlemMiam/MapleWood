@@ -16,6 +16,24 @@ import {
   parseFlorieVrmFromBuffer,
   saveVrmBufferToCache,
 } from './FlorieVRM';
+import { BLENDER_SIT_DURATIONS, sampleSitRootTravel } from './BlenderSitAnim';
+import {
+  type PlayerGender,
+  type PlayerHairSelection,
+  applyHairSelectionToVrm,
+  loadBaseScalpMeshData,
+  loadHairCatalog,
+  loadPlayerVrmBuffer,
+} from './PlayerHairSystem';
+import {
+  type PlayerClothesSelection,
+  type PlayerDisplayOptions,
+  DEFAULT_PLAYER_DISPLAY_OPTIONS,
+  applyClothesSelectionToVrm,
+  getDefaultClothesSelection,
+  loadClothesCatalog,
+  loadClothesTemplates,
+} from './PlayerClothesSystem';
 
 const _desiredMove = new THREE.Vector3();
 
@@ -32,6 +50,9 @@ export class Player {
   private body: RAPIER.RigidBody;
   private collider: RAPIER.Collider;
   private vrmController: FlorieVRMController | null = null;
+  private florieIntroController: FlorieVRMController | null = null;
+  private customFemPlayerController: FlorieVRMController | null = null;
+  private customMalePlayerController: FlorieVRMController | null = null;
   private onVrmLoaded?: (label: string) => void;
   private verticalVel = 0;
   private gaitPhase = 0;
@@ -39,8 +60,16 @@ export class Player {
   private interactTimer = 0;
   private coyoteTimer = 0;
   private jumpBufferTimer = 0;
-  private readonly walkSpeed = 2.5;
-  private readonly runSpeed = 5.5;
+  private sitPhase: 'none' | 'approaching' | 'sitting' | 'seated' | 'standing' = 'none';
+  private sitTimer = 0;
+  private sitOriginPos = new THREE.Vector3();
+  private sitStartPos = new THREE.Vector3();
+  private sitFrontPos = new THREE.Vector3();
+  private sitTargetPos = new THREE.Vector3();
+  private sitStartYaw = 0;
+  private sitTargetYaw = 0;
+  private readonly walkSpeed = 1.95;
+  private readonly runSpeed = 4.9;
   private readonly gravity = 18.0;
   private readonly jumpSpeed = Math.sqrt(2 * 18.0 * 1.2); // Exact 1.2m jump apex
 
@@ -91,6 +120,9 @@ export class Player {
     // Hide fallback procedural Florie body while VRM is active
     this.rig.bodyGroup.visible = false;
     this.vrmController = controller;
+    if (fileName.toLowerCase().includes('florie')) {
+      this.florieIntroController = controller;
+    }
     this.vrmLabel = controller.sourceLabel;
     this.rig.root.add(controller.container);
 
@@ -102,8 +134,119 @@ export class Player {
     return controller.sourceLabel;
   }
 
+  public async applyCustomPlayerAvatar(
+    gender: PlayerGender,
+    hairSelection: PlayerHairSelection,
+    clothesSelection?: PlayerClothesSelection,
+    displayOptions: PlayerDisplayOptions = DEFAULT_PLAYER_DISPLAY_OPTIONS
+  ): Promise<void> {
+    try {
+      const [playerBuffer, hairCatalog, baseScalp, clothesCatalog, clothesTemplates] =
+        await Promise.all([
+          loadPlayerVrmBuffer(gender),
+          loadHairCatalog(),
+          loadBaseScalpMeshData(),
+          loadClothesCatalog(),
+          loadClothesTemplates(),
+        ]);
+
+      const label = gender === 'male' ? 'MalePlayer.vrm' : 'FemPlayer.vrm';
+      let targetController =
+        gender === 'male' ? this.customMalePlayerController : this.customFemPlayerController;
+
+      if (!targetController) {
+        targetController = await parseFlorieVrmFromBuffer(playerBuffer.slice(0), label);
+        if (gender === 'male') {
+          this.customMalePlayerController = targetController;
+        } else {
+          this.customFemPlayerController = targetController;
+        }
+      }
+
+      if (targetController.vrm) {
+        const hairRoot = applyHairSelectionToVrm(
+          targetController.vrm,
+          hairSelection,
+          hairCatalog,
+          baseScalp
+        );
+        if (hairRoot) {
+          hairRoot.visible = displayOptions.showHair;
+        }
+        applyClothesSelectionToVrm(
+          targetController.vrm,
+          gender,
+          clothesSelection || getDefaultClothesSelection(gender),
+          clothesCatalog,
+          clothesTemplates,
+          displayOptions
+        );
+      }
+
+      if (this.vrmController) {
+        this.rig.root.remove(this.vrmController.container);
+      }
+      this.rig.bodyGroup.visible = false;
+      this.vrmController = targetController;
+      this.vrmLabel = label;
+      this.rig.root.add(targetController.container);
+      this.onVrmLoaded?.(label);
+    } catch (err) {
+      console.error('Failed to apply custom Player avatar:', err);
+    }
+  }
+
+  public async applyCustomFemPlayerAvatar(
+    hairSelection: PlayerHairSelection,
+    clothesSelection?: PlayerClothesSelection,
+    displayOptions?: PlayerDisplayOptions
+  ): Promise<void> {
+    return this.applyCustomPlayerAvatar('female', hairSelection, clothesSelection, displayOptions);
+  }
+
+  public restoreFlorieIntroAvatar(): void {
+    if (!this.florieIntroController || this.vrmController === this.florieIntroController) {
+      return;
+    }
+    if (this.vrmController) {
+      this.rig.root.remove(this.vrmController.container);
+    }
+    this.vrmController = this.florieIntroController;
+    this.vrmLabel = this.florieIntroController.sourceLabel;
+    this.rig.root.add(this.florieIntroController.container);
+    this.onVrmLoaded?.(this.vrmLabel);
+  }
+
   public triggerInteractAnim(): void {
     this.interactTimer = 0.35;
+  }
+
+  public isSeated(): boolean {
+    return this.sitPhase !== 'none';
+  }
+
+  public sitAt(x: number, y: number, z: number, yaw: number): void {
+    if (this.sitPhase !== 'none') return;
+    this.sitOriginPos.copy(this.position);
+    this.sitStartPos.copy(this.position);
+    this.sitStartYaw = this.yaw;
+    this.sitTargetPos.set(x, y, z);
+    this.sitTargetYaw = yaw;
+    // Stand/front edge spot 0.85m in front of seat center (clear of armchair/sofa & table colliders)
+    const fwdX = -Math.sin(yaw);
+    const fwdZ = -Math.cos(yaw);
+    this.sitFrontPos.set(x + fwdX * 0.85, y, z + fwdZ * 0.85);
+    this.collider.setSensor(true);
+    this.sitTimer = 0;
+    this.sitPhase = 'approaching';
+  }
+
+  public standUp(): void {
+    if (this.sitPhase === 'none' || this.sitPhase === 'standing') return;
+    this.sitStartPos.copy(this.position);
+    this.sitStartYaw = this.yaw;
+    this.sitTimer = 0;
+    this.sitPhase = 'standing';
   }
 
   public teleport(x: number, y: number, z: number, yaw = 0): void {
@@ -123,10 +266,116 @@ export class Player {
     cameraYaw: number,
     physics: PhysicsWorld,
     audio: AudioManager,
-    isExteriorGrass: boolean
+    footstepSurface: 'grass' | 'carpet' | 'hard'
   ): void {
     if (this.interactTimer > 0) {
       this.interactTimer = Math.max(0, this.interactTimer - dt);
+    }
+
+    if (this.sitPhase !== 'none') {
+      this.stamina = Math.min(this.maxStamina, this.stamina + 24 * dt);
+      const wantsExit =
+        Math.abs(input.moveX) > 0.1 ||
+        Math.abs(input.moveZ) > 0.1 ||
+        input.jumpJustPressed;
+
+      if (this.sitPhase === 'approaching') {
+        if (wantsExit) {
+          this.collider.setSensor(false);
+          this.sitPhase = 'none';
+          return;
+        }
+        const dur = 0.65;
+        this.sitTimer += dt;
+        const u = Math.min(1, this.sitTimer / dur);
+        const s = u * u * (3 - 2 * u);
+        this.position.lerpVectors(this.sitStartPos, this.sitFrontPos, s);
+        let diff = this.sitTargetYaw - this.sitStartYaw;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        this.yaw = this.sitStartYaw + diff * s;
+        this.teleport(this.position.x, this.position.y, this.position.z, this.yaw);
+        this.gaitPhase += dt * 4.2;
+        const anim: AnimState = u < 0.72 ? 'walk' : 'idle';
+        if (this.vrmController) {
+          this.vrmController.update(anim, this.gaitPhase, this.interactTimer, dt);
+        } else {
+          animateHumanoid(this.rig, anim, this.gaitPhase, this.interactTimer, dt);
+        }
+        if (u >= 1) {
+          this.sitStartPos.copy(this.sitFrontPos);
+          this.sitPhase = 'sitting';
+          this.sitTimer = 0;
+        }
+        return;
+      }
+
+      if (this.sitPhase === 'sitting') {
+        const dur = BLENDER_SIT_DURATIONS.sit_down;
+        this.sitTimer += dt;
+        const u = Math.min(1, this.sitTimer / dur);
+        const travel = sampleSitRootTravel('sit_down', this.sitTimer);
+        const fwdX = -Math.sin(this.sitTargetYaw);
+        const fwdZ = -Math.cos(this.sitTargetYaw);
+        this.teleport(
+          this.sitTargetPos.x + fwdX * travel,
+          this.sitTargetPos.y,
+          this.sitTargetPos.z + fwdZ * travel,
+          this.sitTargetYaw
+        );
+        this.gaitPhase += dt * 1.4;
+        if (this.vrmController) {
+          this.vrmController.update('sit_down', this.gaitPhase, this.interactTimer, dt);
+        } else {
+          animateHumanoid(this.rig, 'sit', this.gaitPhase, this.interactTimer, dt);
+        }
+        if (u >= 1) {
+          this.teleport(this.sitTargetPos.x, this.sitTargetPos.y, this.sitTargetPos.z, this.sitTargetYaw);
+          this.sitPhase = 'seated';
+        }
+        return;
+      }
+
+      if (this.sitPhase === 'seated') {
+        if (wantsExit) {
+          this.standUp();
+        } else {
+          this.gaitPhase += dt * 1.4;
+          if (this.vrmController) {
+            this.vrmController.update('sit', this.gaitPhase, this.interactTimer, dt);
+          } else {
+            animateHumanoid(this.rig, 'sit', this.gaitPhase, this.interactTimer, dt);
+          }
+          return;
+        }
+      }
+
+      if (this.sitPhase === 'standing') {
+        const dur = BLENDER_SIT_DURATIONS.stand_up;
+        this.sitTimer += dt;
+        const u = Math.min(1, this.sitTimer / dur);
+        const travel = sampleSitRootTravel('stand_up', this.sitTimer);
+        const fwdX = -Math.sin(this.sitTargetYaw);
+        const fwdZ = -Math.cos(this.sitTargetYaw);
+        this.teleport(
+          this.sitTargetPos.x + fwdX * travel,
+          this.sitTargetPos.y,
+          this.sitTargetPos.z + fwdZ * travel,
+          this.sitTargetYaw
+        );
+        this.gaitPhase += dt * 1.4;
+        if (this.vrmController) {
+          this.vrmController.update('stand_up', this.gaitPhase, this.interactTimer, dt);
+        } else {
+          animateHumanoid(this.rig, 'idle', this.gaitPhase, this.interactTimer, dt);
+        }
+        if (u >= 1) {
+          this.teleport(this.sitFrontPos.x, this.sitFrontPos.y, this.sitFrontPos.z, this.sitTargetYaw);
+          this.collider.setSensor(false);
+          this.sitPhase = 'none';
+        }
+        return;
+      }
     }
 
     // Movement vector relative to camera yaw
@@ -222,11 +471,12 @@ export class Player {
       animState = 'jump';
     } else if (moving && horizDist > 0.002) {
       animState = wantsSprint ? 'run' : 'walk';
-      this.gaitPhase += horizDist * (wantsSprint ? 2.15 : 2.65);
+      // Sync gait phase to unhurried walk (~0.87m step) and fluid airborne run (~1.53m step)
+      this.gaitPhase += horizDist * (wantsSprint ? 2.05 : 3.60);
       const stepIndex = Math.floor(this.gaitPhase / Math.PI);
       if (stepIndex !== this.lastStepIndex) {
         this.lastStepIndex = stepIndex;
-        audio.playFootstep(isExteriorGrass ? 'grass' : 'hard');
+        audio.playFootstep(footstepSurface);
       }
     }
 
@@ -237,16 +487,54 @@ export class Player {
     }
   }
 
-  public updateIntroCutscene(introTime: number, dt: number): void {
-    const isBeckonPhase = introTime >= 4.8;
-    const targetZ = isBeckonPhase
-      ? THREE.MathUtils.lerp(4.4, 3.85, Math.min(1, (introTime - 4.8) / 3.8))
-      : 4.4;
-    const targetYaw = isBeckonPhase ? Math.PI - 0.36 : Math.PI;
+  public getVrmController(): FlorieVRMController | null {
+    return this.vrmController;
+  }
 
-    this.position.set(0, 0, targetZ);
-    const damp = 1 - Math.exp(-8 * dt);
-    this.yaw = THREE.MathUtils.lerp(this.yaw, targetYaw, damp);
+  public updateCutscenePose(state: AnimState, gaitPhase: number, dt: number): void {
+    if (this.vrmController) {
+      this.vrmController.update(state, gaitPhase, 0, dt);
+    } else {
+      animateHumanoid(this.rig, state, gaitPhase, 0, dt);
+    }
+  }
+
+  public updateIntroCutscene(
+    introTime: number,
+    dt: number,
+    cameraPos?: THREE.Vector3
+  ): void {
+    // Smoothly start walking forward toward the Maplewood entrance door (Z = -6.0) as soon as "Suis-moi !" begins (~5.65s),
+    // easing in over the first 22% and keeping a steady stride right up to the cut at 11.65s (no walking in place at the end).
+    const walkRaw = Math.min(1, Math.max(0, (introTime - 5.65) / 6.0));
+    const walkProgress =
+      walkRaw < 0.22
+        ? (0.5 * (walkRaw * walkRaw) / 0.22) / 0.89
+        : (walkRaw - 0.11) / 0.89;
+
+    // Smoothly turn around from facing the camera (Math.PI) to walking forward toward the entrance door (0.42 -> 0.0)
+    // using a natural pivot-step ease over 5.35s -> 6.65s so she walks forward rather than sideways.
+    const turnToBeckon = Math.min(1, Math.max(0, (introTime - 5.35) / 1.3));
+    const smoothTurn = turnToBeckon * turnToBeckon * (3 - 2 * turnToBeckon);
+
+    const finalTurn = Math.min(1, Math.max(0, (introTime - 9.0) / 1.4));
+    const smoothFinalTurn = finalTurn * finalTurn * (3 - 2 * finalTurn);
+
+    // Walk continuously from Z = 0.6 (courtyard portico approach) right up to the closed entrance door (Z = -5.15)
+    const targetZ = THREE.MathUtils.lerp(0.6, -5.15, walkProgress);
+    const targetX =
+      Math.sin(introTime * 1.3) * 0.02 * (1 - smoothTurn) +
+      Math.sin((introTime - 5.65) * 3.6) * 0.03 * smoothTurn;
+
+    const midWalkYaw = 0.42;
+    const targetYaw =
+      THREE.MathUtils.lerp(Math.PI, midWalkYaw, smoothTurn) * (1 - smoothFinalTurn);
+
+    const posDamp = 1 - Math.exp(-10 * dt);
+    this.position.x = THREE.MathUtils.lerp(this.position.x, targetX, posDamp);
+    this.position.y = 0.05;
+    this.position.z = THREE.MathUtils.lerp(this.position.z, targetZ, posDamp);
+    this.yaw = THREE.MathUtils.lerp(this.yaw, targetYaw, posDamp);
 
     const bodyPos = { x: this.position.x, y: this.position.y + 0.875, z: this.position.z };
     this.body.setTranslation(bodyPos, true);
@@ -256,7 +544,13 @@ export class Player {
     this.rig.root.rotation.y = this.yaw;
 
     if (this.vrmController) {
-      this.vrmController.updateIntroCutscene(introTime, dt);
+      this.vrmController.updateIntroCutscene(
+        introTime,
+        dt,
+        this.position,
+        this.yaw,
+        cameraPos
+      );
     } else {
       animateHumanoidIntro(this.rig, introTime, dt);
     }

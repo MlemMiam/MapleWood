@@ -19,6 +19,7 @@ export interface WorldCallbacks {
   onPullFireAlarm: () => void;
   onPickupNotebook: () => void;
   onShootBasketball: () => void;
+  onSit?: (x: number, y: number, z: number, yaw: number) => void;
 }
 
 export interface WorldBuildContext {

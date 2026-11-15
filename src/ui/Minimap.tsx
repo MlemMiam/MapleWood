@@ -21,7 +21,7 @@ export const Minimap: React.FC<MinimapProps> = ({
   playerYaw,
   npcs,
 }) => {
-  const size = 168;
+  const size = 160;
   const p = worldToMinimapNormalized(playerX, playerZ);
   const px = p.nx * size;
   const pz = p.nz * size;
@@ -32,15 +32,26 @@ export const Minimap: React.FC<MinimapProps> = ({
 
   return (
     <div
-      className="relative overflow-hidden rounded-lg border border-[#D4AF37]/50"
+      className="relative overflow-hidden rounded-full border-2 border-rose-300/90 ring-4 ring-white/45 shadow-md backdrop-blur-md"
       style={{
         width: size,
         height: size,
-        backgroundColor: 'rgba(11, 19, 34, 0.90)',
+        backgroundColor: 'rgba(255, 249, 251, 0.90)',
       }}
       aria-label="Minicarte du campus"
     >
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        {/* Soft pastel grid rings for cute radar feel */}
+        <circle
+          cx={size * 0.5}
+          cy={size * 0.5}
+          r={size * 0.34}
+          fill="none"
+          stroke="rgba(244, 63, 94, 0.10)"
+          strokeWidth={1}
+          strokeDasharray="3 3"
+        />
+
         {/* Campus Rooms & Buildings */}
         {CAMPUS_DATA.rooms.map((room) => {
           const rx =
@@ -57,9 +68,19 @@ export const Minimap: React.FC<MinimapProps> = ({
               y={rz}
               width={Math.max(2, rw)}
               height={Math.max(2, rd)}
-              fill={room.type === 'exterior' ? 'rgba(74, 124, 63, 0.35)' : room.color}
-              stroke="rgba(248, 250, 252, 0.25)"
-              strokeWidth={room.type === 'exterior' ? 0.5 : 0.7}
+              rx={2}
+              ry={2}
+              fill={
+                room.type === 'exterior'
+                  ? 'rgba(134, 197, 138, 0.38)'
+                  : 'rgba(254, 205, 211, 0.62)'
+              }
+              stroke={
+                room.type === 'exterior'
+                  ? 'rgba(100, 160, 110, 0.35)'
+                  : 'rgba(225, 29, 72, 0.28)'
+              }
+              strokeWidth={room.type === 'exterior' ? 0.6 : 0.9}
             />
           );
         })}
@@ -72,29 +93,28 @@ export const Minimap: React.FC<MinimapProps> = ({
               key={n.id}
               cx={np.nx * size}
               cy={np.nz * size}
-              r={2.8}
-              fill="#38BDF8"
-              stroke="#0F172A"
-              strokeWidth={0.8}
+              r={2.9}
+              fill="#fb7185"
+              stroke="#ffffff"
+              strokeWidth={1}
             />
           );
         })}
 
-        {/* Player Arrow */}
+        {/* Player Soft Halo & Rose Directional Pointer */}
         <g transform={`translate(${px}, ${pz}) rotate(${headingDeg})`}>
+          <circle cx={0} cy={0} r={8.5} fill="rgba(225, 29, 72, 0.16)" />
           <polygon
-            points="0,-6 4.5,5 0,2.5 -4.5,5"
-            fill="#D4AF37"
-            stroke="#0F172A"
-            strokeWidth={1}
+            points="0,-6.5 4.8,5 0,2.2 -4.8,5"
+            fill="#e11d48"
+            stroke="#ffffff"
+            strokeWidth={1.2}
+            strokeLinejoin="round"
           />
         </g>
       </svg>
-      <div
-        className="absolute bottom-1 right-1.5 text-[10px] font-mono-tabular text-slate-300 pointer-events-none"
-        style={{ textShadow: '0 1px 2px #000' }}
-      >
-        N ↑
+      <div className="absolute top-1.5 left-1/2 -translate-x-1/2 px-1.5 py-[1px] rounded-full bg-white/90 border border-rose-200 text-[9px] font-bold text-rose-600 shadow-xs pointer-events-none">
+        N
       </div>
     </div>
   );

@@ -1,6 +1,11 @@
 import * as THREE from 'three';
-
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import {
+  computeStylizedAnimeGait,
+  createEmptyGaitPose,
+  createStylizedGaitBlendState,
+  type StylizedGaitBlendState,
+} from './StylizedWalk';
 
 export interface HumanoidRig {
   root: THREE.Group;
@@ -12,7 +17,16 @@ export interface HumanoidRig {
   bodyGroup: THREE.Group;
 }
 
-export type AnimState = 'idle' | 'walk' | 'run' | 'jump' | 'interact';
+export type AnimState =
+  | 'idle'
+  | 'walk'
+  | 'run'
+  | 'jump'
+  | 'interact'
+  | 'sit'
+  | 'sit_down'
+  | 'stand_up'
+  | 'sit_type';
 
 export interface HumanoidColors {
   shirt: string;
@@ -22,21 +36,45 @@ export interface HumanoidColors {
   accent?: string;
 }
 
+let _cachedContactShadowMat: THREE.MeshBasicMaterial | null = null;
+
+/** Creates a feathered radial-gradient contact shadow quad (cached texture, 1 draw call). */
+export function createSoftContactShadow(size = 1.05): THREE.Mesh {
+  if (!_cachedContactShadowMat) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d')!;
+    const grad = ctx.createRadialGradient(64, 64, 4, 64, 64, 62);
+    grad.addColorStop(0.0, 'rgba(15, 18, 32, 0.36)');
+    grad.addColorStop(0.42, 'rgba(15, 18, 32, 0.18)');
+    grad.addColorStop(0.76, 'rgba(15, 18, 32, 0.04)');
+    grad.addColorStop(1.0, 'rgba(15, 18, 32, 0.0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 128, 128);
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    _cachedContactShadowMat = new THREE.MeshBasicMaterial({
+      map: tex,
+      transparent: true,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+    });
+  }
+
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(size, size), _cachedContactShadowMat);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.y = 0.014;
+  mesh.renderOrder = 1;
+  return mesh;
+}
+
 export function createHumanoidRig(colors: HumanoidColors, hasBackpack = false): HumanoidRig {
   const root = new THREE.Group();
 
-  // Soft radial contact shadow disc grounded at bottom-center
-  const shadowGeo = new THREE.CircleGeometry(0.42, 20);
-  const shadowMat = new THREE.MeshBasicMaterial({
-    color: 0x090d16,
-    transparent: true,
-    opacity: 0.34,
-    depthWrite: false,
-  });
-  const shadow = new THREE.Mesh(shadowGeo, shadowMat);
-  shadow.rotation.x = -Math.PI / 2;
-  shadow.position.y = 0.018;
-  root.add(shadow);
+  root.add(createSoftContactShadow(1.05));
 
   const bodyGroup = new THREE.Group();
   root.add(bodyGroup);
@@ -234,6 +272,9 @@ export function createHumanoidRig(colors: HumanoidColors, hasBackpack = false): 
   return { root, headPivot, leftArm, rightArm, leftLeg, rightLeg, bodyGroup };
 }
 
+const humanoidBlendStates = new WeakMap<HumanoidRig, StylizedGaitBlendState>();
+const _sharedHumanoidPose = createEmptyGaitPose();
+
 export function animateHumanoid(
   rig: HumanoidRig,
   state: AnimState,
@@ -241,53 +282,41 @@ export function animateHumanoid(
   interactTimer: number,
   dt: number
 ): void {
-  const damp = 1 - Math.exp(-14 * dt);
-
-  let targetLegAmp = 0;
-  let targetArmAmp = 0;
-  let targetBob = 0;
-
-  if (state === 'walk') {
-    targetLegAmp = 0.52;
-    targetArmAmp = 0.42;
-    targetBob = (-Math.cos(phase * 2) * 0.5 + 0.5) * 0.032;
-  } else if (state === 'run') {
-    targetLegAmp = 0.88;
-    targetArmAmp = 0.78;
-    targetBob = (-Math.cos(phase * 2) * 0.5 + 0.5) * 0.068;
-  } else if (state === 'jump') {
-    rig.leftLeg.rotation.x = THREE.MathUtils.lerp(rig.leftLeg.rotation.x, 0.45, damp);
-    rig.rightLeg.rotation.x = THREE.MathUtils.lerp(rig.rightLeg.rotation.x, -0.35, damp);
-    rig.leftArm.rotation.x = THREE.MathUtils.lerp(rig.leftArm.rotation.x, -0.6, damp);
-    rig.rightArm.rotation.x = THREE.MathUtils.lerp(rig.rightArm.rotation.x, -0.6, damp);
-    return;
+  let blend = humanoidBlendStates.get(rig);
+  if (!blend) {
+    blend = createStylizedGaitBlendState();
+    humanoidBlendStates.set(rig, blend);
   }
+  const pose = computeStylizedAnimeGait(
+    state,
+    phase,
+    interactTimer,
+    dt,
+    blend,
+    _sharedHumanoidPose
+  );
+  const damp = 1 - Math.exp(-15 * Math.min(Math.max(dt, 0.001), 0.05));
 
-  const legSwing = Math.sin(phase) * targetLegAmp;
-  const armSwing = Math.sin(phase - 0.14) * targetArmAmp;
-
-  rig.leftLeg.rotation.x = THREE.MathUtils.lerp(rig.leftLeg.rotation.x, legSwing, damp);
-  rig.rightLeg.rotation.x = THREE.MathUtils.lerp(rig.rightLeg.rotation.x, -legSwing, damp);
-  rig.leftArm.rotation.x = THREE.MathUtils.lerp(rig.leftArm.rotation.x, -armSwing, damp);
-
-  if (interactTimer > 0) {
-    rig.rightArm.rotation.x = THREE.MathUtils.lerp(rig.rightArm.rotation.x, -1.15, damp);
-  } else {
-    rig.rightArm.rotation.x = THREE.MathUtils.lerp(rig.rightArm.rotation.x, armSwing, damp);
-  }
-
-  const nowSec = typeof performance !== 'undefined' ? performance.now() * 0.001 : 0;
-  const idleBreath = state === 'idle' ? Math.sin(nowSec * 2.1) * 0.01 : 0;
-  rig.bodyGroup.position.y = THREE.MathUtils.lerp(
-    rig.bodyGroup.position.y,
-    targetBob + idleBreath,
+  // Stylized anime legs, arms (contralateral to legs on -Z facing HumanoidRig), body bounce & sway
+  rig.leftLeg.rotation.x = THREE.MathUtils.lerp(rig.leftLeg.rotation.x, pose.leftThighX, damp);
+  rig.rightLeg.rotation.x = THREE.MathUtils.lerp(rig.rightLeg.rotation.x, pose.rightThighX, damp);
+  rig.leftArm.rotation.x = THREE.MathUtils.lerp(rig.leftArm.rotation.x, pose.leftArmForwardX, damp);
+  rig.rightArm.rotation.x = THREE.MathUtils.lerp(
+    rig.rightArm.rotation.x,
+    interactTimer > 0 ? 1.15 : pose.rightArmForwardX,
     damp
   );
-  rig.bodyGroup.rotation.z = THREE.MathUtils.lerp(
-    rig.bodyGroup.rotation.z,
-    state === 'walk' || state === 'run' ? Math.sin(phase) * 0.025 : 0,
-    damp
-  );
+  rig.leftArm.rotation.z = THREE.MathUtils.lerp(rig.leftArm.rotation.z, pose.leftArmAdduction, damp);
+  rig.rightArm.rotation.z = THREE.MathUtils.lerp(rig.rightArm.rotation.z, -pose.rightArmAdduction, damp);
+
+  rig.bodyGroup.position.x = THREE.MathUtils.lerp(rig.bodyGroup.position.x, pose.hipsOffsetX * 0.7, damp);
+  rig.bodyGroup.position.y = THREE.MathUtils.lerp(rig.bodyGroup.position.y, pose.hipsOffsetY, damp);
+  rig.bodyGroup.rotation.x = THREE.MathUtils.lerp(rig.bodyGroup.rotation.x, -pose.spineRotX * 0.65, damp);
+  rig.bodyGroup.rotation.y = THREE.MathUtils.lerp(rig.bodyGroup.rotation.y, pose.hipsRotY * 0.7, damp);
+  rig.bodyGroup.rotation.z = THREE.MathUtils.lerp(rig.bodyGroup.rotation.z, pose.hipsRotZ * 0.65, damp);
+  rig.headPivot.rotation.x = THREE.MathUtils.lerp(rig.headPivot.rotation.x, -pose.headRotX * 0.75, damp);
+  rig.headPivot.rotation.y = THREE.MathUtils.lerp(rig.headPivot.rotation.y, pose.headRotY, damp);
+  rig.headPivot.rotation.z = THREE.MathUtils.lerp(rig.headPivot.rotation.z, pose.headRotZ, damp);
 }
 
 export function animateHumanoidIntro(
@@ -296,7 +325,7 @@ export function animateHumanoidIntro(
   dt: number
 ): void {
   const damp = 1 - Math.exp(-12 * dt);
-  const isWavePhase = introTime < 4.8;
+  const isWavePhase = introTime < 6.2;
   const bounce = Math.abs(Math.sin(introTime * 5.2)) * 0.025;
 
   rig.bodyGroup.position.y = THREE.MathUtils.lerp(rig.bodyGroup.position.y, bounce, damp);
@@ -316,7 +345,7 @@ export function animateHumanoidIntro(
     rig.rightArm.rotation.x = THREE.MathUtils.lerp(rig.rightArm.rotation.x, -2.4, damp);
     rig.rightArm.rotation.z = THREE.MathUtils.lerp(rig.rightArm.rotation.z, 0.35 + waveOsc * 0.28, damp);
   } else {
-    const beckonOsc = Math.sin((introTime - 4.8) * 7.5);
+    const beckonOsc = Math.sin((introTime - 6.2) * 7.5);
     rig.rightArm.rotation.x = THREE.MathUtils.lerp(
       rig.rightArm.rotation.x,
       -1.35 + beckonOsc * 0.35,
@@ -336,18 +365,7 @@ export function createFlorieRig(): HumanoidRig {
   const root = new THREE.Group();
   root.name = 'FlorieProtagonist';
 
-  // Soft radial contact shadow disc grounded at bottom-center
-  const shadowGeo = new THREE.CircleGeometry(0.42, 20);
-  const shadowMat = new THREE.MeshBasicMaterial({
-    color: 0x090d16,
-    transparent: true,
-    opacity: 0.34,
-    depthWrite: false,
-  });
-  const shadow = new THREE.Mesh(shadowGeo, shadowMat);
-  shadow.rotation.x = -Math.PI / 2;
-  shadow.position.y = 0.018;
-  root.add(shadow);
+  root.add(createSoftContactShadow(1.05));
 
   const bodyGroup = new THREE.Group();
   root.add(bodyGroup);

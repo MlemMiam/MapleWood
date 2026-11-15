@@ -5,7 +5,7 @@ import type { MaterialLibrary } from '../../utils/Materials';
 import type { InteractionSystem } from '../../interaction/InteractionSystem';
 
 export interface InteractiveDoor {
-  update: (dt: number) => void;
+  update: (dt: number, playerPos?: THREE.Vector3) => void;
   isOpen: () => boolean;
   toggle: () => void;
 }
