@@ -652,6 +652,7 @@ export class AudioManager {
   private customizationMusicLoop: Howl;
   private customizationFadeTimer: number | null = null;
   private ambientLoop: Howl;
+  private worldOstLoop: Howl;
   private fountainLoop: Howl;
   private animeMusicLoop: Howl;
   private titleMusicLoop: Howl;
@@ -695,7 +696,12 @@ export class AudioManager {
     this.ambientLoop = new Howl({
       src: [synthAmbientLoop()],
       loop: true,
-      volume: 0.18,
+      volume: 0.14,
+    });
+    this.worldOstLoop = new Howl({
+      src: ['/assets/audio/world_ost.wav'],
+      loop: true,
+      volume: 0.19,
     });
     this.fountainLoop = new Howl({
       src: [synthFountainWaterLoop()],
@@ -750,6 +756,9 @@ export class AudioManager {
       if (this.ambientLoop.playing()) {
         this.ambientLoop.pause();
       }
+      if (this.worldOstLoop.playing()) {
+        this.worldOstLoop.pause();
+      }
       if (!this.titleMusicLoop.playing()) {
         this.titleMusicLoop.volume(0);
         this.titleMusicLoop.seek(0);
@@ -775,6 +784,9 @@ export class AudioManager {
       }
       if (this.ambientLoop.playing()) {
         this.ambientLoop.pause();
+      }
+      if (this.worldOstLoop.playing()) {
+        this.worldOstLoop.pause();
       }
       if (!this.animeMusicLoop.playing()) {
         this.animeMusicLoop.volume(0);
@@ -929,6 +941,11 @@ export class AudioManager {
       if (!this.ambientLoop.playing()) {
         this.ambientLoop.play();
       }
+      if (!this.worldOstLoop.playing()) {
+        this.worldOstLoop.volume(0);
+        this.worldOstLoop.play();
+        this.worldOstLoop.fade(0, 0.19, 1200);
+      }
       if (!this.fountainLoop.playing()) {
         this.fountainLoop.play();
       }
@@ -942,6 +959,9 @@ export class AudioManager {
       this.stopAnimeIntroMusic();
       if (this.ambientLoop.playing()) {
         this.ambientLoop.pause();
+      }
+      if (this.worldOstLoop.playing()) {
+        this.worldOstLoop.pause();
       }
       if (this.fountainLoop.playing()) {
         this.fountainLoop.pause();
@@ -998,6 +1018,9 @@ export class AudioManager {
         if (!this.ambientLoop.playing()) {
           this.ambientLoop.play();
         }
+        if (!this.worldOstLoop.playing()) {
+          this.worldOstLoop.play();
+        }
         if (!this.fountainLoop.playing()) {
           this.fountainLoop.play();
         }
@@ -1010,6 +1033,9 @@ export class AudioManager {
   public pauseLoops(): void {
     if (this.ambientLoop.playing()) {
       this.ambientLoop.pause();
+    }
+    if (this.worldOstLoop.playing()) {
+      this.worldOstLoop.pause();
     }
     if (this.fountainLoop.playing()) {
       this.fountainLoop.pause();
@@ -1028,6 +1054,9 @@ export class AudioManager {
   public resumeLoops(): void {
     if (this.startedAmbient && !this.ambientLoop.playing()) {
       this.ambientLoop.play();
+    }
+    if (this.startedAmbient && !this.worldOstLoop.playing()) {
+      this.worldOstLoop.play();
     }
     if (this.startedAmbient && !this.fountainLoop.playing()) {
       this.fountainLoop.play();
@@ -1119,6 +1148,7 @@ export class AudioManager {
     this.colorSwatchSfx.unload();
     this.customizationMusicLoop.unload();
     this.ambientLoop.unload();
+    this.worldOstLoop.unload();
     this.fountainLoop.unload();
     this.animeMusicLoop.unload();
     this.titleMusicLoop.unload();

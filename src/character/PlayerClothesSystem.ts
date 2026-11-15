@@ -467,15 +467,35 @@ function findBodySkinnedMesh(vrm: VRM): THREE.SkinnedMesh | null {
   return found;
 }
 
+export const CATEGORY_RENDER_ORDER: Record<ClothesCategoryId, number> = {
+  socks: 10,
+  arm: 15,
+  bottom: 20,
+  top: 30,
+  dress: 35,
+  shoes: 40,
+  neck: 50,
+  glasses: 60,
+};
+
+export interface BuiltClothSurface {
+  category: ClothesCategoryId;
+  itemId: string;
+  partgroup: string;
+  posArr: Float32Array;
+  normArr: Float32Array;
+  vertCount: number;
+}
+
 const CATEGORY_CLEARANCE_METERS: Record<ClothesCategoryId, number> = {
-  socks: 0.0022,
-  arm: 0.0026,
-  bottom: 0.0038,
-  top: 0.0048,
-  dress: 0.0052,
-  neck: 0.0062,
-  shoes: 0.0038,
-  glasses: 0.0005,
+  socks: 0.0035,
+  arm: 0.0045,
+  bottom: 0.0090,
+  top: 0.0145,
+  dress: 0.0195,
+  shoes: 0.0110,
+  neck: 0.0240,
+  glasses: 0.0260,
 };
 
 type BodyAnatomicalRegion =
@@ -681,7 +701,7 @@ function getActiveShoeMaskMode(
 
 function isFootVertMaskedByShoes(
   reg: BodyAnatomicalRegion,
-  x: number,
+  _x: number,
   y: number,
   z: number,
   footXAbs: number,
@@ -692,17 +712,17 @@ function isFootVertMaskedByShoes(
   if (reg !== 'foot_l' && reg !== 'foot_r') return false;
   const femScale = footY / 0.08567;
   if (shoeMode === 'heel') {
-    return y < 0.008 * femScale || z < -0.036 * femScale;
+    // Keep the visible upper forefoot/instep inside the open pump vamp; only mask deep toe-tip,
+    // sole underside below the leather insole, and the enclosed heel counter.
+    const soleLineY = z < -0.015 * femScale ? -0.044 * femScale : (-0.044 + (z + 0.015 * femScale) * 0.72) * femScale;
+    return z < -0.052 * femScale || y < soleLineY || z > 0.068 * femScale;
   }
   if (shoeMode === 'ballet') {
+    // Ballet flat has a low-cut vamp (closed only past z < -0.068); keep the front top of foot intact.
     const isSideLower =
-      Math.abs(Math.abs(x) - footXAbs) > 0.022 * femScale && y < footY * 0.45;
-    return (
-      y < footY * 0.36 ||
-      z < -0.042 * femScale ||
-      z > 0.058 * femScale ||
-      isSideLower
-    );
+      Math.abs(Math.abs(_x) - footXAbs) > 0.025 * femScale && y < 0.022 * femScale;
+    const isHeelCup = z > 0.062 * femScale && y < footY * 0.65;
+    return y < 0.011 * femScale || z < -0.068 * femScale || isHeelCup || isSideLower;
   }
   return y < footY * 0.68 || z < -0.035 * femScale;
 }
@@ -758,9 +778,9 @@ function applyBodyFootHeelMorph(
     const leftFootX = surface.dstBoneBindPos['J_Bip_L_Foot']?.[0] ?? -0.0765;
     const rightFootX = surface.dstBoneBindPos['J_Bip_R_Foot']?.[0] ?? 0.0765;
     const footXAbs = Math.abs(leftFootX);
-    const xPull = (shoeMode === 'ballet' ? 0.008 : 0.006) * femScale;
-    const yDrop = shoeMode === 'closed' ? 0.004 * femScale : 0.018 * femScale;
-    const yFloorClamp = shoeMode === 'heel' ? -0.048 * femScale : 0.002 * femScale;
+    const xPull = (shoeMode === 'closed' ? 0.006 : 0.004) * femScale;
+    const yDrop = shoeMode === 'closed' ? 0.004 * femScale : 0.006 * femScale;
+    const yFloorClamp = shoeMode === 'heel' ? -0.050 * femScale : 0.002 * femScale;
 
     for (let vi = 0; vi < surface.vertCount; vi++) {
       const reg = surface.regions[vi];
@@ -879,7 +899,9 @@ function buildTemplateSkinnedMesh(
   category: ClothesCategoryId,
   layerIndex: number,
   blendShapeWeights: Record<string, number>,
-  material: THREE.Material
+  material: THREE.Material,
+  itemId?: string,
+  priorSurfaces?: BuiltClothSurface[]
 ): THREE.SkinnedMesh {
   const surface = getCachedBodySurfaceData(baseBodyMesh);
   const { boneNameMap, dstBoneBindPos } = surface;
@@ -889,9 +911,18 @@ function buildTemplateSkinnedMesh(
   const workPos = Float32Array.from(template.positions);
 
   // 1. Apply official VRoid BlendShapes (.Male when gender === 'male' + item blendShapes)
+  let effectiveBlendShapes = blendShapeWeights;
+  if (itemId === 'female_Top2' && layerIndex === 1) {
+    // Keep collar layer aligned with base shirt layer instead of inflating away from the nape
+    effectiveBlendShapes = {
+      ...blendShapeWeights,
+      ClavicleLow: 62,
+      AllInflate: 8,
+    };
+  }
   const combinedBS: Record<string, number> = {
     ...(gender === 'male' ? { Male: 100 } : {}),
-    ...blendShapeWeights,
+    ...effectiveBlendShapes,
   };
   if (template.blendShapes) {
     for (const [bsKey, weightVal] of Object.entries(combinedBS)) {
@@ -907,6 +938,58 @@ function buildTemplateSkinnedMesh(
     }
   }
 
+  // Female Top4: shorten the two isolated drawstring cord components (~45% shorter from top anchor)
+  if (itemId === 'female_Top4' && template.indices && template.indices.length > 0) {
+    const adj: number[][] = Array.from({ length: vertCount }, () => []);
+    for (let t = 0; t < template.indices.length; t += 3) {
+      const a = template.indices[t];
+      const b = template.indices[t + 1];
+      const c = template.indices[t + 2];
+      adj[a].push(b, c);
+      adj[b].push(a, c);
+      adj[c].push(a, b);
+    }
+    const vis = new Uint8Array(vertCount);
+    const stack: number[] = [];
+    for (let i = 0; i < vertCount; i++) {
+      if (vis[i]) continue;
+      vis[i] = 1;
+      stack.length = 0;
+      stack.push(i);
+      const comp: number[] = [];
+      let minY = Infinity;
+      let maxY = -Infinity;
+      let minZ = Infinity;
+      let maxAbsX = 0;
+      while (stack.length > 0) {
+        const u = stack.pop()!;
+        comp.push(u);
+        const ax = Math.abs(workPos[u * 3]);
+        const uy = workPos[u * 3 + 1];
+        const uz = workPos[u * 3 + 2];
+        if (ax > maxAbsX) maxAbsX = ax;
+        if (uy < minY) minY = uy;
+        if (uy > maxY) maxY = uy;
+        if (uz < minZ) minZ = uz;
+        const nb = adj[u];
+        for (let k = 0; k < nb.length; k++) {
+          if (!vis[nb[k]]) {
+            vis[nb[k]] = 1;
+            stack.push(nb[k]);
+          }
+        }
+      }
+      if (comp.length <= 60 && maxAbsX < 0.08 && minY > 1.08 && maxY > 1.30 && minZ < -0.10) {
+        for (let k = 0; k < comp.length; k++) {
+          const vi = comp[k];
+          const drop = maxY - workPos[vi * 3 + 1];
+          workPos[vi * 3 + 1] = maxY - drop * 0.55;
+          workPos[vi * 3 + 2] += drop * 0.035;
+        }
+      }
+    }
+  }
+
   // 2. Compute per-bone segment scales between canonical VRoid template and target player VRM
   const srcMap: Record<string, [number, number, number]> = {};
   const mappedJointIndices: number[] = [];
@@ -918,6 +1001,10 @@ function buildTemplateSkinnedMesh(
 
   const charScaleY = (dstBoneBindPos['J_Bip_C_Neck']?.[1] || 1.3065) / 1.36828;
   const boneScales: Array<[number, number, number]> = template.jointNames.map((bName) => {
+    // Avoid 4.38x (female) / 4.65x (male) vertical collar/tie distortion from canonical Neck->Head spacing
+    if (bName === 'J_Bip_C_Neck') {
+      return [charScaleY, charScaleY, charScaleY];
+    }
     const childName = CHILD_BONE_MAP[bName];
     if (childName && srcMap[bName] && srcMap[childName] && dstBoneBindPos[bName] && dstBoneBindPos[childName]) {
       const sLen = Math.hypot(
@@ -979,11 +1066,18 @@ function buildTemplateSkinnedMesh(
     const templateLensCenterY = 1.4275;
     const dyGlasses = targetEyeY - templateLensCenterY;
     const dzGlasses = headPos[2] - 0.025 - 0.004;
+    const isFemaleGlasses = itemId === 'female_Glasses1' || itemId === 'female_Glasses2';
+    const scaleXY = isFemaleGlasses ? 0.88 : 1.0;
+    const scaleZ = isFemaleGlasses ? 0.90 : 1.0;
+    const pivotZ = -0.072;
 
     for (let v = 0; v < vertCount; v++) {
-      posArr[v * 3] = workPos[v * 3];
-      posArr[v * 3 + 1] = workPos[v * 3 + 1] + dyGlasses;
-      posArr[v * 3 + 2] = workPos[v * 3 + 2] + dzGlasses;
+      const gx = workPos[v * 3] * scaleXY;
+      const gy = templateLensCenterY + (workPos[v * 3 + 1] - templateLensCenterY) * scaleXY + dyGlasses;
+      const gz = pivotZ + (workPos[v * 3 + 2] - pivotZ) * scaleZ + dzGlasses;
+      posArr[v * 3] = gx;
+      posArr[v * 3 + 1] = gy;
+      posArr[v * 3 + 2] = gz;
       skinIndexArr[v * 4] = headIdx;
       skinIndexArr[v * 4 + 1] = 0;
       skinIndexArr[v * 4 + 2] = 0;
@@ -1059,6 +1153,117 @@ function buildTemplateSkinnedMesh(
       posArr[v * 3 + 1] = outY;
       posArr[v * 3 + 2] = outZ;
     }
+
+    // Targeted female collar & neck-ribbon seating prior to surface clearance pass
+    if (
+      itemId === 'female_Top7' ||
+      itemId === 'female_Top8' ||
+      itemId === 'female_Dress8' ||
+      itemId === 'female_Dress9'
+    ) {
+      const collarBaseY = itemId === 'female_Top7' ? 1.294 : 1.288;
+      const dropStrength = itemId === 'female_Top7' ? 0.50 : 0.58;
+      for (let v = 0; v < vertCount; v++) {
+        const vx = posArr[v * 3];
+        const vy = posArr[v * 3 + 1];
+        const vz = posArr[v * 3 + 2];
+        if (vy > collarBaseY && Math.abs(vx) < 0.11) {
+          const backW = THREE.MathUtils.clamp((vz + 0.015) / 0.055, 0, 1);
+          if (backW > 0) {
+            const excess = vy - collarBaseY;
+            posArr[v * 3 + 1] = collarBaseY + excess * (1 - dropStrength * backW);
+            posArr[v * 3 + 2] -= 0.006 * backW * THREE.MathUtils.clamp(excess / 0.05, 0, 1);
+          }
+        }
+      }
+    } else if (itemId === 'female_Top1' || itemId === 'female_Top2') {
+      // Draw upper-back collar edges snug to the nape so it does not gap open behind
+      for (let v = 0; v < vertCount; v++) {
+        const vx = posArr[v * 3];
+        const vy = posArr[v * 3 + 1];
+        const vz = posArr[v * 3 + 2];
+        if (vy > 1.255 && vz > 0.015 && Math.abs(vx) < 0.09) {
+          const hFactor = THREE.MathUtils.clamp((vy - 1.255) / 0.065, 0, 1);
+          posArr[v * 3 + 2] -= 0.008 * hFactor;
+        }
+      }
+    } else if (
+      itemId === 'female_Neck1' ||
+      itemId === 'female_Neck2' ||
+      itemId === 'female_Neck4'
+    ) {
+      // Lower neck ribbon/strap from mid-throat onto the collar base
+      for (let v = 0; v < vertCount; v++) {
+        const vy = posArr[v * 3 + 1];
+        if (vy > 1.255) {
+          const wDrop = THREE.MathUtils.clamp((vy - 1.255) / 0.055, 0.25, 1.0);
+          posArr[v * 3 + 1] = vy - 0.019 * wDrop;
+          posArr[v * 3 + 2] -= 0.003 * wDrop;
+        }
+      }
+    } else if (itemId === 'male_Top1') {
+      // Lower Male Top1 back collar rim to sit naturally at nape height without altering front neckline
+      for (let v = 0; v < vertCount; v++) {
+        const vx = posArr[v * 3];
+        const vy = posArr[v * 3 + 1];
+        const vz = posArr[v * 3 + 2];
+        if (vy > 1.365 && Math.abs(vx) < 0.14) {
+          const backW = THREE.MathUtils.clamp((vz + 0.01) / 0.045, 0, 1);
+          if (backW > 0) {
+            const excess = vy - 1.365;
+            posArr[v * 3 + 1] = 1.365 + excess * (1 - 0.52 * backW);
+          }
+        }
+      }
+    } else if (itemId === 'male_Top2') {
+      // Lower Male Top2 back jacket collar to sit naturally without flattening or exposing shoulders
+      for (let v = 0; v < vertCount; v++) {
+        const vx = posArr[v * 3];
+        const vy = posArr[v * 3 + 1];
+        const vz = posArr[v * 3 + 2];
+        if (vy > 1.370 && Math.abs(vx) < 0.14) {
+          const backW = THREE.MathUtils.clamp((vz + 0.01) / 0.045, 0, 1);
+          if (backW > 0) {
+            const excess = vy - 1.370;
+            posArr[v * 3 + 1] = 1.370 + excess * (1 - 0.48 * backW);
+          }
+        }
+      }
+    } else if (itemId === 'male_Top3') {
+      // Lower Male Top3 resting hood and back collar smoothly behind the neck
+      for (let v = 0; v < vertCount; v++) {
+        const vx = posArr[v * 3];
+        const vy = posArr[v * 3 + 1];
+        const vz = posArr[v * 3 + 2];
+        if (vy > 1.365 && Math.abs(vx) < 0.15) {
+          const hoodBackW = THREE.MathUtils.clamp((vz + 0.01) / 0.06, 0, 1);
+          if (hoodBackW > 0) {
+            const excess = vy - 1.365;
+            posArr[v * 3 + 1] = 1.365 + excess * (1 - 0.52 * hoodBackW);
+          }
+        }
+      }
+    } else if (itemId === 'male_Neck1' || itemId === 'male_Neck2') {
+      // Seat Male neck ribbons/ties at collar base (~1.37)
+      for (let v = 0; v < vertCount; v++) {
+        const vy = posArr[v * 3 + 1];
+        if (vy > 1.33) {
+          const wDrop = THREE.MathUtils.clamp((vy - 1.33) / 0.06, 0, 1);
+          posArr[v * 3 + 1] = vy - 0.024 * wDrop;
+          posArr[v * 3 + 2] -= 0.003 * wDrop;
+        }
+      }
+    } else if (itemId === 'male_Neck3') {
+      // Seat Male bow tie cleanly at collar base
+      for (let v = 0; v < vertCount; v++) {
+        const vy = posArr[v * 3 + 1];
+        if (vy > 1.33) {
+          const wDrop = THREE.MathUtils.clamp((vy - 1.33) / 0.06, 0, 1);
+          posArr[v * 3 + 1] = vy - 0.022 * wDrop;
+          posArr[v * 3 + 2] -= 0.004 * wDrop;
+        }
+      }
+    }
   }
 
   // 3. Multi-pass anatomical surface clearance + bone-weight lock to prevent any body penetration
@@ -1104,10 +1309,21 @@ function buildTemplateSkinnedMesh(
           const signedDist = dx * nx + dy * ny + dz * nz;
           const ndot =
             normArr[i * 3] * nx + normArr[i * 3 + 1] * ny + normArr[i * 3 + 2] * nz;
-          if (ndot >= -0.15 && signedDist < minClearance) {
-            const push = minClearance - signedDist;
+          const targetClearance =
+            itemId === 'female_Arm2' && (cReg === 'hand_l' || cReg === 'hand_r')
+              ? 0.0028
+              : minClearance;
+          const allowPush =
+            (itemId === 'female_Arm2' && (cReg === 'hand_l' || cReg === 'hand_r')) ||
+            ndot >= -0.15;
+          if (allowPush && signedDist < targetClearance) {
+            const push = targetClearance - signedDist;
+            const yClearScale =
+              itemId === 'male_Neck1' || itemId === 'male_Neck2' || itemId === 'male_Neck3'
+                ? 0.25
+                : 1.0;
             posArr[i * 3] += nx * push;
-            posArr[i * 3 + 1] += ny * push;
+            posArr[i * 3 + 1] += ny * push * yClearScale;
             posArr[i * 3 + 2] += nz * push;
           }
 
@@ -1125,6 +1341,103 @@ function buildTemplateSkinnedMesh(
         }
       }
     }
+  }
+
+  // 3b. Multi-layer clothing clearance against underlying clothing layers
+  if (priorSurfaces && priorSurfaces.length > 0 && !partgroup.includes('Glasses')) {
+    for (const under of priorSurfaces) {
+      const isUnder =
+        (category === 'top' && under.category === 'bottom') ||
+        (category === 'dress' && (under.category === 'top' || under.category === 'bottom')) ||
+        (category === 'shoes' && (under.category === 'socks' || under.category === 'bottom')) ||
+        (category === 'neck' && (under.category === 'top' || under.category === 'dress'));
+      if (!isUnder) continue;
+
+      const interLayerMargin =
+        category === 'neck' ? 0.0100 :
+        category === 'dress' ? 0.0085 :
+        0.0075;
+      const uCount = under.vertCount;
+      const uPos = under.posArr;
+      const uNorm = under.normArr;
+
+      // Special case: 1:1 vertex correspondence for identical partgroup templates (e.g. dress over top)
+      if (under.partgroup === partgroup && uCount === vertCount) {
+        for (let i = 0; i < vertCount; i++) {
+          const vx = posArr[i * 3];
+          const vy = posArr[i * 3 + 1];
+          const vz = posArr[i * 3 + 2];
+          const ux = uPos[i * 3];
+          const uy = uPos[i * 3 + 1];
+          const uz = uPos[i * 3 + 2];
+          const nx = uNorm[i * 3];
+          const ny = uNorm[i * 3 + 1];
+          const nz = uNorm[i * 3 + 2];
+
+          const dx = vx - ux;
+          const dy = vy - uy;
+          const dz = vz - uz;
+          const signedDist = dx * nx + dy * ny + dz * nz;
+          if (signedDist < interLayerMargin) {
+            const push = interLayerMargin - signedDist;
+            posArr[i * 3] += nx * push;
+            posArr[i * 3 + 1] += ny * push;
+            posArr[i * 3 + 2] += nz * push;
+          }
+        }
+        continue;
+      }
+
+      // General case: 2-iteration nearest-surface clearance with 12 cm search radius
+      for (let pass = 0; pass < 2; pass++) {
+        for (let i = 0; i < vertCount; i++) {
+          const vx = posArr[i * 3];
+          const vy = posArr[i * 3 + 1];
+          const vz = posArr[i * 3 + 2];
+
+          let bestD2 = Infinity;
+          let bestU = -1;
+          for (let j = 0; j < uCount; j++) {
+            const dy = vy - uPos[j * 3 + 1];
+            if (dy > 0.10 || dy < -0.10) continue;
+            const dx = vx - uPos[j * 3];
+            const dz = vz - uPos[j * 3 + 2];
+            const d2 = dx * dx + dy * dy + dz * dz;
+            if (d2 < bestD2) {
+              bestD2 = d2;
+              bestU = j;
+            }
+          }
+
+          if (bestU >= 0 && bestD2 < 0.0144) {
+            const dx = vx - uPos[bestU * 3];
+            const dy = vy - uPos[bestU * 3 + 1];
+            const dz = vz - uPos[bestU * 3 + 2];
+            const nx = uNorm[bestU * 3];
+            const ny = uNorm[bestU * 3 + 1];
+            const nz = uNorm[bestU * 3 + 2];
+            const signedDist = dx * nx + dy * ny + dz * nz;
+            if (signedDist < interLayerMargin) {
+              const push = interLayerMargin - signedDist;
+              posArr[i * 3] += nx * push;
+              posArr[i * 3 + 1] += ny * push;
+              posArr[i * 3 + 2] += nz * push;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (priorSurfaces) {
+    priorSurfaces.push({
+      category,
+      itemId: itemId || '',
+      partgroup,
+      posArr: Float32Array.from(posArr),
+      normArr: Float32Array.from(normArr),
+      vertCount,
+    });
   }
 
   const geom = new THREE.BufferGeometry();
@@ -1227,6 +1540,213 @@ function updateBodyMeshCoverageMask(
   return maskedAttr;
 }
 
+export interface ClothPhysicsSpring {
+  category: 'skirt' | 'top' | 'neck';
+  pos: THREE.Vector3;
+  vel: THREE.Vector3;
+  target: THREE.Vector3;
+  uniform: THREE.IUniform<THREE.Vector3>;
+}
+
+export interface ClothesPhysicsRuntime {
+  time: number;
+  initialized: boolean;
+  lastHipsWorldPos: THREE.Vector3;
+  lastHipsWorldQuat: THREE.Quaternion;
+  lastHipsLinearVel: THREE.Vector3;
+  springs: {
+    skirt: ClothPhysicsSpring;
+    top: ClothPhysicsSpring;
+    neck: ClothPhysicsSpring;
+  };
+}
+
+export function initOrGetClothesPhysicsRuntime(clothesRoot: THREE.Group): ClothesPhysicsRuntime {
+  if (clothesRoot.userData.clothesPhysics) {
+    return clothesRoot.userData.clothesPhysics as ClothesPhysicsRuntime;
+  }
+  const runtime: ClothesPhysicsRuntime = {
+    time: 0,
+    initialized: false,
+    lastHipsWorldPos: new THREE.Vector3(),
+    lastHipsWorldQuat: new THREE.Quaternion(),
+    lastHipsLinearVel: new THREE.Vector3(),
+    springs: {
+      skirt: {
+        category: 'skirt',
+        pos: new THREE.Vector3(),
+        vel: new THREE.Vector3(),
+        target: new THREE.Vector3(),
+        uniform: { value: new THREE.Vector3() },
+      },
+      top: {
+        category: 'top',
+        pos: new THREE.Vector3(),
+        vel: new THREE.Vector3(),
+        target: new THREE.Vector3(),
+        uniform: { value: new THREE.Vector3() },
+      },
+      neck: {
+        category: 'neck',
+        pos: new THREE.Vector3(),
+        vel: new THREE.Vector3(),
+        target: new THREE.Vector3(),
+        uniform: { value: new THREE.Vector3() },
+      },
+    },
+  };
+  clothesRoot.userData.clothesPhysics = runtime;
+  return runtime;
+}
+
+const _tmpHipsPos = new THREE.Vector3();
+const _tmpHipsQuat = new THREE.Quaternion();
+const _tmpHipsLinearVel = new THREE.Vector3();
+const _tmpHipsLinearAccel = new THREE.Vector3();
+const _tmpHipsQuatInv = new THREE.Quaternion();
+const _tmpHipsLocalAccel = new THREE.Vector3();
+const _tmpHipsRotDelta = new THREE.Quaternion();
+const _tmpHipsEuler = new THREE.Euler();
+
+export function updateClothesPhysics(
+  vrm: VRM,
+  dt: number,
+  isMoving = false,
+  gaitPhase = 0
+): void {
+  const clothesRoot = vrm.scene.getObjectByName('PlayerCustomClothesRoot') as THREE.Group | undefined;
+  if (!clothesRoot) return;
+  const runtime = clothesRoot.userData.clothesPhysics as ClothesPhysicsRuntime | undefined;
+  if (!runtime) return;
+
+  const hips =
+    vrm.humanoid?.getRawBoneNode('hips') ||
+    vrm.scene.getObjectByName('J_Bip_C_Hips') ||
+    vrm.scene;
+
+  const safeDt = THREE.MathUtils.clamp(dt, 0.001, 0.05);
+  runtime.time += safeDt;
+
+  hips.updateWorldMatrix(true, false);
+  hips.getWorldPosition(_tmpHipsPos);
+  hips.getWorldQuaternion(_tmpHipsQuat);
+
+  if (!runtime.initialized) {
+    runtime.initialized = true;
+    runtime.lastHipsWorldPos.copy(_tmpHipsPos);
+    runtime.lastHipsWorldQuat.copy(_tmpHipsQuat);
+    runtime.lastHipsLinearVel.set(0, 0, 0);
+    return;
+  }
+
+  const frameDistSq = _tmpHipsPos.distanceToSquared(runtime.lastHipsWorldPos);
+  if (frameDistSq > 0.35) {
+    runtime.lastHipsWorldPos.copy(_tmpHipsPos);
+    runtime.lastHipsWorldQuat.copy(_tmpHipsQuat);
+    runtime.lastHipsLinearVel.set(0, 0, 0);
+    return;
+  }
+
+  _tmpHipsLinearVel.subVectors(_tmpHipsPos, runtime.lastHipsWorldPos).divideScalar(safeDt);
+  _tmpHipsLinearAccel.subVectors(_tmpHipsLinearVel, runtime.lastHipsLinearVel).divideScalar(safeDt);
+  runtime.lastHipsWorldPos.copy(_tmpHipsPos);
+  runtime.lastHipsLinearVel.copy(_tmpHipsLinearVel);
+
+  _tmpHipsQuatInv.copy(_tmpHipsQuat).invert();
+  _tmpHipsLocalAccel.copy(_tmpHipsLinearAccel).applyQuaternion(_tmpHipsQuatInv);
+  _tmpHipsLocalAccel.x = THREE.MathUtils.clamp(_tmpHipsLocalAccel.x, -12.0, 12.0);
+  _tmpHipsLocalAccel.y = THREE.MathUtils.clamp(_tmpHipsLocalAccel.y, -16.0, 16.0);
+  _tmpHipsLocalAccel.z = THREE.MathUtils.clamp(_tmpHipsLocalAccel.z, -12.0, 12.0);
+
+  _tmpHipsRotDelta.copy(runtime.lastHipsWorldQuat).invert().multiply(_tmpHipsQuat);
+  runtime.lastHipsWorldQuat.copy(_tmpHipsQuat);
+  _tmpHipsEuler.setFromQuaternion(_tmpHipsRotDelta, 'YXZ');
+  const yawRate = THREE.MathUtils.clamp(_tmpHipsEuler.y / safeDt, -6.0, 6.0);
+
+  const t = runtime.time;
+  const breezeX = Math.sin(t * 1.6) * 0.005 + Math.sin(t * 2.7) * 0.003;
+  const breezeZ = Math.cos(t * 1.3) * 0.004 + Math.sin(t * 2.1) * 0.002;
+  const breezeY = Math.sin(t * 1.8) * 0.0025;
+
+  let walkBounceY = 0;
+  let walkSwayX = 0;
+  let walkDragZ = 0;
+  if (isMoving) {
+    walkBounceY = -Math.abs(Math.sin(gaitPhase)) * 0.016;
+    walkSwayX = Math.sin(gaitPhase * 0.5) * 0.014;
+    walkDragZ = 0.028 + Math.sin(gaitPhase) * 0.012;
+  }
+
+  // 1. Skirt / Dress Spring
+  {
+    const s = runtime.springs.skirt;
+    let tx = -_tmpHipsLocalAccel.x * 0.0025 - yawRate * 0.006 + breezeX + (isMoving ? walkSwayX : 0);
+    let ty = -_tmpHipsLocalAccel.y * 0.0020 + breezeY + (isMoving ? walkBounceY : 0);
+    let tz = -_tmpHipsLocalAccel.z * 0.0025 + breezeZ + (isMoving ? walkDragZ : 0);
+    tx = THREE.MathUtils.clamp(tx, -0.065, 0.065);
+    ty = THREE.MathUtils.clamp(ty, -0.035, 0.035);
+    tz = THREE.MathUtils.clamp(tz, -0.050, 0.075);
+    s.target.set(tx, ty, tz);
+
+    const omega = 11.5;
+    const zeta = 0.72;
+    const fx = -omega * omega * (s.pos.x - tx) - 2.0 * zeta * omega * s.vel.x;
+    const fy = -omega * omega * (s.pos.y - ty) - 2.0 * zeta * omega * s.vel.y;
+    const fz = -omega * omega * (s.pos.z - tz) - 2.0 * zeta * omega * s.vel.z;
+    s.vel.x += fx * safeDt;
+    s.vel.y += fy * safeDt;
+    s.vel.z += fz * safeDt;
+    s.pos.addScaledVector(s.vel, safeDt);
+    s.uniform.value.copy(s.pos);
+  }
+
+  // 2. Top Spring
+  {
+    const s = runtime.springs.top;
+    let tx = -_tmpHipsLocalAccel.x * 0.0015 - yawRate * 0.003 + breezeX * 0.6 + (isMoving ? walkSwayX * 0.6 : 0);
+    let ty = -_tmpHipsLocalAccel.y * 0.0012 + breezeY * 0.5 + (isMoving ? walkBounceY * 0.5 : 0);
+    let tz = -_tmpHipsLocalAccel.z * 0.0015 + breezeZ * 0.6 + (isMoving ? walkDragZ * 0.5 : 0);
+    tx = THREE.MathUtils.clamp(tx, -0.025, 0.025);
+    ty = THREE.MathUtils.clamp(ty, -0.015, 0.015);
+    tz = THREE.MathUtils.clamp(tz, -0.020, 0.035);
+    s.target.set(tx, ty, tz);
+
+    const omega = 14.0;
+    const zeta = 0.78;
+    const fx = -omega * omega * (s.pos.x - tx) - 2.0 * zeta * omega * s.vel.x;
+    const fy = -omega * omega * (s.pos.y - ty) - 2.0 * zeta * omega * s.vel.y;
+    const fz = -omega * omega * (s.pos.z - tz) - 2.0 * zeta * omega * s.vel.z;
+    s.vel.x += fx * safeDt;
+    s.vel.y += fy * safeDt;
+    s.vel.z += fz * safeDt;
+    s.pos.addScaledVector(s.vel, safeDt);
+    s.uniform.value.copy(s.pos);
+  }
+
+  // 3. Neck Ribbon / Tie Spring
+  {
+    const s = runtime.springs.neck;
+    let tx = -_tmpHipsLocalAccel.x * 0.0020 - yawRate * 0.005 + breezeX * 0.8 + (isMoving ? walkSwayX * 0.8 : 0);
+    let ty = -_tmpHipsLocalAccel.y * 0.0015 + breezeY * 0.6 + (isMoving ? walkBounceY * 0.6 : 0);
+    let tz = -_tmpHipsLocalAccel.z * 0.0020 + breezeZ * 0.8 + (isMoving ? walkDragZ * 0.7 : 0);
+    tx = THREE.MathUtils.clamp(tx, -0.035, 0.035);
+    ty = THREE.MathUtils.clamp(ty, -0.020, 0.020);
+    tz = THREE.MathUtils.clamp(tz, -0.025, 0.045);
+    s.target.set(tx, ty, tz);
+
+    const omega = 12.0;
+    const zeta = 0.68;
+    const fx = -omega * omega * (s.pos.x - tx) - 2.0 * zeta * omega * s.vel.x;
+    const fy = -omega * omega * (s.pos.y - ty) - 2.0 * zeta * omega * s.vel.y;
+    const fz = -omega * omega * (s.pos.z - tz) - 2.0 * zeta * omega * s.vel.z;
+    s.vel.x += fx * safeDt;
+    s.vel.y += fy * safeDt;
+    s.vel.z += fz * safeDt;
+    s.pos.addScaledVector(s.vel, safeDt);
+    s.uniform.value.copy(s.pos);
+  }
+}
+
 const LAYER_ORDER: ClothesCategoryId[] = [
   'socks',
   'arm',
@@ -1254,6 +1774,21 @@ export function applyClothesSelectionToVrm(
 ): THREE.Group | null {
   const bodyMesh = findBodySkinnedMesh(vrm);
   if (!bodyMesh || !bodyMesh.parent) return null;
+
+  // Body outline pass is an inverted-hull extrusion (0.0008) intended for naked models;
+  // when clothes are worn, it pokes through clothing folds, waist, seams, and cuffs.
+  const bodyMats = Array.isArray(bodyMesh.material) ? bodyMesh.material : [bodyMesh.material];
+  for (const m of bodyMats) {
+    if (
+      /outline/i.test(m?.name ?? '') ||
+      (m as unknown as { isOutline?: boolean }).isOutline
+    ) {
+      m.visible = false;
+      if ('outlineWidthFactor' in m) {
+        (m as unknown as { outlineWidthFactor: number }).outlineWidthFactor = 0;
+      }
+    }
+  }
 
   const hostParent = bodyMesh.parent;
   const oldRoot = hostParent.getObjectByName('PlayerCustomClothesRoot');
@@ -1308,6 +1843,8 @@ export function applyClothesSelectionToVrm(
   void bodySurface;
 
   const gradientMap = getAnimeClothesGradientMap();
+  const physicsRuntime = initOrGetClothesPhysicsRuntime(clothesRoot);
+  const builtSurfaces: BuiltClothSurface[] = [];
   let globalLayerCounter = 0;
   const activePartGroups = new Set<string>();
   let hasActiveShoes = false;
@@ -1341,19 +1878,92 @@ export function applyClothesSelectionToVrm(
       const layer = item.layers[lIdx];
       activePartGroups.add(layer.partgroup);
       const map = layer.mainTextureUrl ? getClothesTexture(layer.mainTextureUrl) : null;
+      const baseRenderOrder = CATEGORY_RENDER_ORDER[catId] || 20;
+      const itemRenderOrder = baseRenderOrder + lIdx;
 
       const mat = new THREE.MeshToonMaterial({
         map,
         color: tintColor,
         gradientMap,
-        transparent: true,
-        alphaTest: 0.08,
+        transparent: false,
+        alphaTest: 0.5,
         side: THREE.DoubleSide,
         depthWrite: true,
         polygonOffset: true,
-        polygonOffsetFactor: -1 - globalLayerCounter * 0.5,
-        polygonOffsetUnits: -2 - globalLayerCounter,
+        polygonOffsetFactor: -2.0 - itemRenderOrder * 0.20,
+        polygonOffsetUnits: -4.0 - itemRenderOrder * 0.40,
       });
+
+      // Hook up physics uniforms and vertex displacement
+      if (catId === 'bottom' || catId === 'dress') {
+        const skirtSpring = physicsRuntime.springs.skirt;
+        mat.customProgramCacheKey = () => `cloth_physics_skirt_${catId}`;
+        mat.onBeforeCompile = (shader) => {
+          shader.uniforms.uClothSway = skirtSpring.uniform;
+          shader.vertexShader = `
+uniform vec3 uClothSway;
+` + shader.vertexShader;
+          shader.vertexShader = shader.vertexShader.replace(
+            '#include <begin_vertex>',
+            `#include <begin_vertex>
+float skirtFactor = clamp((0.98 - position.y) / 0.45, 0.0, 1.0);
+vec3 skirtDisp = uClothSway * pow(skirtFactor, 1.35);
+
+vec3 candCloth = position + skirtDisp;
+if (candCloth.y < 0.92 && candCloth.y > 0.42) {
+  float lDist = length(vec2(candCloth.x - (-0.082), candCloth.z - (-0.012)));
+  float rDist = length(vec2(candCloth.x - 0.082, candCloth.z - (-0.012)));
+  float tRad = 0.074;
+  if (lDist < tRad) {
+    vec2 lDir = lDist > 0.001 ? normalize(vec2(candCloth.x - (-0.082), candCloth.z - (-0.012))) : vec2(-1.0, 0.0);
+    candCloth.x = -0.082 + lDir.x * (tRad + 0.003);
+    candCloth.z = -0.012 + lDir.y * (tRad + 0.003);
+  }
+  if (rDist < tRad) {
+    vec2 rDir = rDist > 0.001 ? normalize(vec2(candCloth.x - 0.082, candCloth.z - (-0.012))) : vec2(1.0, 0.0);
+    candCloth.x = 0.082 + rDir.x * (tRad + 0.003);
+    candCloth.z = -0.012 + rDir.y * (tRad + 0.003);
+  }
+}
+transformed = candCloth;`
+          );
+        };
+      } else if (catId === 'top') {
+        const topSpring = physicsRuntime.springs.top;
+        mat.customProgramCacheKey = () => `cloth_physics_top`;
+        mat.onBeforeCompile = (shader) => {
+          shader.uniforms.uTopSway = topSpring.uniform;
+          shader.vertexShader = `
+uniform vec3 uTopSway;
+` + shader.vertexShader;
+          shader.vertexShader = shader.vertexShader.replace(
+            '#include <begin_vertex>',
+            `#include <begin_vertex>
+float topHemFactor = clamp((1.06 - position.y) / 0.22, 0.0, 1.0);
+transformed += uTopSway * pow(topHemFactor, 1.35);`
+          );
+        };
+      } else if (catId === 'neck') {
+        const neckSpring = physicsRuntime.springs.neck;
+        mat.customProgramCacheKey = () => `cloth_physics_neck`;
+        mat.onBeforeCompile = (shader) => {
+          shader.uniforms.uNeckSway = neckSpring.uniform;
+          shader.vertexShader = `
+uniform vec3 uNeckSway;
+` + shader.vertexShader;
+          shader.vertexShader = shader.vertexShader.replace(
+            '#include <begin_vertex>',
+            `#include <begin_vertex>
+float neckHemFactor = clamp((1.34 - position.y) / 0.20, 0.0, 1.0);
+vec3 neckDisp = uNeckSway * pow(neckHemFactor, 1.25);
+vec3 candNeck = position + neckDisp;
+if (candNeck.y < 1.34 && candNeck.y > 1.14 && candNeck.z > -0.076) {
+  candNeck.z = -0.076;
+}
+transformed = candNeck;`
+          );
+        };
+      }
 
       const template = selectTemplateForPartGroup(layer.partgroup, templates);
       if (template) {
@@ -1365,8 +1975,11 @@ export function applyClothesSelectionToVrm(
           catId,
           globalLayerCounter,
           layer.blendShapes || {},
-          mat
+          mat,
+          item.id,
+          builtSurfaces
         );
+        mesh.renderOrder = itemRenderOrder;
         mesh.name = `Clothes_${catId}_${item.rawId}_L${lIdx}`;
         clothesRoot.add(mesh);
 
@@ -1392,8 +2005,10 @@ export function applyClothesSelectionToVrm(
             catId,
             globalLayerCounter + 1,
             {},
-            lensMat
+            lensMat,
+            item.id
           );
+          lensMesh.renderOrder = itemRenderOrder + 1;
           lensMesh.name = `Clothes_${catId}_${item.rawId}_Lens`;
           clothesRoot.add(lensMesh);
         }
@@ -1405,6 +2020,7 @@ export function applyClothesSelectionToVrm(
           layer.blendShapes || {},
           mat
         );
+        overlayMesh.renderOrder = itemRenderOrder;
         overlayMesh.name = `ClothesOverlay_${catId}_${item.rawId}_L${lIdx}`;
         clothesRoot.add(overlayMesh);
       }
@@ -1431,7 +2047,79 @@ export function applyClothesSelectionToVrm(
 
   resolveVrmPlatformCollision(vrm, vrm.scene.parent?.parent || vrm.scene, 0);
 
+  if (import.meta.env.DEV) {
+    (window as unknown as Record<string, unknown>).__clothesDebug = {
+      gender,
+      report: () => debugReportClothes(vrm, bodyMesh, clothesRoot, gender),
+    };
+  }
+
   return clothesRoot;
+}
+
+// DEV-only diagnostic: reports real skinned (rendered) vertex heights of clothes vs body neck/chin
+function debugReportClothes(
+  vrm: VRM,
+  bodyMesh: THREE.SkinnedMesh,
+  clothesRoot: THREE.Group,
+  gender: PlayerGender
+) {
+  const v = new THREE.Vector3();
+  const toBodyLocal = (mesh: THREE.Object3D, p: THREE.Vector3) =>
+    bodyMesh.worldToLocal(mesh.localToWorld(p));
+  vrm.scene.updateMatrixWorld(true);
+  const bonePos = (name: string) => {
+    const b = bodyMesh.skeleton.getBoneByName(name);
+    if (!b) return null;
+    const p = bodyMesh.worldToLocal(b.getWorldPosition(new THREE.Vector3()));
+    return [+p.x.toFixed(4), +p.y.toFixed(4), +p.z.toFixed(4)];
+  };
+  let chinY = Infinity;
+  vrm.scene.traverse((o) => {
+    const m = o as THREE.SkinnedMesh;
+    if (m.isSkinnedMesh && /face/i.test(m.name)) {
+      const pa = m.geometry.getAttribute('position');
+      for (let i = 0; i < pa.count; i++) {
+        m.getVertexPosition(i, v);
+        const y = toBodyLocal(m, v).y;
+        if (y < chinY) chinY = y;
+      }
+    }
+  });
+  const meshes: unknown[] = [];
+  clothesRoot.traverse((o) => {
+    const m = o as THREE.SkinnedMesh;
+    if (!m.isSkinnedMesh) return;
+    const pa = m.geometry.getAttribute('position');
+    const uv = m.geometry.getAttribute('uv');
+    let bindMaxY = -Infinity;
+    const top: Array<[number, number, number, number, number, number]> = [];
+    for (let i = 0; i < pa.count; i++) {
+      bindMaxY = Math.max(bindMaxY, pa.getY(i));
+      m.getVertexPosition(i, v);
+      const p = toBodyLocal(m, v);
+      if (Math.abs(p.x) < 0.2 && p.y > 1.2) {
+        top.push([
+          +p.x.toFixed(4),
+          +p.y.toFixed(4),
+          +p.z.toFixed(4),
+          uv ? +uv.getX(i).toFixed(4) : 0,
+          uv ? +uv.getY(i).toFixed(4) : 0,
+          i,
+        ]);
+      }
+    }
+    top.sort((a, b) => b[1] - a[1]);
+    meshes.push({ name: m.name, verts: pa.count, bindMaxY: +bindMaxY.toFixed(4), top: top.slice(0, 60) });
+  });
+  return {
+    gender,
+    chinY: +chinY.toFixed(4),
+    neck: bonePos('J_Bip_C_Neck'),
+    head: bonePos('J_Bip_C_Head'),
+    shoulderL: bonePos('J_Bip_L_Shoulder'),
+    meshes,
+  };
 }
 
 interface SoleProbeGroup {

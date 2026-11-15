@@ -34,7 +34,7 @@ import {
 } from '../character/FlorieVRM';
 
 export type CustomizationStep = 'genderChoice' | 'customization';
-export type StudioTabMode = 'hair' | 'clothes' | 'display';
+export type StudioTabMode = 'hair' | 'clothes';
 export type CameraFramingPreset = 'head' | 'torso' | 'legs' | 'feet' | 'full';
 
 interface PlayerCustomizationModalProps {
@@ -159,13 +159,6 @@ const IconScissors: React.FC<{ size?: number }> = ({ size = 16 }) => (
   </SvgIcon>
 );
 
-const IconEye: React.FC<{ size?: number }> = ({ size = 16 }) => (
-  <SvgIcon size={size}>
-    <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z" />
-    <circle cx="12" cy="12" r="3" />
-  </SvgIcon>
-);
-
 const IconPalette: React.FC<{ size?: number }> = ({ size = 16 }) => (
   <SvgIcon size={size}>
     <path d="M12 2a10 10 0 0 0 0 20 2.5 2.5 0 0 0 2.5-2.5c0-.6-.2-1.1-.6-1.5-.4-.4-.6-.9-.6-1.5a2.5 2.5 0 0 1 2.5-2.5H17a5 5 0 0 0 5-5c0-3.9-4.5-7-10-7Z" />
@@ -179,17 +172,6 @@ const IconSparkles: React.FC<{ size?: number }> = ({ size = 16 }) => (
   <SvgIcon size={size}>
     <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3Z" />
     <path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16Z" />
-  </SvgIcon>
-);
-
-const IconDice: React.FC<{ size?: number }> = ({ size = 16 }) => (
-  <SvgIcon size={size}>
-    <rect x="3" y="3" width="18" height="18" rx="4" />
-    <circle cx="8.5" cy="8.5" r="1.2" fill="currentColor" />
-    <circle cx="15.5" cy="8.5" r="1.2" fill="currentColor" />
-    <circle cx="12" cy="12" r="1.2" fill="currentColor" />
-    <circle cx="8.5" cy="15.5" r="1.2" fill="currentColor" />
-    <circle cx="15.5" cy="15.5" r="1.2" fill="currentColor" />
   </SvgIcon>
 );
 
@@ -342,7 +324,32 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
 }) => {
   const [selectedGender, setSelectedGender] = useState<PlayerGender>(initialGender);
   const [studioMode, setStudioMode] = useState<StudioTabMode>('clothes');
-  const [selection, setSelection] = useState<PlayerHairSelection>(initialSelection);
+  const [selection, setSelection] = useState<PlayerHairSelection>(() => {
+    const removedIds = new Set([
+      'Front1',
+      'Front6',
+      'Front7',
+      'Front8',
+      'Back10',
+      'Ex2',
+      'Ex3',
+      'Ex10',
+      'Ex11',
+      'Ex13',
+    ]);
+    return {
+      ...initialSelection,
+      front: removedIds.has(initialSelection.front || '')
+        ? 'Front2'
+        : initialSelection.front,
+      back: removedIds.has(initialSelection.back || '')
+        ? 'Back1'
+        : initialSelection.back,
+      ex: removedIds.has(initialSelection.ex || '')
+        ? null
+        : initialSelection.ex,
+    };
+  });
   const [clothesSelection, setClothesSelection] =
     useState<PlayerClothesSelection>(initialClothesSelection);
   const [displayOptions, setDisplayOptions] =
@@ -492,29 +499,30 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.08;
+    renderer.toneMappingExposure = 0.82;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     containerEl.innerHTML = '';
     containerEl.appendChild(renderer.domElement);
 
-    const hemiLight = new THREE.HemisphereLight(0xfff5f7, 0xf8d7df, 1.25);
+    // Natural, color-faithful lighting matching in-game daylight (no pink/magenta color cast)
+    const hemiLight = new THREE.HemisphereLight(0xf1f5f9, 0x475569, 0.60);
     scene.add(hemiLight);
 
-    const keyLight = new THREE.DirectionalLight(0xfff7f9, 1.45);
-    keyLight.position.set(1.6, 2.5, 2.2);
+    const keyLight = new THREE.DirectionalLight(0xfff5ea, 0.82);
+    keyLight.position.set(1.8, 2.8, 2.2);
     keyLight.castShadow = true;
     keyLight.shadow.mapSize.set(1024, 1024);
     keyLight.shadow.bias = -0.0005;
     scene.add(keyLight);
 
-    const rimLight = new THREE.DirectionalLight(0xffb3c6, 0.85);
-    rimLight.position.set(-1.8, 2.1, -1.6);
+    const rimLight = new THREE.DirectionalLight(0xffffff, 0.28);
+    rimLight.position.set(-1.8, 2.2, -1.8);
     scene.add(rimLight);
 
-    const fillLight = new THREE.DirectionalLight(0xffe5ec, 0.55);
-    fillLight.position.set(-1.3, 1.3, 1.8);
+    const fillLight = new THREE.DirectionalLight(0xe2e8f0, 0.38);
+    fillLight.position.set(-1.4, 1.4, 1.8);
     scene.add(fillLight);
 
     // Crisp white & rose pedestal
@@ -630,12 +638,13 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
         targetYawRef.current += dt * 0.55;
       }
 
-      currentYawRef.current += (targetYawRef.current - currentYawRef.current) * 0.14;
+      const damp = 1 - Math.exp(-10.5 * dt);
+      currentYawRef.current += (targetYawRef.current - currentYawRef.current) * damp;
       currentPitchRef.current +=
-        (targetPitchRef.current - currentPitchRef.current) * 0.14;
-      currentZoomRef.current += (targetZoomRef.current - currentZoomRef.current) * 0.14;
+        (targetPitchRef.current - currentPitchRef.current) * damp;
+      currentZoomRef.current += (targetZoomRef.current - currentZoomRef.current) * damp;
       currentLookYRef.current +=
-        (targetLookYRef.current - currentLookYRef.current) * 0.14;
+        (targetLookYRef.current - currentLookYRef.current) * damp;
 
       if (selectionReactTimerRef.current > 0) {
         selectionReactTimerRef.current = Math.max(
@@ -647,7 +656,14 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
       const ctrl = controllerRef.current;
       if (ctrl) {
         ctrl.container.rotation.y = Math.PI + currentYawRef.current;
-        ctrl.update('idle', 0, selectionReactTimerRef.current, dt);
+        ctrl.setCutsceneOverride?.({
+          pose: 'none',
+          expression: 'none',
+          headGesture: 'none',
+          blush: 0,
+          time: 0,
+        });
+        ctrl.update('idle', 0, 0, dt);
         if (ctrl.vrm) {
           resolveVrmPlatformCollision(ctrl.vrm, ctrl.container, 0.0005);
         }
@@ -868,86 +884,6 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
     triggerSelectionReaction();
   };
 
-  const handleRandomizeHair = () => {
-    onPlayAccessoryEquip ? onPlayAccessoryEquip() : onPlayClick?.();
-    setAutoDemoActive(false);
-    const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
-    const frontItems = HAIR_CATEGORIES.find((c) => c.id === 'front')!.items;
-    const backItems = HAIR_CATEGORIES.find((c) => c.id === 'back')!.items;
-    const sideItems = HAIR_CATEGORIES.find((c) => c.id === 'side')!.items;
-    const exItems = HAIR_CATEGORIES.find((c) => c.id === 'ex')!.items;
-    const extraItems = HAIR_CATEGORIES.find((c) => c.id === 'extra')!.items;
-
-    setSelection({
-      base: 'Base1',
-      front: pick(frontItems).id,
-      back: pick(backItems).id,
-      side: Math.random() > 0.25 ? pick(sideItems).id : null,
-      ex: Math.random() > 0.45 ? pick(exItems).id : null,
-      extra: Math.random() > 0.5 ? pick(extraItems).id : null,
-      colorHex: pick(HAIR_COLOR_PRESETS).hex,
-    });
-    triggerSelectionReaction();
-  };
-
-  const handleRandomizeOutfit = () => {
-    onPlayClothEquip ? onPlayClothEquip() : onPlayClick?.();
-    const pickN = (prefix: string, max: number) =>
-      `${selectedGender}_${prefix}${1 + Math.floor(Math.random() * max)}`;
-    const pickFrom = (arr: string[]) =>
-      `${selectedGender}_${arr[Math.floor(Math.random() * arr.length)]}`;
-    const pickColor = () =>
-      Math.random() > 0.45
-        ? '#ffffff'
-        : CLOTHES_COLOR_SWATCHES[
-            Math.floor(Math.random() * CLOTHES_COLOR_SWATCHES.length)
-          ].hex;
-
-    const useDress = selectedGender === 'female' && Math.random() > 0.55;
-    const dressPool = [
-      'Dress1',
-      'Dress2',
-      'Dress3',
-      'Dress5',
-      'Dress6',
-      'Dress7',
-      'Dress8',
-      'Dress9',
-    ];
-    const armPool =
-      selectedGender === 'male'
-        ? ['Arm1', 'Arm2', 'Arm3', 'Arm4', 'Arm5', 'Arm6']
-        : ['Arm1', 'Arm2', 'Arm3', 'Arm4'];
-    setClothesSelection({
-      items: {
-        top: useDress
-          ? null
-          : pickN('Top', selectedGender === 'male' ? 5 : 8),
-        bottom: useDress
-          ? null
-          : pickN('Bottom', selectedGender === 'male' ? 7 : 12),
-        dress: useDress ? pickFrom(dressPool) : null,
-        socks: pickN('Socks', selectedGender === 'male' ? 6 : 8),
-        shoes: pickN('Shoes', selectedGender === 'male' ? 5 : 7),
-        arm: Math.random() > 0.45 ? pickFrom(armPool) : null,
-        neck: Math.random() > 0.35 ? pickN('Neck', 4) : null,
-        glasses: Math.random() > 0.65 ? pickN('Glasses', 2) : null,
-      },
-      colors: {
-        top: pickColor(),
-        bottom: pickColor(),
-        dress: pickColor(),
-        socks: '#ffffff',
-        shoes: pickColor(),
-        arm: '#ffffff',
-        neck: pickColor(),
-        glasses: '#ffffff',
-      },
-    });
-    applyFraming('full', selectedGender, 0.18, 0.04);
-    triggerSelectionReaction();
-  };
-
   const handleClearAllClothes = () => {
     onPlayClick?.();
     setClothesSelection({
@@ -1007,9 +943,10 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
   };
 
   const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    const zoomStep = e.deltaY * 0.0014 * Math.max(0.65, targetZoomRef.current * 0.55);
     targetZoomRef.current = Math.max(
-      0.52,
-      Math.min(2.65, targetZoomRef.current + e.deltaY * 0.0012)
+      0.42,
+      Math.min(3.40, targetZoomRef.current + zoomStep)
     );
   };
 
@@ -1468,57 +1405,6 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
                 </button>
               </div>
             </div>
-
-            <div style={{ display: 'flex', gap: 6 }}>
-              <button
-                type="button"
-                onClick={() => {
-                  onPlayAccessoryEquip ? onPlayAccessoryEquip() : onPlayClick?.();
-                  triggerSelectionReaction();
-                }}
-                title="Jouer une animation de réaction"
-                style={{
-                  padding: '6px 10px',
-                  borderRadius: 999,
-                  border: '1.5px solid #fecdd3',
-                  background: '#ffffff',
-                  color: '#e11d48',
-                  fontSize: 11.5,
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 4,
-                }}
-              >
-                <IconSparkles size={14} />
-                <span>Pose</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={
-                  studioMode === 'hair' ? handleRandomizeHair : handleRandomizeOutfit
-                }
-                title="Sélection aléatoire"
-                style={{
-                  padding: '6px 10px',
-                  borderRadius: 999,
-                  border: '1.5px solid #fecdd3',
-                  background: '#ffffff',
-                  color: '#be123c',
-                  fontSize: 11.5,
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 4,
-                }}
-              >
-                <IconDice size={14} />
-                <span>Aléatoire</span>
-              </button>
-            </div>
           </div>
 
           {/* Three.js Canvas */}
@@ -1809,36 +1695,10 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
                   <IconScissors size={15} />
                   <span>Coiffure</span>
                 </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    onPlayClick?.();
-                    setStudioMode('display');
-                    setOpenDropdown('none');
-                  }}
-                  style={{
-                    padding: '7px 14px',
-                    borderRadius: 10,
-                    border: 'none',
-                    cursor: 'pointer',
-                    fontSize: 12.5,
-                    fontWeight: 800,
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    background:
-                      studioMode === 'display' ? '#e11d48' : 'transparent',
-                    color: studioMode === 'display' ? '#ffffff' : '#881337',
-                  }}
-                >
-                  <IconEye size={15} />
-                  <span>Display</span>
-                </button>
               </div>
 
               {/* Right-side Dropdown Menus (Looks, Couleur, Cumul) */}
-              {studioMode !== 'display' && (
+              {(
                 <div
                   style={{
                     display: 'flex',
@@ -2357,12 +2217,15 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(126px, 1fr))',
+                  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
                   gap: 12,
                 }}
               >
-                {/* "Aucun" card */}
-                <button
+                {/* "Aucun" card (omitted for mandatory slots: top, bottom, shoes) */}
+                {activeClothesCategory !== 'top' &&
+                  activeClothesCategory !== 'bottom' &&
+                  activeClothesCategory !== 'shoes' && (
+                  <button
                   type="button"
                   onMouseEnter={() => {
                     onPlayHover?.();
@@ -2413,6 +2276,7 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
                     Aucun
                   </div>
                 </button>
+                )}
 
                 {currentClothesItems.map((item) => {
                   const isSelected = activeClothesEquippedId === item.id;
@@ -2616,245 +2480,6 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
                     </button>
                   );
                 })}
-              </div>
-            </div>
-          )}
-
-          {studioMode === 'display' && (
-            <div
-              style={{
-                flex: 1,
-                overflowY: 'auto',
-                padding: '18px 22px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 16,
-              }}
-            >
-              <div
-                style={{
-                  background: '#fff5f7',
-                  borderRadius: 18,
-                  padding: 16,
-                  border: '1.5px solid #fecdd3',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 10,
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 14,
-                    fontWeight: 900,
-                    color: '#881337',
-                  }}
-                >
-                  Options d’affichage sur le Player
-                </div>
-
-                {[
-                  {
-                    key: 'showHair' as const,
-                    label: 'Afficher la coiffure 3D',
-                    desc: 'Masquer temporairement les cheveux pour inspecter le col ou les lunettes.',
-                  },
-                  {
-                    key: 'isolateActiveCategory' as const,
-                    label: 'Isoler la catégorie active',
-                    desc: 'Afficher uniquement le vêtement de la catégorie sélectionnée.',
-                  },
-                  {
-                    key: 'celShadingBoost' as const,
-                    label: 'Cel-Shading Anime renforcé',
-                    desc: 'Activer la rampe lumineuse toon sur les vêtements.',
-                  },
-                  {
-                    key: 'turntableAutoSpin' as const,
-                    label: 'Plateau tournant 360°',
-                    desc: 'Faire pivoter automatiquement le personnage.',
-                  },
-                ].map((opt) => {
-                  const active = displayOptions[opt.key];
-                  return (
-                    <div
-                      key={opt.key}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        padding: '10px 14px',
-                        borderRadius: 12,
-                        background: '#ffffff',
-                        border: '1px solid #fecdd3',
-                      }}
-                    >
-                      <div>
-                        <div
-                          style={{
-                            fontSize: 13,
-                            fontWeight: 800,
-                            color: '#2d1219',
-                          }}
-                        >
-                          {opt.label}
-                        </div>
-                        <div
-                          style={{
-                            fontSize: 11.5,
-                            color: '#9f1239',
-                            fontWeight: 600,
-                          }}
-                        >
-                          {opt.desc}
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onPlayClick?.();
-                          setDisplayOptions((prev) => ({
-                            ...prev,
-                            [opt.key]: !prev[opt.key],
-                          }));
-                        }}
-                        style={{
-                          padding: '6px 14px',
-                          borderRadius: 999,
-                          border: 'none',
-                          cursor: 'pointer',
-                          fontWeight: 800,
-                          fontSize: 11.5,
-                          background: active ? '#e11d48' : '#ffe4e6',
-                          color: active ? '#ffffff' : '#881337',
-                        }}
-                      >
-                        {active ? 'Activé' : 'Masqué'}
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div
-                style={{
-                  background: '#fff5f7',
-                  borderRadius: 18,
-                  padding: 16,
-                  border: '1.5px solid #fecdd3',
-                }}
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    marginBottom: 10,
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: 14,
-                      fontWeight: 900,
-                      color: '#881337',
-                    }}
-                  >
-                    Visibilité par couche
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onPlayClick?.();
-                      setDisplayOptions((prev) => ({
-                        ...prev,
-                        visibleCategories: {
-                          top: true,
-                          bottom: true,
-                          dress: true,
-                          socks: true,
-                          shoes: true,
-                          arm: true,
-                          neck: true,
-                          glasses: true,
-                        },
-                      }));
-                    }}
-                    style={{
-                      padding: '4px 11px',
-                      borderRadius: 999,
-                      border: '1px solid #fecdd3',
-                      background: '#ffffff',
-                      color: '#be123c',
-                      fontSize: 11,
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Tout afficher
-                  </button>
-                </div>
-
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(165px, 1fr))',
-                    gap: 8,
-                  }}
-                >
-                  {visibleClothesCategories.map((cat) => {
-                    const isVis = displayOptions.visibleCategories[cat.id];
-                    return (
-                      <button
-                        key={cat.id}
-                        type="button"
-                        onClick={() => {
-                          onPlayClick?.();
-                          setDisplayOptions((prev) => ({
-                            ...prev,
-                            visibleCategories: {
-                              ...prev.visibleCategories,
-                              [cat.id]: !prev.visibleCategories[cat.id],
-                            },
-                          }));
-                        }}
-                        style={{
-                          padding: '9px 12px',
-                          borderRadius: 12,
-                          border: isVis
-                            ? '1.5px solid #e11d48'
-                            : '1.5px dashed #fda4af',
-                          background: '#ffffff',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        <span
-                          style={{
-                            fontSize: 12,
-                            fontWeight: 800,
-                            color: isVis ? '#881337' : '#fda4af',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 6,
-                          }}
-                        >
-                          <ClothesCategorySvgIcon category={cat.id} size={14} />
-                          <span>{cat.shortLabel}</span>
-                        </span>
-                        <span
-                          style={{
-                            fontSize: 11,
-                            fontWeight: 800,
-                            color: isVis ? '#e11d48' : '#fda4af',
-                          }}
-                        >
-                          {isVis ? 'ON' : 'OFF'}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
               </div>
             </div>
           )}

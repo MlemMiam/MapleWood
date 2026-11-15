@@ -5,6 +5,16 @@ const _desiredCam = new THREE.Vector3();
 const _rayDir = new THREE.Vector3();
 const _lookTarget = new THREE.Vector3();
 
+interface TitleShot {
+  duration: number;
+  posStart: THREE.Vector3;
+  posEnd: THREE.Vector3;
+  lookStart: THREE.Vector3;
+  lookEnd: THREE.Vector3;
+}
+
+const TITLE_SHORTS_TOTAL = 48.5;
+
 export class CameraController {
   public yaw = 0; // 0 = facing North (-Z)
   public pitch = 0.22; // Slight downward angle
@@ -17,37 +27,77 @@ export class CameraController {
   private currentPos = new THREE.Vector3(0, 3, 12);
   private currentLook = new THREE.Vector3(0, 1.5, 0);
   private initialized = false;
-  private titlePos = new THREE.Vector3(5.5, 4.4, 21.0);
-  private titleLook = new THREE.Vector3(0, 3.4, -8.5);
+  private titlePos = new THREE.Vector3(-11.0, 2.8, 16.5);
+  private titleLook = new THREE.Vector3(0, 4.6, -11.0);
   private titleInitialized = false;
-  private readonly titlePosCurve = new THREE.CatmullRomCurve3(
-    [
-      new THREE.Vector3(-10, 3.6, 25),
-      new THREE.Vector3(11, 4.4, 21),
-      new THREE.Vector3(26, 13.5, 10),
-      new THREE.Vector3(24, 15.0, -68),
-      new THREE.Vector3(-26, 9.5, -108),
-      new THREE.Vector3(-30, 14.0, -28),
-      new THREE.Vector3(-20, 6.2, 16),
-    ],
-    true,
-    'centripetal',
-    0.5
-  );
-  private readonly titleLookCurve = new THREE.CatmullRomCurve3(
-    [
-      new THREE.Vector3(0, 3.2, -6),
-      new THREE.Vector3(0, 3.4, -7),
-      new THREE.Vector3(0, 4.0, -18),
-      new THREE.Vector3(-4, 2.5, -94),
-      new THREE.Vector3(0, 3.0, -78),
-      new THREE.Vector3(0, 3.5, -10),
-      new THREE.Vector3(0, 3.0, -4),
-    ],
-    true,
-    'centripetal',
-    0.5
-  );
+  private lastTitleShotIndex = -1;
+  private lastTravelingEnabled = true;
+  private readonly titleShots: TitleShot[] = [
+    {
+      // 1. La Devanture & Cour d'honneur (Full Building Facade, Roof & Cupola)
+      duration: 6.5,
+      posStart: new THREE.Vector3(-28.0, 14.5, 68.0),
+      posEnd: new THREE.Vector3(24.0, 17.5, 62.0),
+      lookStart: new THREE.Vector3(0.0, 9.5, -18.0),
+      lookEnd: new THREE.Vector3(0.0, 10.5, -18.0),
+    },
+    {
+      // 2. Grand Hall d'Accueil & Réception (Lobby, Chandelier & Reception Desk)
+      duration: 6.0,
+      posStart: new THREE.Vector3(6.2, 2.4, -13.5),
+      posEnd: new THREE.Vector3(-0.8, 2.2, -16.2),
+      lookStart: new THREE.Vector3(-3.5, 1.6, -19.2),
+      lookEnd: new THREE.Vector3(-5.0, 1.5, -20.0),
+    },
+    {
+      // 3. Atrium Central & Ascenseurs Vitrés (Multi-floor Atrium & Glass Elevators)
+      duration: 6.0,
+      posStart: new THREE.Vector3(-8.5, 2.2, -23.6),
+      posEnd: new THREE.Vector3(6.5, 6.2, -23.8),
+      lookStart: new THREE.Vector3(4.0, 5.5, -24.5),
+      lookEnd: new THREE.Vector3(-4.0, 9.0, -24.5),
+    },
+    {
+      // 4. Aile Est RDC — Couloir & Cafétéria
+      duration: 6.0,
+      posStart: new THREE.Vector3(21.0, 2.1, -24.0),
+      posEnd: new THREE.Vector3(34.5, 2.1, -23.0),
+      lookStart: new THREE.Vector3(34.5, 2.0, -23.5),
+      lookEnd: new THREE.Vector3(35.0, 1.8, -17.0),
+    },
+    {
+      // 5. Grand Escalier Est (RDC -> 1er Étage)
+      duration: 6.0,
+      posStart: new THREE.Vector3(33.5, 2.2, -24.2),
+      posEnd: new THREE.Vector3(38.5, 5.2, -24.6),
+      lookStart: new THREE.Vector3(39.2, 3.2, -27.5),
+      lookEnd: new THREE.Vector3(39.2, 6.2, -28.0),
+    },
+    {
+      // 6. Aile Ouest 1er Étage — Couloir & Bibliothèque
+      duration: 6.0,
+      posStart: new THREE.Vector3(-42.0, 6.7, -24.0),
+      posEnd: new THREE.Vector3(-55.2, 6.7, -23.1),
+      lookStart: new THREE.Vector3(-56.0, 6.5, -23.5),
+      lookEnd: new THREE.Vector3(-56.7, 6.3, -17.0),
+    },
+    {
+      // 7. 3e Étage — Salle de Conférence
+      duration: 6.0,
+      posStart: new THREE.Vector3(-10.0, 15.8, -24.0),
+      posEnd: new THREE.Vector3(0.0, 15.8, -22.5),
+      lookStart: new THREE.Vector3(0.0, 15.6, -23.5),
+      lookEnd: new THREE.Vector3(0.0, 15.3, -16.5),
+    },
+    {
+      // 8. Vue Aérienne — Fronton & Coupole du Bâtiment
+      duration: 6.0,
+      posStart: new THREE.Vector3(22.0, 12.5, 10.0),
+      posEnd: new THREE.Vector3(-18.0, 10.5, 14.0),
+      lookStart: new THREE.Vector3(0.0, 6.8, -17.0),
+      lookEnd: new THREE.Vector3(0.0, 5.2, -14.0),
+    },
+  ];
 
   public resetToPlayer(playerPos: THREE.Vector3, yaw = 0): void {
     this.yaw = yaw;
@@ -160,27 +210,48 @@ export class CameraController {
       camera.updateProjectionMatrix();
     }
 
+    let shotIndex = -1;
     if (!travelingEnabled) {
       // Calm static framing of the main high school facade & courtyard
       _desiredCam.set(5.5, 4.4, 21.0);
       _lookTarget.set(0, 3.4, -8.5);
     } else {
-      // Continuous closed centripetal Catmull-Rom spline around the campus (zero breaks or cuts)
-      const loopDuration = 42.0;
-      const u = (((elapsed % loopDuration) + loopDuration) % loopDuration) / loopDuration;
-      this.titlePosCurve.getPointAt(u, _desiredCam);
-      this.titleLookCurve.getPointAt(u, _lookTarget);
+      const tLoop = ((elapsed % TITLE_SHORTS_TOTAL) + TITLE_SHORTS_TOTAL) % TITLE_SHORTS_TOTAL;
+      let acc = 0;
+      shotIndex = this.titleShots.length - 1;
+      let localU = 1;
+      for (let i = 0; i < this.titleShots.length; i++) {
+        const s = this.titleShots[i];
+        if (tLoop < acc + s.duration || i === this.titleShots.length - 1) {
+          shotIndex = i;
+          localU = THREE.MathUtils.clamp((tLoop - acc) / s.duration, 0, 1);
+          break;
+        }
+        acc += s.duration;
+      }
+      const shot = this.titleShots[shotIndex];
+      const easedU = 0.5 - 0.5 * Math.cos(Math.PI * localU);
+      _desiredCam.lerpVectors(shot.posStart, shot.posEnd, easedU);
+      _lookTarget.lerpVectors(shot.lookStart, shot.lookEnd, easedU);
     }
 
-    if (!this.titleInitialized) {
+    const isCutBetweenShots =
+      travelingEnabled &&
+      this.lastTravelingEnabled &&
+      this.lastTitleShotIndex !== -1 &&
+      shotIndex !== this.lastTitleShotIndex;
+
+    if (!this.titleInitialized || isCutBetweenShots) {
       this.titlePos.copy(_desiredCam);
       this.titleLook.copy(_lookTarget);
       this.titleInitialized = true;
     } else {
-      // Smoothly damp between traveling and static framing when toggled
-      this.titlePos.lerp(_desiredCam, 0.075);
-      this.titleLook.lerp(_lookTarget, 0.075);
+      // Smoothly damp within a shot or when toggling traveling on/off
+      this.titlePos.lerp(_desiredCam, 0.14);
+      this.titleLook.lerp(_lookTarget, 0.14);
     }
+    this.lastTitleShotIndex = shotIndex;
+    this.lastTravelingEnabled = travelingEnabled;
 
     camera.position.copy(this.titlePos);
     camera.lookAt(this.titleLook);

@@ -6,6 +6,7 @@ import {
 } from '../character/FlorieVRM';
 import type { CampusNPC } from '../character/NPC';
 import type { Player } from '../character/Player';
+import { PaperSoftBody } from './PaperPhysics';
 
 export const POST_CUSTOM_CUTSCENE_DURATION = 44.5;
 
@@ -89,10 +90,16 @@ export class PostCustomCutsceneDirector {
   private drawerGroup: THREE.Group | null = null;
   private drawerBox: THREE.Group | null = null;
   private paperGroup: THREE.Group | null = null;
+  private paperSoftBody: PaperSoftBody | null = null;
   private paperTexture: THREE.CanvasTexture | null = null;
   private savedCamera: THREE.PerspectiveCamera | null = null;
   private tmpHelenHandPos = new THREE.Vector3();
   private tmpHelenThumbPos = new THREE.Vector3();
+  private tmpPinchLocal = new THREE.Vector3();
+  private tmpHeldPaperPos = new THREE.Vector3();
+  private tmpPaperEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+  private tmpPaperQuat = new THREE.Quaternion();
+  private tmpPaperTargetPos = new THREE.Vector3();
   private drawerPosLocked = false;
 
   constructor(scene: THREE.Scene) {
@@ -325,9 +332,30 @@ export class PostCustomCutsceneDirector {
         detectedY = hits[0].point.y;
       }
     }
-    this.deskTopY = detectedY;
+    // Build 3D Enrollment Form Paper (0.26m x 0.345m soft-body subdivided mesh)
+    const paperW = 0.26;
+    const paperH = 0.345;
+    this.paperTexture = this.createEnrollmentFormTexture();
+    const paperMat = new THREE.MeshStandardMaterial({
+      map: this.paperTexture,
+      roughness: 0.85,
+      metalness: 0.0,
+      side: THREE.DoubleSide,
+    });
+    const paperSoftBody = new PaperSoftBody(paperW, paperH, paperMat);
+    this.paperSoftBody = paperSoftBody;
+
+    // Sample desk surface heightmap over the form & pad footprint so neither corners nor sloped pad ever clip
+    const maxDeskSurfaceY = paperSoftBody.buildDeskHeightMap(
+      receptionDesk,
+      -4.88,
+      -20.02,
+      detectedY,
+      this.paperYaw
+    );
+    this.deskTopY = maxDeskSurfaceY;
     this.paperRestPos.set(-4.88, this.deskTopY + 0.005, -20.02);
-    this.drawerBasePos.set(-5.58, this.deskTopY - 0.14, -20.38);
+    this.drawerBasePos.set(-5.58, detectedY - 0.17, -20.38);
 
     // Build 3D Desk Drawer
     const drawerGroup = new THREE.Group();
@@ -349,32 +377,18 @@ export class PostCustomCutsceneDirector {
     this.drawerGroup = drawerGroup;
     this.drawerBox = drawerBox;
 
-    // Build 3D Enrollment Form Paper (0.26m x 0.345m)
-    const paperW = 0.26;
-    const paperH = 0.345;
-    this.paperTexture = this.createEnrollmentFormTexture();
-    const paperMat = new THREE.MeshStandardMaterial({
-      map: this.paperTexture,
-      roughness: 0.85,
-      metalness: 0.0,
-      side: THREE.DoubleSide,
-    });
-    const paperMesh = new THREE.Mesh(new THREE.PlaneGeometry(paperW, paperH), paperMat);
-    paperMesh.rotation.x = -Math.PI / 2;
-    paperMesh.receiveShadow = true;
-
+    // Container at world origin since PaperSoftBody simulates directly in world coordinates
     const paperGroup = new THREE.Group();
-    paperGroup.add(paperMesh);
-    paperGroup.position.copy(this.paperRestPos);
-    paperGroup.rotation.y = this.paperYaw;
+    paperGroup.add(paperSoftBody.mesh);
     paperGroup.visible = false;
     this.scene.add(paperGroup);
     this.paperGroup = paperGroup;
 
     // Compute exact world position of the "PRÉNOM :" field center (canvas x=512, y=1040 -> u=0.5, v=0.765)
-    paperGroup.updateMatrixWorld(true);
-    const localField = new THREE.Vector3(0, 0, (0.765 - 0.5) * paperH);
-    this.prenomWorldPos.copy(localField).applyMatrix4(paperGroup.matrixWorld);
+    this.prenomWorldPos
+      .set(0, 0, (0.765 - 0.5) * paperH)
+      .applyAxisAngle(new THREE.Vector3(0, 1, 0), this.paperYaw)
+      .add(this.paperRestPos);
   }
 
   public update(
@@ -751,7 +765,7 @@ export class PostCustomCutsceneDirector {
       });
     }
 
-    // 3b. Animate Desk Drawer (tucked under desk edge) & 3D Paper held directly between Helen's thumb and fingertips
+    // 3b. Animate Desk Drawer (slides cleanly into white desk) & 3D Paper pinched vertically between thumb and index
     const helenHumanoid = helen?.getVrmController()?.vrm?.humanoid;
     const helenFingerTip =
       helenHumanoid?.getNormalizedBoneNode('rightIndexDistal') ??
@@ -766,58 +780,72 @@ export class PostCustomCutsceneDirector {
         helenThumbTip.getWorldPosition(this.tmpHelenThumbPos);
         this.tmpHelenHandPos.lerp(this.tmpHelenThumbPos, 0.5);
       }
+      // Offset ~1.6 cm down from the distal bone joints to reach the exact fingertip pinch pads
+      this.tmpHelenHandPos.y -= 0.016;
     }
     if (this.drawerGroup && this.drawerBox) {
-      if (t >= 35.2 && !this.drawerPosLocked && helenFingerTip) {
-        // Keep drawer tucked cleanly BELOW deskTopY so it is only lightly visible under the desk edge
-        this.drawerGroup.position.set(
-          this.tmpHelenHandPos.x,
-          this.deskTopY - 0.095,
-          this.tmpHelenHandPos.z
-        );
-        this.drawerPosLocked = true;
-      }
-      if (t >= 34.4 && t < 38.2) {
-        this.drawerGroup.visible = true;
-        const openU = smoothstep((t - 34.6) / 0.9);
-        const closeU = smoothstep((t - 36.4) / 1.0);
-        const slideAmount = openU * (1 - closeU) * 0.075;
-        this.drawerBox.position.z = -slideAmount;
+      if (t >= 35.05 && t < 37.65) {
+        if (!this.drawerPosLocked && helenFingerTip) {
+          // Anchor drawer directly underneath the solid white desk countertop (+Z is under the desk)
+          const fwdX = Math.sin(this.paperYaw);
+          const fwdZ = Math.cos(this.paperYaw);
+          this.drawerGroup.position.set(
+            this.tmpHelenHandPos.x + fwdX * 0.22,
+            this.deskTopY - 0.17,
+            this.tmpHelenHandPos.z + fwdZ * 0.22
+          );
+          this.drawerPosLocked = true;
+        }
+        this.drawerGroup.visible = this.drawerPosLocked;
+        const openU = smoothstep((t - 35.05) / 0.75);
+        const closeU = smoothstep((t - 36.35) / 1.15);
+        const slideOut = openU * (1 - closeU) * 0.14;
+        // Closed = 0 (tucked completely beneath the white desk countertop); Open = -0.14 (glides out under desk)
+        this.drawerBox.position.z = -slideOut;
       } else {
         this.drawerGroup.visible = false;
       }
     }
     if (this.paperGroup) {
-      if (t >= 35.9) {
+      if (t >= 35.85) {
         this.paperGroup.visible = true;
-        if (t < 37.6 && helenFingerTip) {
-          this.paperGroup.position.set(
-            this.tmpHelenHandPos.x + 0.03,
-            this.tmpHelenHandPos.y,
-            this.tmpHelenHandPos.z + 0.04
-          );
-          this.paperGroup.rotation.x = THREE.MathUtils.lerp(-0.22, -0.05, smoothstep((t - 35.9) / 1.7));
-          this.paperGroup.rotation.y = this.paperYaw;
-        } else if (t < 38.7) {
-          const placeU = smoothstep((t - 37.6) / 1.1);
+        let gripStrength = 0;
+        let restGuideStrength = 0;
+        if (t < 37.85 && helenFingerTip) {
+          // Orient sheet nearly vertical with printed header up; solve exact position so pinch point lies right between thumb & index pads
+          const rotX = THREE.MathUtils.lerp(1.38, 1.12, smoothstep((t - 35.85) / 2.0));
+          this.tmpPaperEuler.set(rotX, this.paperYaw, 0);
+          this.tmpPaperQuat.setFromEuler(this.tmpPaperEuler);
+          this.tmpPinchLocal.set(0, 0, -0.142).applyQuaternion(this.tmpPaperQuat);
+          this.tmpPaperTargetPos.copy(this.tmpHelenHandPos).sub(this.tmpPinchLocal);
+          gripStrength = 1;
+        } else if (t < 38.55) {
+          // Accompany the sheet smoothly from vertical in her fingers down to flat on the desk, then release onto physics collision
+          const placeU = smoothstep((t - 37.85) / 0.7);
+          const rotX = THREE.MathUtils.lerp(1.12, 0, placeU);
+          this.tmpPaperEuler.set(rotX, this.paperYaw, 0);
+          this.tmpPaperQuat.setFromEuler(this.tmpPaperEuler);
           if (helenFingerTip) {
-            this.tmpHelenThumbPos.set(
-              this.tmpHelenHandPos.x + 0.03,
-              this.tmpHelenHandPos.y,
-              this.tmpHelenHandPos.z + 0.04
-            );
-            this.paperGroup.position.lerpVectors(this.tmpHelenThumbPos, this.paperRestPos, placeU);
+            this.tmpPinchLocal.set(0, 0, -0.142).applyQuaternion(this.tmpPaperQuat);
+            this.tmpHeldPaperPos.copy(this.tmpHelenHandPos).sub(this.tmpPinchLocal);
+            this.tmpPaperTargetPos.lerpVectors(this.tmpHeldPaperPos, this.paperRestPos, placeU);
+            gripStrength = 1 - smoothstep((t - 38.22) / 0.30);
           } else {
-            this.paperGroup.position.copy(this.paperRestPos);
+            this.tmpPaperTargetPos.copy(this.paperRestPos);
+            gripStrength = 0;
           }
-          this.paperGroup.rotation.x = THREE.MathUtils.lerp(-0.05, 0, placeU);
-          this.paperGroup.rotation.y = this.paperYaw;
+          restGuideStrength = smoothstep((t - 38.15) / 0.45);
         } else {
-          this.paperGroup.position.copy(this.paperRestPos);
-          this.paperGroup.rotation.set(0, this.paperYaw, 0);
+          this.tmpPaperTargetPos.copy(this.paperRestPos);
+          this.tmpPaperEuler.set(0, this.paperYaw, 0);
+          this.tmpPaperQuat.setFromEuler(this.tmpPaperEuler);
+          gripStrength = 0;
+          restGuideStrength = 1;
         }
+        this.paperSoftBody?.step(t, dt, this.tmpPaperTargetPos, this.tmpPaperQuat, gripStrength, restGuideStrength);
       } else {
         this.paperGroup.visible = false;
+        this.paperSoftBody?.reset();
       }
     }
 
@@ -926,7 +954,7 @@ export class PostCustomCutsceneDirector {
       const trackU = smoothstep((t - 36.8) / 2.8);
       this.desiredCamPos.set(
         THREE.MathUtils.lerp(-4.22, this.paperRestPos.x, trackU),
-        THREE.MathUtils.lerp(1.46, this.deskTopY + 0.50, trackU),
+        THREE.MathUtils.lerp(1.46, this.deskTopY + 0.52, trackU),
         THREE.MathUtils.lerp(-19.25, this.paperRestPos.z, trackU)
       );
       this.tmpCamTarget.set(
@@ -937,15 +965,15 @@ export class PostCustomCutsceneDirector {
     } else if (t < 41.4) {
       shotIndex = 8;
       // SCENE 3: Exact 90-degree vertical top-down view centered on the enrollment form
-      this.desiredCamPos.set(this.paperRestPos.x, this.deskTopY + 0.50, this.paperRestPos.z);
+      this.desiredCamPos.set(this.paperRestPos.x, this.deskTopY + 0.52, this.paperRestPos.z);
       this.tmpCamTarget.set(this.paperRestPos.x, this.deskTopY, this.paperRestPos.z);
     } else {
       shotIndex = 9;
-      // SCENE 4: Straight, progressive push-in centered on the "PRÉNOM :" field (zero rotation)
+      // SCENE 4: Straight, progressive push-in centered on the "PRÉNOM :" field (stays well above camera.near = 0.25)
       const zoomU = smoothstep((t - 41.4) / 3.1);
       const camX = THREE.MathUtils.lerp(this.paperRestPos.x, this.prenomWorldPos.x, zoomU);
       const camZ = THREE.MathUtils.lerp(this.paperRestPos.z, this.prenomWorldPos.z, zoomU);
-      const camY = THREE.MathUtils.lerp(this.deskTopY + 0.50, this.deskTopY + 0.135, zoomU);
+      const camY = THREE.MathUtils.lerp(this.deskTopY + 0.52, this.deskTopY + 0.38, zoomU);
       this.desiredCamPos.set(camX, camY, camZ);
       this.tmpCamTarget.set(camX, this.deskTopY, camZ);
     }
@@ -1021,6 +1049,10 @@ export class PostCustomCutsceneDirector {
     if (this.paperGroup) {
       this.scene.remove(this.paperGroup);
       this.paperGroup = null;
+    }
+    if (this.paperSoftBody) {
+      this.paperSoftBody.dispose();
+      this.paperSoftBody = null;
     }
     if (this.paperTexture) {
       this.paperTexture.dispose();

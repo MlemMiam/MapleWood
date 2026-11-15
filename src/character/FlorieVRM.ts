@@ -33,6 +33,27 @@ import {
   preloadBlenderInspectHandsAnim,
   preloadBlenderPlayerConfusedGlanceAnim,
 } from './BlenderCutsceneAnim';
+import { updateHairPhysics } from './PlayerHairSystem';
+import { updateClothesPhysics } from './PlayerClothesSystem';
+
+const CLIP_FINISH_BREATH_FADE_SEC = 0.4;
+
+/** Applies a subtle, zero-drift chest/spine breathing motion once a cutscene clip ends or during calm rests. */
+function applySubtleCutsceneBreathing(
+  chest: THREE.Object3D | null | undefined,
+  spine: THREE.Object3D | null | undefined,
+  head: THREE.Object3D | null | undefined,
+  spineForwardXSign: number,
+  ct: number,
+  weight: number
+): void {
+  if (weight <= 0.001) return;
+  const breathPhase = ct * 1.75 + (spineForwardXSign > 0 ? 0.0 : 0.85);
+  const breathWave = Math.sin(breathPhase) * weight;
+  if (chest) chest.rotation.x += spineForwardXSign * breathWave * 0.008;
+  if (spine) spine.rotation.x += spineForwardXSign * breathWave * 0.004;
+  if (head) head.rotation.x -= spineForwardXSign * breathWave * 0.003;
+}
 
 export type CutsceneActorPose =
   | 'none'
@@ -968,6 +989,22 @@ export async function parseFlorieVrmFromBuffer(
     const mesh = child as THREE.Mesh;
     if (!mesh.isMesh) return;
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const m of mats) {
+      if (/FaceBrow/i.test(m?.name ?? '')) {
+        mesh.renderOrder = 0;
+        m.depthTest = true;
+        m.depthWrite = false;
+      }
+      if (
+        /Body.*Outline/i.test(m?.name ?? '') ||
+        ((m as unknown as { isOutline?: boolean }).isOutline && /Body/i.test(mesh.name))
+      ) {
+        m.visible = false;
+        if ('outlineWidthFactor' in m) {
+          (m as unknown as { outlineWidthFactor: number }).outlineWidthFactor = 0;
+        }
+      }
+    }
     const isEyeInterior = mats.some((m) => /EyeIris|EyeHighlight|EyeWhite/i.test(m?.name ?? ''));
     const hasFaceMorphs = !!(
       mesh.morphTargetDictionary &&
@@ -1775,7 +1812,13 @@ export async function parseFlorieVrmFromBuffer(
           }
         } else if (co.pose === 'florieArrival') {
           if (vrm) {
-            applyBlenderFlorieArrivalPose(vrm, baseHipsPos, Math.max(0, ct - 7.0));
+            const arrivalElapsed = Math.max(0, ct - 7.0);
+            if (applyBlenderFlorieArrivalPose(vrm, baseHipsPos, arrivalElapsed)) {
+              applySubtleCutsceneBreathing(
+                chest, spine, head, spineForwardXSign, ct,
+                smoothstep(2.2, 2.2 + CLIP_FINISH_BREATH_FADE_SEC, arrivalElapsed)
+              );
+            }
           }
         } else if (co.pose === 'wave') {
           if (rightUpperArm) {
@@ -1838,8 +1881,12 @@ export async function parseFlorieVrmFromBuffer(
             );
           }
         } else if (co.pose === 'openDoor') {
-          if (vrm && applyBlenderFloriePushDoorPose(vrm, baseHipsPos, Math.max(0, ct - 16.2))) {
-            // Driven by Blender-authored full-body florie_push_door.json
+          const pushElapsed = Math.max(0, ct - 16.2);
+          if (vrm && applyBlenderFloriePushDoorPose(vrm, baseHipsPos, pushElapsed)) {
+            applySubtleCutsceneBreathing(
+              chest, spine, head, spineForwardXSign, ct,
+              smoothstep(1.5, 1.5 + CLIP_FINISH_BREATH_FADE_SEC, pushElapsed)
+            );
           } else {
             // Fallback procedural reach if clip is still loading
             const reachU = smoothstep(15.7, 16.25, ct) * (1 - smoothstep(16.85, 17.35, ct));
@@ -1903,20 +1950,48 @@ export async function parseFlorieVrmFromBuffer(
           for (const f of rightFingerBones) {
             f.bone.rotation.z = THREE.MathUtils.lerp(f.bone.rotation.z, rightCurlSign * 0.22, cDamp);
           }
+          applySubtleCutsceneBreathing(
+            chest, spine, head, spineForwardXSign, ct,
+            smoothstep(0, 0.35, cutPoseElapsed) * 0.85
+          );
         } else if (co.pose === 'standUp') {
           // Gentle, smooth sit-to-stand transition using Blender stand_up clip
           const standBlend = Math.min(1, cutPoseElapsed / 0.35);
-          applyBlenderSitPose(vrm, baseHipsPos, 'stand_up', Math.max(0, ct - 32.8) * 0.78, standBlend, false);
+          const standElapsed = Math.max(0, ct - 32.8) * 0.78;
+          if (applyBlenderSitPose(vrm, baseHipsPos, 'stand_up', standElapsed, standBlend, false)) {
+            applySubtleCutsceneBreathing(
+              chest, spine, head, spineForwardXSign, ct,
+              smoothstep(1.1333, 1.1333 + CLIP_FINISH_BREATH_FADE_SEC, standElapsed) * standBlend
+            );
+          }
         } else if (co.pose === 'openDrawer' || co.pose === 'placePaper') {
           // Use Blender-authored Helen drawer-to-desk paper animation (5.4s seamless clip after standing up)
-          applyBlenderHelenDrawerPaperPose(vrm, baseHipsPos, Math.max(0, ct - 34.25), clipBlend);
+          const drawerElapsed = Math.max(0, ct - 34.25);
+          if (applyBlenderHelenDrawerPaperPose(vrm, baseHipsPos, drawerElapsed, clipBlend)) {
+            applySubtleCutsceneBreathing(
+              chest, spine, head, spineForwardXSign, ct,
+              smoothstep(5.4, 5.4 + CLIP_FINISH_BREATH_FADE_SEC, drawerElapsed) * clipBlend
+            );
+          }
         } else if (co.pose === 'confusedGlance') {
           // Use Blender-authored zero-tremble confused glance clip (with smooth return to neutral)
-          applyBlenderPlayerConfusedGlancePose(vrm, baseHipsPos, Math.max(0, ct - 26.8), clipBlend);
+          const glanceElapsed = Math.max(0, ct - 26.8);
+          if (applyBlenderPlayerConfusedGlancePose(vrm, baseHipsPos, glanceElapsed, clipBlend)) {
+            applySubtleCutsceneBreathing(
+              chest, spine, head, spineForwardXSign, ct,
+              smoothstep(4.2, 4.2 + CLIP_FINISH_BREATH_FADE_SEC, glanceElapsed) * clipBlend
+            );
+          }
         } else if (co.pose === 'embarrassed') {
           // Use Blender-authored zero-tremble embarrassed slouch & hand-on-hip clip
-          const appliedBlenderEmb = applyBlenderFlorieEmbarrassedPose(vrm, baseHipsPos, Math.max(0, ct - 26.8), clipBlend);
-          if (!appliedBlenderEmb) {
+          const embElapsed = Math.max(0, ct - 26.8);
+          const appliedBlenderEmb = applyBlenderFlorieEmbarrassedPose(vrm, baseHipsPos, embElapsed, clipBlend);
+          if (appliedBlenderEmb) {
+            applySubtleCutsceneBreathing(
+              chest, spine, head, spineForwardXSign, ct,
+              smoothstep(4.5, 4.5 + CLIP_FINISH_BREATH_FADE_SEC, embElapsed) * clipBlend
+            );
+          } else {
             if (spine) {
               spine.rotation.x += spineForwardXSign * 0.065;
             }
@@ -1977,9 +2052,7 @@ export async function parseFlorieVrmFromBuffer(
           }
         } else if (co.pose === 'none') {
           // Gentle breathing only (no idle sway/oscillation)
-          if (chest) {
-            chest.rotation.x += Math.sin(ct * 1.65) * 0.008;
-          }
+          applySubtleCutsceneBreathing(chest, spine, head, spineForwardXSign, ct, 1);
         }
 
         const targetNeckTiltZ = co.headGesture === 'tilt' ? -0.04 : 0;
@@ -2169,6 +2242,12 @@ export async function parseFlorieVrmFromBuffer(
 
       // 7) Advance VRM SpringBones & enforce supple, non-bouncing cloth physics on the dress
       vrm.update(safeDt);
+      const isMoving =
+        effState === 'walk' ||
+        effState === 'run' ||
+        pose.moveWeight > 0.1;
+      updateHairPhysics(vrm, safeDt, isMoving, gaitPhase);
+      updateClothesPhysics(vrm, safeDt, isMoving, gaitPhase);
 
       // Apply delicate eyebrow/eye/mouth-corner VRoid morphs across ALL Face primitives & hide eye interiors when eyes close
       const eyesClosed = cutExpr === 'happy' || activeBlink > 0.65;
@@ -2825,6 +2904,8 @@ export async function parseFlorieVrmFromBuffer(
     }
 
     vrm.update(safeDt);
+    updateHairPhysics(vrm, safeDt, walkWeight > 0.1, introTime * 2.5);
+    updateClothesPhysics(vrm, safeDt, walkWeight > 0.1, introTime * 2.5);
 
     // Apply expressive eyebrows, open clear eyes (brief warm squint only on pause smiles),
     // and gentle mouth-corner smile only when not speaking so vowel visemes never deform.

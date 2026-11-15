@@ -82,7 +82,7 @@ export const HAIR_COLOR_PRESETS: Array<{
 
 export const DEFAULT_PLAYER_HAIR_SELECTION: PlayerHairSelection = {
   base: 'Base1',
-  front: 'Front1',
+  front: 'Front2',
   back: 'Back1',
   side: 'Side1',
   ex: null,
@@ -96,7 +96,7 @@ export const HAIR_CATEGORIES_META: HairCategoryMeta[] = [
     label: 'Base',
     subtitle: 'Calotte & implantation de base',
     assetPrefix: 'Base',
-    allowNone: false,
+    allowNone: true,
     defaultCameraYaw: 0.25,
     defaultCameraPitch: 0.14,
     items: [
@@ -116,26 +116,13 @@ export const HAIR_CATEGORIES_META: HairCategoryMeta[] = [
     allowNone: true,
     defaultCameraYaw: 0.0,
     defaultCameraPitch: 0.04,
-    items: Array.from({ length: 9 }, (_, i) => {
-      const n = i + 1;
-      const names = [
-        'Frange Effilée Douce',
-        'Frange Rideau Élégante',
-        'Frange Aérée Courte',
-        'Frange Droite Écolière',
-        'Frange Asymétrique Rebelle',
-        'Frange Classique Dégradée',
-        'Frange Légère Papillon',
-        'Frange Longue Romantique',
-        'Frange Ouverte Soleil',
-      ];
-      return {
-        id: `Front${n}`,
-        name: names[i] || `Frange ${n}`,
-        badge: `Front ${n}`,
-        thumbnail: `/assets/player/thumbnails/Front${n}.png`,
-      };
-    }),
+    items: [
+      { id: 'Front2', name: 'Frange Rideau Élégante', badge: 'Front 1', thumbnail: '/assets/player/thumbnails/Front2.png' },
+      { id: 'Front3', name: 'Frange Aérée Courte', badge: 'Front 2', thumbnail: '/assets/player/thumbnails/Front3.png' },
+      { id: 'Front4', name: 'Frange Droite Écolière', badge: 'Front 3', thumbnail: '/assets/player/thumbnails/Front4.png' },
+      { id: 'Front5', name: 'Frange Asymétrique Rebelle', badge: 'Front 4', thumbnail: '/assets/player/thumbnails/Front5.png' },
+      { id: 'Front9', name: 'Frange Ouverte Soleil', badge: 'Front 5', thumbnail: '/assets/player/thumbnails/Front9.png' },
+    ],
   },
   {
     id: 'back',
@@ -145,29 +132,19 @@ export const HAIR_CATEGORIES_META: HairCategoryMeta[] = [
     allowNone: true,
     defaultCameraYaw: 2.35,
     defaultCameraPitch: 0.08,
-    items: Array.from({ length: 12 }, (_, i) => {
-      const n = i + 1;
-      const names = [
-        'Carré Plongeant Court',
-        'Mi-Long Ondulé Souple',
-        'Volume Évasé Dynamique',
-        'Longue Cascade Soyeuse',
-        'Carré Arrondi Classique',
-        'Dégradé Mi-Long Aéré',
-        'Coupe Courte Effilée',
-        'Longueur Épaules Douce',
-        'Carré Structuré Moderne',
-        'Coupe Courte Volumineuse',
-        'Nuque Dégradée Fine',
-        'Carré Flou Naturel',
-      ];
-      return {
-        id: `Back${n}`,
-        name: names[i] || `Cheveux ${n}`,
-        badge: `Back ${n}`,
-        thumbnail: `/assets/player/thumbnails/Back${n}.png`,
-      };
-    }),
+    items: [
+      { id: 'Back1', name: 'Carré Plongeant Court', badge: 'Back 1', thumbnail: '/assets/player/thumbnails/Back1.png' },
+      { id: 'Back2', name: 'Mi-Long Ondulé Souple', badge: 'Back 2', thumbnail: '/assets/player/thumbnails/Back2.png' },
+      { id: 'Back3', name: 'Volume Évasé Dynamique', badge: 'Back 3', thumbnail: '/assets/player/thumbnails/Back3.png' },
+      { id: 'Back4', name: 'Longue Cascade Soyeuse', badge: 'Back 4', thumbnail: '/assets/player/thumbnails/Back4.png' },
+      { id: 'Back5', name: 'Carré Arrondi Classique', badge: 'Back 5', thumbnail: '/assets/player/thumbnails/Back5.png' },
+      { id: 'Back6', name: 'Dégradé Mi-Long Aéré', badge: 'Back 6', thumbnail: '/assets/player/thumbnails/Back6.png' },
+      { id: 'Back7', name: 'Coupe Courte Effilée', badge: 'Back 7', thumbnail: '/assets/player/thumbnails/Back7.png' },
+      { id: 'Back8', name: 'Longueur Épaules Douce', badge: 'Back 8', thumbnail: '/assets/player/thumbnails/Back8.png' },
+      { id: 'Back9', name: 'Carré Structuré Moderne', badge: 'Back 9', thumbnail: '/assets/player/thumbnails/Back9.png' },
+      { id: 'Back11', name: 'Nuque Dégradée Fine', badge: 'Back 10', thumbnail: '/assets/player/thumbnails/Back11.png' },
+      { id: 'Back12', name: 'Carré Flou Naturel', badge: 'Back 11', thumbnail: '/assets/player/thumbnails/Back12.png' },
+    ],
   },
   {
     id: 'side',
@@ -201,31 +178,17 @@ export const HAIR_CATEGORIES_META: HairCategoryMeta[] = [
     allowNone: true,
     defaultCameraYaw: -0.55,
     defaultCameraPitch: 0.06,
-    items: Array.from({ length: 14 }, (_, i) => {
-      const n = i + 1;
-      const names = [
-        'Couettes Cœur Tressées',
-        'Doubles Torsades Fines',
-        'Grandes Couettes Torsadées',
-        'Couettes Cœur Romantiques',
-        'Petits Chignons Hauts',
-        'Demi-Couettes Ruban',
-        'Couettes Basses Souples',
-        'Attaches Latérales Douces',
-        'Longues Couettes Fluides',
-        'Mèches Fines Flottantes',
-        'Chignons Tressés Doubles',
-        'Macarons Tressés Hauts',
-        'Longues Nattes Écolière',
-        'Volume Latéral Bouclé',
-      ];
-      return {
-        id: `Ex${n}`,
-        name: names[i] || `Extension ${n}`,
-        badge: `Ex ${n}`,
-        thumbnail: `/assets/player/thumbnails/Ex${n}.png`,
-      };
-    }),
+    items: [
+      { id: 'Ex1', name: 'Couettes Cœur Tressées', badge: 'Ex 1', thumbnail: '/assets/player/thumbnails/Ex1.png' },
+      { id: 'Ex4', name: 'Couettes Cœur Romantiques', badge: 'Ex 2', thumbnail: '/assets/player/thumbnails/Ex4.png' },
+      { id: 'Ex5', name: 'Petits Chignons Hauts', badge: 'Ex 3', thumbnail: '/assets/player/thumbnails/Ex5.png' },
+      { id: 'Ex6', name: 'Demi-Couettes Ruban', badge: 'Ex 4', thumbnail: '/assets/player/thumbnails/Ex6.png' },
+      { id: 'Ex7', name: 'Couettes Basses Souples', badge: 'Ex 5', thumbnail: '/assets/player/thumbnails/Ex7.png' },
+      { id: 'Ex8', name: 'Attaches Latérales Douces', badge: 'Ex 6', thumbnail: '/assets/player/thumbnails/Ex8.png' },
+      { id: 'Ex9', name: 'Longues Couettes Fluides', badge: 'Ex 7', thumbnail: '/assets/player/thumbnails/Ex9.png' },
+      { id: 'Ex12', name: 'Macarons Tressés Hauts', badge: 'Ex 8', thumbnail: '/assets/player/thumbnails/Ex12.png' },
+      { id: 'Ex14', name: 'Volume Latéral Bouclé', badge: 'Ex 9', thumbnail: '/assets/player/thumbnails/Ex14.png' },
+    ],
   },
   {
     id: 'extra',
@@ -504,27 +467,42 @@ export function buildHairItemGeometry(
       }
 
       // Exact VRoid Studio width & thickness envelope along u in [0, 1]:
-      // Rises smoothly from root (0 or 0.35) to 1.0 at peakU (~0.24), then tapers
-      // continuously all the way to a fine anime point (0.0) at u = 1.0!
+      // Near roots (u <= peakU), strands originate fine and flat against the scalp,
+      // avoiding chunky overlapping "pâtés" at the crown of the head.
       let env: number;
       if (u <= peakU) {
         const t = u / peakU;
         const s = Math.sin(t * (Math.PI * 0.5));
-        env = rootPinched ? s : 0.38 + 0.62 * s;
+        const rootW = rootPinched ? 0.0 : 0.12;
+        env = rootW + (1.0 - rootW) * s;
       } else {
         const t = (u - peakU) / (1.0 - peakU);
         // Smooth anime lock taper to a sharp point at u = 1.0
         env = Math.pow(Math.cos(t * (Math.PI * 0.5)), 0.88);
       }
 
+      // Smooth taper at the very root (u < 0.06) so strands emerge smoothly without "pâtés" at the crown
+      if (u < 0.06) {
+        const rootTaper = u / 0.06;
+        env *= 0.1 + 0.9 * Math.sin(rootTaper * Math.PI * 0.5);
+      }
+
+      // Root thickness starts flat against the skull and blooms smoothly into 3D volume
+      const rootThickFactor = Math.pow(Math.min(1, u / (peakU * 0.85)), 1.4);
       const halfW = strandWidth * 0.5 * env;
-      const halfT = strandThick * 0.5 * env;
+      const halfT = strandThick * 0.5 * env * rootThickFactor;
 
       // 4 geometric corner positions of the VRoid diamond cross-section
-      vLeft.copy(tmpP).addScaledVector(tmpB, -halfW);
-      vOuter.copy(tmpP).addScaledVector(tmpN, halfT);
-      vRight.copy(tmpP).addScaledVector(tmpB, halfW);
-      vInner.copy(tmpP).addScaledVector(tmpN, -halfT * 0.85);
+      const isFrontBang = itemId.startsWith('Front');
+      const effP = tmpP.clone();
+      if (isFrontBang && effP.y > 0.01 && effP.y < 0.18 && effP.z < -0.04) {
+        // Lift bangs gracefully forward outward over the brow line so eyebrows never poke through
+        effP.addScaledVector(tmpN, 0.0075);
+      }
+      vLeft.copy(effP).addScaledVector(tmpB, -halfW);
+      vOuter.copy(effP).addScaledVector(tmpN, halfT);
+      vRight.copy(effP).addScaledVector(tmpB, halfW);
+      vInner.copy(effP).addScaledVector(tmpN, -halfT * 0.85);
 
       // Exact VRoid Studio diamond crease normals (verified from Florie.vrm Hair001):
       // Front strip normals point outward (+0.85 N_out ± 0.53 B on edges, +1.0 N_out on crest)
@@ -602,6 +580,277 @@ export function buildHairItemGeometry(
   return geom;
 }
 
+export function getItemHairCategory(itemId: string): HairCategoryId {
+  if (itemId === 'Base1' || itemId.startsWith('Base')) return 'base';
+  if (itemId.startsWith('Front')) return 'front';
+  if (itemId.startsWith('Back')) return 'back';
+  if (itemId.startsWith('Side')) return 'side';
+  if (itemId.startsWith('Extra')) return 'extra';
+  if (itemId.startsWith('Ex_') || itemId.startsWith('Ex')) return 'ex';
+  return 'back';
+}
+
+export interface HairCategoryPhysicsConfig {
+  omega: number;
+  zeta: number;
+  minDisp: [number, number, number];
+  maxDisp: [number, number, number];
+  inertiaScale: number;
+  rotInertiaScale: number;
+  flexPow: number;
+}
+
+export const HAIR_PHYSICS_CONFIGS: Record<HairCategoryId, HairCategoryPhysicsConfig> = {
+  base: {
+    omega: 30.0,
+    zeta: 1.0,
+    minDisp: [0, 0, 0],
+    maxDisp: [0, 0, 0],
+    inertiaScale: 0.0,
+    rotInertiaScale: 0.0,
+    flexPow: 1.0,
+  },
+  front: {
+    omega: 18.0,
+    zeta: 0.72,
+    // Negative Z is forward (away from forehead); positive Z is backward (into forehead)
+    minDisp: [-0.020, -0.012, -0.025],
+    maxDisp: [0.020, 0.012, 0.002],
+    inertiaScale: 0.0025,
+    rotInertiaScale: 0.008,
+    flexPow: 2.1, // Roots firmly grounded, mid-to-tips flutter visibly
+  },
+  back: {
+    omega: 12.0,
+    zeta: 0.62,
+    // Negative Z is forward (into skull); positive Z is backward (flowing back)
+    minDisp: [-0.050, -0.035, -0.015],
+    maxDisp: [0.050, 0.045, 0.070],
+    inertiaScale: 0.0045,
+    rotInertiaScale: 0.016,
+    flexPow: 1.5,
+  },
+  side: {
+    omega: 14.0,
+    zeta: 0.65,
+    minDisp: [-0.040, -0.025, -0.020],
+    maxDisp: [0.040, 0.030, 0.045],
+    inertiaScale: 0.0035,
+    rotInertiaScale: 0.012,
+    flexPow: 1.6,
+  },
+  ex: {
+    // Extensions: twin-tails, chignons, pony-tails, pigtails!
+    // Highly dynamic, supple, bouncy anime motion with strict body clearance
+    omega: 10.5,
+    zeta: 0.54,
+    minDisp: [-0.065, -0.045, -0.025],
+    maxDisp: [0.065, 0.055, 0.085],
+    inertiaScale: 0.0055,
+    rotInertiaScale: 0.020,
+    flexPow: 1.4, // lower power = full strand length participates generously
+  },
+  extra: {
+    // Extra: hair ribbons, ahoge, decorative braids, clips
+    omega: 13.0,
+    zeta: 0.58,
+    minDisp: [-0.045, -0.030, -0.020],
+    maxDisp: [0.045, 0.035, 0.055],
+    inertiaScale: 0.0040,
+    rotInertiaScale: 0.014,
+    flexPow: 1.5,
+  },
+};
+
+export interface HairPhysicsSpring {
+  category: HairCategoryId;
+  pos: THREE.Vector3;
+  vel: THREE.Vector3;
+  target: THREE.Vector3;
+  uniform: { value: THREE.Vector3 };
+  flexPowUniform: { value: number };
+}
+
+export interface HairPhysicsRuntime {
+  initialized: boolean;
+  lastHeadWorldPos: THREE.Vector3;
+  lastHeadWorldQuat: THREE.Quaternion;
+  lastHeadLinearVel: THREE.Vector3;
+  time: number;
+  springs: Record<HairCategoryId, HairPhysicsSpring>;
+}
+
+export function initOrGetHairPhysicsRuntime(hairRoot: THREE.Group): HairPhysicsRuntime {
+  if (hairRoot.userData.hairPhysics) {
+    return hairRoot.userData.hairPhysics as HairPhysicsRuntime;
+  }
+  const categories: HairCategoryId[] = ['base', 'front', 'back', 'side', 'ex', 'extra'];
+  const springs = {} as Record<HairCategoryId, HairPhysicsSpring>;
+  for (const cat of categories) {
+    const cfg = HAIR_PHYSICS_CONFIGS[cat];
+    springs[cat] = {
+      category: cat,
+      pos: new THREE.Vector3(),
+      vel: new THREE.Vector3(),
+      target: new THREE.Vector3(),
+      uniform: { value: new THREE.Vector3() },
+      flexPowUniform: { value: cfg.flexPow },
+    };
+  }
+  const runtime: HairPhysicsRuntime = {
+    initialized: false,
+    lastHeadWorldPos: new THREE.Vector3(),
+    lastHeadWorldQuat: new THREE.Quaternion(),
+    lastHeadLinearVel: new THREE.Vector3(),
+    time: 0,
+    springs,
+  };
+  hairRoot.userData.hairPhysics = runtime;
+  return runtime;
+}
+
+const _tmpHeadWorldPos = new THREE.Vector3();
+const _tmpHeadWorldQuat = new THREE.Quaternion();
+const _tmpHeadWorldQuatInv = new THREE.Quaternion();
+const _tmpLinearVel = new THREE.Vector3();
+const _tmpLinearAccel = new THREE.Vector3();
+const _tmpLocalAccel = new THREE.Vector3();
+const _tmpRotDelta = new THREE.Quaternion();
+const _tmpEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+
+/**
+ * Updates dynamic hair physics (inertia, spring-damper sway, wind drag, gait bounce, and idle breathing).
+ * Modifies shader uniforms in-place so all active hair strands flow smoothly on the GPU.
+ */
+export function updateHairPhysics(
+  vrm: VRM,
+  dt: number,
+  isMoving = false,
+  gaitPhase = 0
+): void {
+  const headBone =
+    vrm.humanoid?.getRawBoneNode('head') ||
+    vrm.scene.getObjectByName('J_Bip_C_Head') ||
+    vrm.scene;
+
+  const hairRoot = headBone.getObjectByName('CustomPlayerHairRoot') as THREE.Group | undefined;
+  if (!hairRoot) return;
+
+  const runtime = hairRoot.userData.hairPhysics as HairPhysicsRuntime | undefined;
+  if (!runtime) return;
+
+  const safeDt = THREE.MathUtils.clamp(dt, 0.001, 0.05);
+  runtime.time += safeDt;
+
+  headBone.updateWorldMatrix(true, false);
+  headBone.getWorldPosition(_tmpHeadWorldPos);
+  headBone.getWorldQuaternion(_tmpHeadWorldQuat);
+
+  if (!runtime.initialized) {
+    runtime.initialized = true;
+    runtime.lastHeadWorldPos.copy(_tmpHeadWorldPos);
+    runtime.lastHeadWorldQuat.copy(_tmpHeadWorldQuat);
+    runtime.lastHeadLinearVel.set(0, 0, 0);
+    return;
+  }
+
+  // Teleport detection (> 0.5m displacement in one frame): snap without explosive velocity
+  const frameDistSq = _tmpHeadWorldPos.distanceToSquared(runtime.lastHeadWorldPos);
+  if (frameDistSq > 0.25) {
+    runtime.lastHeadWorldPos.copy(_tmpHeadWorldPos);
+    runtime.lastHeadWorldQuat.copy(_tmpHeadWorldQuat);
+    runtime.lastHeadLinearVel.set(0, 0, 0);
+    return;
+  }
+
+  // Linear velocity & acceleration in world space
+  _tmpLinearVel.subVectors(_tmpHeadWorldPos, runtime.lastHeadWorldPos).divideScalar(safeDt);
+  _tmpLinearAccel.subVectors(_tmpLinearVel, runtime.lastHeadLinearVel).divideScalar(safeDt);
+  runtime.lastHeadWorldPos.copy(_tmpHeadWorldPos);
+  runtime.lastHeadLinearVel.copy(_tmpLinearVel);
+
+  // Transform world acceleration into head bone local space: local = Q_head^-1 * accel_world
+  _tmpHeadWorldQuatInv.copy(_tmpHeadWorldQuat).invert();
+  _tmpLocalAccel.copy(_tmpLinearAccel).applyQuaternion(_tmpHeadWorldQuatInv);
+  _tmpLocalAccel.x = THREE.MathUtils.clamp(_tmpLocalAccel.x, -15.0, 15.0);
+  _tmpLocalAccel.y = THREE.MathUtils.clamp(_tmpLocalAccel.y, -20.0, 20.0);
+  _tmpLocalAccel.z = THREE.MathUtils.clamp(_tmpLocalAccel.z, -15.0, 15.0);
+
+  // Angular delta between last frame and current frame in head local space
+  _tmpRotDelta.copy(runtime.lastHeadWorldQuat).invert().multiply(_tmpHeadWorldQuat);
+  runtime.lastHeadWorldQuat.copy(_tmpHeadWorldQuat);
+  _tmpEuler.setFromQuaternion(_tmpRotDelta, 'YXZ');
+  const yawRate = THREE.MathUtils.clamp(_tmpEuler.y / safeDt, -7.0, 7.0);
+  const pitchRate = THREE.MathUtils.clamp(_tmpEuler.x / safeDt, -7.0, 7.0);
+
+  // Organic idle breathing micro-sway (clearly visible, graceful alive motion)
+  const t = runtime.time;
+  const idleBreezeX = Math.sin(t * 1.5) * 0.007 + Math.sin(t * 2.8) * 0.0035;
+  const idleBreezeZ = Math.cos(t * 1.2) * 0.006 + Math.sin(t * 2.3) * 0.0025;
+  const idleBreezeY = Math.sin(t * 1.7) * 0.0035;
+
+  // Gait locomotion dynamics (step bounce, lateral sway and trailing wind drag)
+  let walkBounceY = 0;
+  let walkSwayX = 0;
+  let walkDragZ = 0;
+  if (isMoving) {
+    walkBounceY = -Math.abs(Math.sin(gaitPhase)) * 0.015;
+    walkSwayX = Math.sin(gaitPhase * 0.5) * 0.010;
+    walkDragZ = 0.025 + Math.sin(gaitPhase) * 0.010;
+  }
+
+  // Update spring for each category (accessories 'extra' and skull cap 'base' have 0 physics)
+  const categories: HairCategoryId[] = ['front', 'back', 'side', 'ex'];
+  for (const cat of categories) {
+    const spring = runtime.springs[cat];
+    const cfg = HAIR_PHYSICS_CONFIGS[cat];
+
+    let targetX = -_tmpLocalAccel.x * cfg.inertiaScale - yawRate * cfg.rotInertiaScale;
+    let targetY = -_tmpLocalAccel.y * cfg.inertiaScale - pitchRate * cfg.rotInertiaScale * 0.5;
+    let targetZ = -_tmpLocalAccel.z * cfg.inertiaScale + pitchRate * cfg.rotInertiaScale * 0.8;
+
+    targetX += idleBreezeX + (isMoving ? walkSwayX : 0);
+    targetY += idleBreezeY + (isMoving ? walkBounceY : 0);
+    targetZ += idleBreezeZ + (isMoving ? walkDragZ : 0);
+
+    targetX = THREE.MathUtils.clamp(targetX, cfg.minDisp[0], cfg.maxDisp[0]);
+    targetY = THREE.MathUtils.clamp(targetY, cfg.minDisp[1], cfg.maxDisp[1]);
+    targetZ = THREE.MathUtils.clamp(targetZ, cfg.minDisp[2], cfg.maxDisp[2]);
+
+    spring.target.set(targetX, targetY, targetZ);
+
+    const omega = cfg.omega;
+    const zeta = cfg.zeta;
+
+    // Sub-stepping for rock-solid stability and smoothness at any framerate
+    const subSteps = safeDt > 0.025 ? 2 : 1;
+    const subDt = safeDt / subSteps;
+    for (let s = 0; s < subSteps; s++) {
+      const fSpringX = -omega * omega * (spring.pos.x - targetX);
+      const fDampX = -2.0 * zeta * omega * spring.vel.x;
+      spring.vel.x += (fSpringX + fDampX) * subDt;
+      spring.pos.x += spring.vel.x * subDt;
+      spring.pos.x = THREE.MathUtils.clamp(spring.pos.x, cfg.minDisp[0], cfg.maxDisp[0]);
+
+      const fSpringY = -omega * omega * (spring.pos.y - targetY);
+      const fDampY = -2.0 * zeta * omega * spring.vel.y;
+      spring.vel.y += (fSpringY + fDampY) * subDt;
+      spring.pos.y += spring.vel.y * subDt;
+      spring.pos.y = THREE.MathUtils.clamp(spring.pos.y, cfg.minDisp[1], cfg.maxDisp[1]);
+
+      const fSpringZ = -omega * omega * (spring.pos.z - targetZ);
+      const fDampZ = -2.0 * zeta * omega * spring.vel.z;
+      spring.vel.z += (fSpringZ + fDampZ) * subDt;
+      spring.pos.z += spring.vel.z * subDt;
+      spring.pos.z = THREE.MathUtils.clamp(spring.pos.z, cfg.minDisp[2], cfg.maxDisp[2]);
+    }
+
+    // Feed to shader uniform
+    spring.uniform.value.copy(spring.pos);
+    spring.flexPowUniform.value = cfg.flexPow;
+  }
+}
+
 /**
  * Applies a PlayerHairSelection (or isolated single-item demo preview) onto a target VRM's J_Bip_C_Head bone.
  */
@@ -663,29 +912,115 @@ export function applyHairSelectionToVrm(
   if (effective.ex) activeIds.push(effective.ex);
   if (effective.extra) activeIds.push(effective.extra);
 
+  // Ensure VRoid face & eyebrows render on the face skin beneath bangs rather than in front of hair
+  vrm.scene.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (mesh.isMesh) {
+      if (/face/i.test(mesh.name) || /head/i.test(mesh.name)) {
+        mesh.renderOrder = 0;
+      }
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const m of mats) {
+        if (/FaceBrow|FaceEyeline/i.test(m?.name ?? '')) {
+          mesh.renderOrder = 0;
+          m.depthTest = true;
+          m.depthWrite = false;
+        }
+      }
+    }
+  });
+
   const tintColor = new THREE.Color(effective.colorHex || '#ffffff');
+  // Calibrate luminance against the ~0.58 base grayscale texture so white is radiant white
+  // and vibrant anime swatches pop accurately under both studio and in-game sunlight:
+  const hairColor = tintColor.clone().multiplyScalar(1.42);
   const gradientMap = getAnimeHairGradientMap();
+  const physicsRuntime = initOrGetHairPhysicsRuntime(hairRoot);
 
   for (const itemId of activeIds) {
     const geom = buildHairItemGeometry(itemId, catalog, baseScalpData);
     if (!geom) continue;
 
+    const isBase = itemId === 'Base1';
     const itemMeta = catalog.items[itemId];
     const texUrl =
-      itemId === 'Base1'
+      isBase
         ? '/assets/player/textures/fcbc9edd.png'
         : itemMeta?.mainTexture || '/assets/player/textures/da0a84c2.png';
 
     const map = getHairTexture(texUrl);
     const mat = new THREE.MeshToonMaterial({
       map,
-      color: tintColor,
+      color: isBase ? tintColor : hairColor,
       gradientMap,
       side: THREE.FrontSide,
+      alphaTest: isBase ? 0.5 : 0.0,
+      polygonOffset: true,
+      polygonOffsetFactor: isBase ? -1.0 : -3.0,
+      polygonOffsetUnits: isBase ? -2.0 : -6.0,
     });
+
+    const cat = getItemHairCategory(itemId);
+    // Accessories ('extra') and base skull cap ('base') have no physics sway: they remain 100% static
+    if (!isBase && cat !== 'extra') {
+      const catSpring = physicsRuntime.springs[cat];
+      mat.customProgramCacheKey = () => `hair_physics_${cat}`;
+      mat.onBeforeCompile = (shader) => {
+        shader.uniforms.uHairSway = catSpring.uniform;
+        shader.uniforms.uHairFlexPow = catSpring.flexPowUniform;
+        shader.vertexShader = `
+uniform vec3 uHairSway;
+uniform float uHairFlexPow;
+` + shader.vertexShader;
+        shader.vertexShader = shader.vertexShader.replace(
+          '#include <begin_vertex>',
+          `#include <begin_vertex>
+float strandU = clamp((uv.y - 0.008) / 0.984, 0.0, 1.0);
+float flexWeight = pow(strandU, uHairFlexPow);
+vec3 hairDisp = uHairSway * flexWeight;
+
+// Anatomical skull & neck outward normal for zero-penetration collision:
+vec3 headC = vec3(0.0, 0.075, 0.005);
+float yBlend = clamp((position.y - 0.01) / 0.06, 0.0, 1.0);
+
+vec3 headR = (position - headC) / vec3(0.082, 0.092, 0.088);
+float hLen = length(headR);
+vec3 hNorm = hLen > 0.001 ? (headR / hLen) : vec3(0.0, 1.0, 0.0);
+
+vec2 neckR = vec2(position.x, position.z - (-0.005));
+float nLen = length(neckR);
+vec3 nNorm = nLen > 0.001 ? vec3(neckR.x / nLen, 0.0, neckR.y / nLen) : vec3(0.0, 0.0, 1.0);
+
+vec3 bodyNorm = normalize(mix(nNorm, hNorm, yBlend));
+
+// If displacement pushes inward towards the skull or neck, cancel it completely
+float inwardDot = dot(hairDisp, bodyNorm);
+if (inwardDot < 0.0) {
+  vec3 safeDisp = hairDisp - bodyNorm * inwardDot;
+  float tangMag = length(safeDisp);
+  // Add graceful centrifugal contour lift so hair flows smoothly around the head instead of pinching
+  hairDisp = safeDisp + bodyNorm * (tangMag * 0.15);
+}
+
+vec3 candPos = position + hairDisp;
+
+// Torso & chest collision plane limits below the neck
+if (candPos.y < -0.03) {
+  if (position.z > 0.02) {
+    candPos.z = max(candPos.z, 0.040);
+  } else if (position.z < -0.02) {
+    candPos.z = min(candPos.z, -0.065);
+  }
+}
+
+transformed = candPos;`
+        );
+      };
+    }
 
     const mesh = new THREE.Mesh(geom, mat);
     mesh.name = `HairPart_${itemId}`;
+    mesh.renderOrder = isBase ? 5 : 50;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     hairRoot.add(mesh);
