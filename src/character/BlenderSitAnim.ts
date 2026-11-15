@@ -108,8 +108,11 @@ export function applyBlenderSitPose(
     const oy = THREE.MathUtils.lerp(f0.hipsOffset[1], f1.hipsOffset[1], alpha);
     const oz = THREE.MathUtils.lerp(f0.hipsOffset[2], f1.hipsOffset[2], alpha);
     _hipsTarget.set(baseHipsPos.x + ox, baseHipsPos.y + oy, baseHipsPos.z + oz);
-    // Always apply hips position directly so Player.position handoffs never lag or pop
-    hips.position.copy(_hipsTarget);
+    if (w >= 0.999) {
+      hips.position.copy(_hipsTarget);
+    } else {
+      hips.position.lerp(_hipsTarget, w);
+    }
   }
 
   for (const boneName of Object.keys(f0.quats)) {

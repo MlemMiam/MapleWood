@@ -561,7 +561,8 @@ export function computeStylizedAnimeGait(
   interactTimer: number,
   dt: number,
   blend: StylizedGaitBlendState,
-  out: StylizedGaitPose
+  out: StylizedGaitPose,
+  disableIdle = false
 ): StylizedGaitPose {
   const safeDt = Math.min(Math.max(dt, 0.001), 0.05);
   blend.elapsedAccum += safeDt;
@@ -578,10 +579,28 @@ export function computeStylizedAnimeGait(
   const rw = blend.runWeight;
   const aw = blend.airWeight;
   const tIdle = blend.elapsedAccum;
-  const idleWeight = 1 - mw;
+  const idleWeight = disableIdle ? 0 : 1 - mw;
+
+  if (disableIdle) {
+    blend.idleEmoteTimer = -1;
+    blend.idleRestTimer = 0;
+    if (state === 'idle' && mw < 0.02 && aw < 0.02) {
+      Object.assign(out, createEmptyGaitPose());
+      out.leftArmAdduction = 0.06;
+      out.rightArmAdduction = 0.06;
+      out.leftArmForwardX = 0.05;
+      out.rightArmForwardX = 0.05;
+      out.leftElbowBend = 0.16;
+      out.rightElbowBend = 0.16;
+      out.leftFingerCurlScale = 0.22;
+      out.rightFingerCurlScale = 0.22;
+      out.expressionHappy = 0;
+      return out;
+    }
+  }
 
   // Advance expressive idle cycle only while grounded & still (resets smoothly when moving)
-  if (state === 'idle' && mw < 0.12 && aw < 0.12 && interactTimer <= 0) {
+  if (!disableIdle && state === 'idle' && mw < 0.12 && aw < 0.12 && interactTimer <= 0) {
     if (blend.idleEmoteTimer >= 0) {
       blend.idleEmoteTimer += safeDt;
       if (blend.idleEmoteTimer >= blend.idleEmoteDuration) {
@@ -635,10 +654,9 @@ export function computeStylizedAnimeGait(
   const uL = ((gaitPhase * INV_TAU) % 1 + 1) % 1;
   const uR = (uL + 0.5) % 1;
 
-  // Expressive idle contrapposto sway & breathing
-  const idleSway = Math.sin(tIdle * 1.15);
-  const idleBreath = Math.sin(tIdle * 2.05);
-  const idleTilt = Math.sin(tIdle * 0.72);
+  // Gentle breathing only in idle (no lateral sway or head oscillation)
+  const idleSway = 0;
+  const idleBreath = disableIdle ? 0 : Math.sin(tIdle * 1.65);
 
   // Smooth trigonometric helpers for upper-body overlapping follow-through
   const cosU = Math.cos(uL * Math.PI * 2); // +1 at uL=0 (L heel-strike), -1 at uL=0.5 (R heel-strike)
@@ -680,8 +698,8 @@ export function computeStylizedAnimeGait(
   out.spineRotZ = counterSwayZ * 0.55;
 
   out.chestRotX = forwardLean * 0.42 + breathPitch * 0.65;
-  out.chestRotY = chestTwistY * 0.68 + idleSway * 0.01 * idleWeight;
-  out.chestRotZ = counterSwayZ * 0.52 + Math.cos(tIdle * 1.15) * 0.005 * idleWeight;
+  out.chestRotY = chestTwistY * 0.68;
+  out.chestRotZ = counterSwayZ * 0.52;
 
   out.upperChestRotY = chestTwistY * 0.35;
 
@@ -692,9 +710,9 @@ export function computeStylizedAnimeGait(
   out.headRotX =
     -forwardLean * THREE.MathUtils.lerp(0.52, 0.65, rw) +
     gaitBobY * 0.38 +
-    idleBreath * 0.018 * idleWeight;
-  out.headRotY = -chestTwistY * 0.45 + Math.sin(tIdle * 0.55) * 0.028 * idleWeight;
-  out.headRotZ = sinU * 0.006 * mw + idleTilt * 0.02 * idleWeight;
+    idleBreath * 0.010 * idleWeight;
+  out.headRotY = -chestTwistY * 0.45;
+  out.headRotZ = sinU * 0.006 * mw;
 
   // 4) BIOMECHANICAL WALK & RUN LEGS (Conventions: +thigh = forward, +knee = backward, +ankle/+toe = down)
   const gaitThighL =

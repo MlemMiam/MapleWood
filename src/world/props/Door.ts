@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import type RAPIER from '@dimforge/rapier3d-compat';
 import type { PhysicsWorld } from '../../engine/Physics';
 import type { MaterialLibrary } from '../../utils/Materials';
 import type { InteractionSystem } from '../../interaction/InteractionSystem';

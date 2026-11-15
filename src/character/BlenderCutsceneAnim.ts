@@ -18,6 +18,10 @@ interface CutsceneAnimBundle {
   clips: {
     inspect_hands?: CutsceneAnimClip;
     florie_arrival?: CutsceneAnimClip;
+    florie_push_door?: CutsceneAnimClip;
+    florie_embarrassed?: CutsceneAnimClip;
+    player_confused_glance?: CutsceneAnimClip;
+    helen_drawer_paper?: CutsceneAnimClip;
   };
 }
 
@@ -25,6 +29,14 @@ let cachedBundle: CutsceneAnimBundle | null = null;
 let loadPromise: Promise<CutsceneAnimBundle | null> | null = null;
 let cachedFlorieArrival: CutsceneAnimBundle | null = null;
 let florieArrivalPromise: Promise<CutsceneAnimBundle | null> | null = null;
+let cachedFloriePushDoor: CutsceneAnimBundle | null = null;
+let floriePushDoorPromise: Promise<CutsceneAnimBundle | null> | null = null;
+let cachedFlorieEmbarrassed: CutsceneAnimBundle | null = null;
+let florieEmbarrassedPromise: Promise<CutsceneAnimBundle | null> | null = null;
+let cachedPlayerConfusedGlance: CutsceneAnimBundle | null = null;
+let playerConfusedGlancePromise: Promise<CutsceneAnimBundle | null> | null = null;
+let cachedHelenDrawerPaper: CutsceneAnimBundle | null = null;
+let helenDrawerPaperPromise: Promise<CutsceneAnimBundle | null> | null = null;
 
 const _qA = new THREE.Quaternion();
 const _qB = new THREE.Quaternion();
@@ -63,6 +75,74 @@ export function preloadBlenderFlorieArrivalAnim(): Promise<CutsceneAnimBundle | 
       .catch(() => null);
   }
   return florieArrivalPromise;
+}
+
+/** Preload the Blender-authored VRM Florie push-door animation bundle once. */
+export function preloadBlenderFloriePushDoorAnim(): Promise<CutsceneAnimBundle | null> {
+  if (cachedFloriePushDoor) return Promise.resolve(cachedFloriePushDoor);
+  if (!floriePushDoorPromise) {
+    floriePushDoorPromise = fetch('/assets/animations/florie_push_door.json')
+      .then((res) => (res.ok ? (res.json() as Promise<CutsceneAnimBundle>) : null))
+      .then((data) => {
+        if (data && data.clips?.florie_push_door) {
+          cachedFloriePushDoor = data;
+        }
+        return cachedFloriePushDoor;
+      })
+      .catch(() => null);
+  }
+  return floriePushDoorPromise;
+}
+
+/** Preload the Blender-authored VRM Florie embarrassed animation bundle once. */
+export function preloadBlenderFlorieEmbarrassedAnim(): Promise<CutsceneAnimBundle | null> {
+  if (cachedFlorieEmbarrassed) return Promise.resolve(cachedFlorieEmbarrassed);
+  if (!florieEmbarrassedPromise) {
+    florieEmbarrassedPromise = fetch('/assets/animations/florie_embarrassed.json')
+      .then((res) => (res.ok ? (res.json() as Promise<CutsceneAnimBundle>) : null))
+      .then((data) => {
+        if (data && data.clips?.florie_embarrassed) {
+          cachedFlorieEmbarrassed = data;
+        }
+        return cachedFlorieEmbarrassed;
+      })
+      .catch(() => null);
+  }
+  return florieEmbarrassedPromise;
+}
+
+/** Preload the Blender-authored VRM Player confused glance animation bundle once. */
+export function preloadBlenderPlayerConfusedGlanceAnim(): Promise<CutsceneAnimBundle | null> {
+  if (cachedPlayerConfusedGlance) return Promise.resolve(cachedPlayerConfusedGlance);
+  if (!playerConfusedGlancePromise) {
+    playerConfusedGlancePromise = fetch('/assets/animations/player_confused_glance.json')
+      .then((res) => (res.ok ? (res.json() as Promise<CutsceneAnimBundle>) : null))
+      .then((data) => {
+        if (data && data.clips?.player_confused_glance) {
+          cachedPlayerConfusedGlance = data;
+        }
+        return cachedPlayerConfusedGlance;
+      })
+      .catch(() => null);
+  }
+  return playerConfusedGlancePromise;
+}
+
+/** Preload the Blender-authored VRM Helen drawer & paper animation bundle once. */
+export function preloadBlenderHelenDrawerPaperAnim(): Promise<CutsceneAnimBundle | null> {
+  if (cachedHelenDrawerPaper) return Promise.resolve(cachedHelenDrawerPaper);
+  if (!helenDrawerPaperPromise) {
+    helenDrawerPaperPromise = fetch('/assets/animations/helen_drawer_paper.json')
+      .then((res) => (res.ok ? (res.json() as Promise<CutsceneAnimBundle>) : null))
+      .then((data) => {
+        if (data && data.clips?.helen_drawer_paper) {
+          cachedHelenDrawerPaper = data;
+        }
+        return cachedHelenDrawerPaper;
+      })
+      .catch(() => null);
+  }
+  return helenDrawerPaperPromise;
 }
 
 function applyClipFrame(
@@ -136,4 +216,52 @@ export function applyBlenderFlorieArrivalPose(
   blendWeight = 1
 ): boolean {
   return applyClipFrame(cachedFlorieArrival?.clips.florie_arrival, vrm, baseHipsPos, timeSec, blendWeight);
+}
+
+/**
+ * Sample and apply the Blender-authored VRM normalized-bone florie_push_door animation frame.
+ */
+export function applyBlenderFloriePushDoorPose(
+  vrm: VRM,
+  baseHipsPos: THREE.Vector3,
+  timeSec: number,
+  blendWeight = 1
+): boolean {
+  return applyClipFrame(cachedFloriePushDoor?.clips.florie_push_door, vrm, baseHipsPos, timeSec, blendWeight);
+}
+
+/**
+ * Sample and apply the Blender-authored VRM normalized-bone florie_embarrassed animation frame.
+ */
+export function applyBlenderFlorieEmbarrassedPose(
+  vrm: VRM,
+  baseHipsPos: THREE.Vector3,
+  timeSec: number,
+  blendWeight = 1
+): boolean {
+  return applyClipFrame(cachedFlorieEmbarrassed?.clips.florie_embarrassed, vrm, baseHipsPos, timeSec, blendWeight);
+}
+
+/**
+ * Sample and apply the Blender-authored VRM normalized-bone player_confused_glance animation frame.
+ */
+export function applyBlenderPlayerConfusedGlancePose(
+  vrm: VRM,
+  baseHipsPos: THREE.Vector3,
+  timeSec: number,
+  blendWeight = 1
+): boolean {
+  return applyClipFrame(cachedPlayerConfusedGlance?.clips.player_confused_glance, vrm, baseHipsPos, timeSec, blendWeight);
+}
+
+/**
+ * Sample and apply the Blender-authored VRM normalized-bone helen_drawer_paper animation frame.
+ */
+export function applyBlenderHelenDrawerPaperPose(
+  vrm: VRM,
+  baseHipsPos: THREE.Vector3,
+  timeSec: number,
+  blendWeight = 1
+): boolean {
+  return applyClipFrame(cachedHelenDrawerPaper?.clips.helen_drawer_paper, vrm, baseHipsPos, timeSec, blendWeight);
 }

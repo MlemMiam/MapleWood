@@ -654,6 +654,7 @@ export class AudioManager {
   private ambientLoop: Howl;
   private fountainLoop: Howl;
   private animeMusicLoop: Howl;
+  private titleMusicLoop: Howl;
   private animeSparkleSfx: Howl;
   private animeWaveSfx: Howl;
   private animeBeckonSfx: Howl;
@@ -706,6 +707,12 @@ export class AudioManager {
       loop: true,
       volume: 0.34,
     });
+    this.titleMusicLoop = new Howl({
+      src: ['/assets/audio/title_menu_ost.wav'],
+      loop: true,
+      volume: 0.28,
+      preload: true,
+    });
     this.animeSparkleSfx = new Howl({
       src: ['/assets/audio/anime_sparkle.mp3', synthAnimeSparkle()],
       volume: 0.38,
@@ -732,8 +739,37 @@ export class AudioManager {
     Howler.volume(Math.max(0, Math.min(1, v)));
   }
 
+  public startTitleMusic(): void {
+    try {
+      if (this.animeMusicLoop.playing()) {
+        this.animeMusicLoop.stop();
+      }
+      if (this.customizationMusicLoop.playing()) {
+        this.customizationMusicLoop.stop();
+      }
+      if (this.ambientLoop.playing()) {
+        this.ambientLoop.pause();
+      }
+      if (!this.titleMusicLoop.playing()) {
+        this.titleMusicLoop.volume(0);
+        this.titleMusicLoop.seek(0);
+        this.titleMusicLoop.play();
+        this.titleMusicLoop.fade(0, 0.28, 900);
+      }
+    } catch {
+      // Autoplay blocked until interaction
+    }
+  }
+
+  public stopTitleMusic(): void {
+    if (this.titleMusicLoop.playing()) {
+      this.titleMusicLoop.stop();
+    }
+  }
+
   public startAnimeIntroMusic(): void {
     try {
+      this.stopTitleMusic();
       if (this.customizationMusicLoop.playing()) {
         this.customizationMusicLoop.stop();
       }
@@ -744,7 +780,7 @@ export class AudioManager {
         this.animeMusicLoop.volume(0);
         this.animeMusicLoop.seek(0);
         this.animeMusicLoop.play();
-        this.animeMusicLoop.fade(0, 0.34, 900);
+        this.animeMusicLoop.fade(0, 0.15, 900);
       }
       if (!this.fountainLoop.playing()) {
         this.fountainLoop.volume(0.14);
@@ -832,18 +868,18 @@ export class AudioManager {
       if (voice === 'helen') {
         baseFreq = (isVowel ? 430 : 390) + ((code % 9) * 10) + jitter * 0.6;
         dur = 0.076;
-        peakGain = isVowel ? 0.11 : 0.088;
-        harmonicGain = 0.12;
+        peakGain = isVowel ? 0.22 : 0.175;
+        harmonicGain = 0.14;
       } else if (voice === 'student') {
         baseFreq = (isVowel ? 620 : 570) + ((code % 10) * 12) + jitter * 0.8;
         dur = 0.066;
-        peakGain = isVowel ? 0.105 : 0.082;
-        harmonicGain = 0.14;
+        peakGain = isVowel ? 0.21 : 0.165;
+        harmonicGain = 0.16;
       } else {
         baseFreq = (isVowel ? 840 : 770) + ((code % 11) * 14) + jitter;
         dur = 0.068;
-        peakGain = isVowel ? 0.115 : 0.09;
-        harmonicGain = 0.16;
+        peakGain = isVowel ? 0.23 : 0.18;
+        harmonicGain = 0.18;
       }
 
       const master = Howler.masterGain || ctx.destination;
@@ -984,6 +1020,9 @@ export class AudioManager {
     if (this.customizationMusicLoop.playing()) {
       this.customizationMusicLoop.pause();
     }
+    if (this.titleMusicLoop.playing()) {
+      this.titleMusicLoop.pause();
+    }
   }
 
   public resumeLoops(): void {
@@ -1064,6 +1103,7 @@ export class AudioManager {
   }
 
   public dispose(): void {
+    this.stopTitleMusic();
     this.stopAnimeIntroMusic();
     this.stopCustomizationMusic();
     this.footstepHard.unload();
@@ -1081,6 +1121,7 @@ export class AudioManager {
     this.ambientLoop.unload();
     this.fountainLoop.unload();
     this.animeMusicLoop.unload();
+    this.titleMusicLoop.unload();
     this.animeSparkleSfx.unload();
     this.animeWaveSfx.unload();
     this.animeBeckonSfx.unload();

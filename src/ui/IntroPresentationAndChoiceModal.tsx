@@ -405,23 +405,34 @@ export const IntroPresentationAndChoiceModal: React.FC<
           </button>
         </div>
 
-        {/* Step 0: First Name Input */}
-        <div className="mb-5">
-          <label
-            htmlFor="player-first-name"
-            className="block text-xs font-extrabold uppercase tracking-wider text-[#F5E08B] mb-2"
-          >
-            0. Ton prénom pour l’emploi du temps
-          </label>
-          <input
-            id="player-first-name"
-            type="text"
-            maxLength={24}
-            value={firstName}
-            onChange={(e) => setFirstName(e.target.value)}
-            placeholder="Entre ton prénom..."
-            className="w-full md:w-80 px-4 py-2.5 rounded-xl border-2 border-[#D4AF37]/70 bg-slate-900/80 text-white font-display text-base font-bold focus:outline-none focus:border-[#F5E08B]"
-          />
+        {/* Step 0: Enrollment Form First Name Input (seamless continuation from 3D form zoom) */}
+        <div className="mb-5 p-4 rounded-xl border-2 border-[#C9A23F] bg-[#FCF9F0] text-[#0F172A] shadow-md">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <label
+              htmlFor="player-first-name"
+              className="text-xs font-extrabold uppercase tracking-wider text-[#1E3A8A]"
+            >
+              Maplewood High School · Formulaire d’Inscription — PRÉNOM :
+            </label>
+            <span className="text-[11px] font-semibold text-slate-500">
+              Dossier vérifié par Mme Parker
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="font-display text-lg font-extrabold text-[#1E3A8A] tracking-wide">
+              PRÉNOM :
+            </span>
+            <input
+              id="player-first-name"
+              type="text"
+              autoFocus
+              maxLength={24}
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              placeholder="Entre ton prénom..."
+              className="w-full sm:w-80 px-4 py-2 rounded-lg border-2 border-[#1E3A8A] bg-white text-[#0F172A] font-display text-base font-bold focus:outline-none focus:ring-2 focus:ring-[#D4AF37]"
+            />
+          </div>
         </div>
 
         {/* Step 1: Student Profile / Club Archetype */}

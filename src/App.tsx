@@ -112,7 +112,7 @@ export default function App() {
   const [npcMarkers, setNpcMarkers] = useState<MinimapNpcMarker[]>([]);
   const [questState, setQuestState] = useState<QuestState>(() => createInitialQuestState());
   const [activeModal, setActiveModal] = useState<ActiveModalContent | null>(null);
-  const [vrmFileName, setVrmFileName] = useState<string | null>('Florie.vrm');
+  const [, setVrmFileName] = useState<string | null>('Florie.vrm');
   const [introTime, setIntroTime] = useState(0);
   const [cutsceneSub, setCutsceneSub] = useState<CutsceneSubtitleState | null>(null);
   const [showCutsceneGallery, setShowCutsceneGallery] = useState(false);
@@ -132,7 +132,6 @@ export default function App() {
   const hasCompletedIntroChoiceRef = useRef<boolean>(false);
   const hasPlayedPostCustomCutsceneRef = useRef<boolean>(false);
   const npcVoiceAudioRef = useRef<HTMLAudioElement | null>(null);
-  const npcAudioCtxRef = useRef<AudioContext | null>(null);
   const npcAnalyserRef = useRef<AnalyserNode | null>(null);
   const npcAnalyserDataRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
 
@@ -216,22 +215,30 @@ export default function App() {
     renderer?.setTitleMode(next === 'title');
     if (next === 'paused') {
       audio?.pauseLoops();
+    } else if (next === 'title') {
+      audio?.startTitleMusic();
     } else if (next === 'intro') {
+      audio?.stopTitleMusic();
       audio?.startAnimeIntroMusic();
     } else if (next === 'genderChoice' || next === 'customization') {
+      audio?.stopTitleMusic();
       audio?.startCustomizationMusic();
       if (next === 'genderChoice') {
         audio?.playAnimeIntroSfx('sparkle');
       }
     } else if (next === 'postCustomCutscene') {
+      audio?.stopTitleMusic();
       audio?.startAnimeIntroMusic();
     } else if (next === 'presentation2d') {
+      audio?.stopTitleMusic();
       audio?.playAnimeIntroSfx('sparkle');
     } else if (next === 'playerChoice') {
+      audio?.stopTitleMusic();
       audio?.stopAnimeIntroMusic();
       audio?.stopCustomizationMusic();
       audio?.playAnimeIntroSfx('beckon');
     } else if (next === 'playing') {
+      audio?.stopTitleMusic();
       audio?.startAmbient();
       audio?.resumeLoops();
     }
@@ -286,6 +293,14 @@ export default function App() {
       gameRenderer.setQuality(settingsRef.current.graphicsQuality);
       const mats = createMaterialLibrary(gameRenderer.renderer, gameRenderer.isSoftwareGl);
       const audio = new AudioManager(settingsRef.current.masterVolume);
+      audio.startTitleMusic();
+      const unlockTitleAudio = () => {
+        if (phaseRef.current === 'title') {
+          audio.startTitleMusic();
+        }
+      };
+      window.addEventListener('pointerdown', unlockTitleAudio, { passive: true });
+      window.addEventListener('keydown', unlockTitleAudio, { passive: true });
       const input = new InputManager(
         gameRenderer.renderer.domElement,
         settingsRef.current.bindings
@@ -878,6 +893,8 @@ export default function App() {
       }
 
       return () => {
+        window.removeEventListener('pointerdown', unlockTitleAudio);
+        window.removeEventListener('keydown', unlockTitleAudio);
         gameRenderer.renderer.domElement.removeEventListener('click', onCanvasClick);
         mats.dispose();
         debug.dispose();

@@ -430,7 +430,7 @@ function getClothesTexture(url: string): THREE.Texture {
   return tex;
 }
 
-function getAnimeClothesGradientMap(boost = true): THREE.DataTexture {
+function getAnimeClothesGradientMap(): THREE.DataTexture {
   if (!_clothesGradientTex) {
     const data = new Uint8Array([
       165, 160, 176, 255,
@@ -1307,7 +1307,7 @@ export function applyClothesSelectionToVrm(
   const bodySurface = getCachedBodySurfaceData(bodyMesh);
   void bodySurface;
 
-  const gradientMap = getAnimeClothesGradientMap(displayOptions.celShadingBoost);
+  const gradientMap = getAnimeClothesGradientMap();
   let globalLayerCounter = 0;
   const activePartGroups = new Set<string>();
   let hasActiveShoes = false;

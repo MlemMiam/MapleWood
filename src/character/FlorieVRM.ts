@@ -21,9 +21,17 @@ import {
 } from './BlenderSitAnim';
 import {
   applyBlenderFlorieArrivalPose,
+  applyBlenderFlorieEmbarrassedPose,
+  applyBlenderFloriePushDoorPose,
+  applyBlenderHelenDrawerPaperPose,
   applyBlenderInspectHandsPose,
+  applyBlenderPlayerConfusedGlancePose,
   preloadBlenderFlorieArrivalAnim,
+  preloadBlenderFlorieEmbarrassedAnim,
+  preloadBlenderFloriePushDoorAnim,
+  preloadBlenderHelenDrawerPaperAnim,
   preloadBlenderInspectHandsAnim,
+  preloadBlenderPlayerConfusedGlanceAnim,
 } from './BlenderCutsceneAnim';
 
 export type CutsceneActorPose =
@@ -34,6 +42,9 @@ export type CutsceneActorPose =
   | 'takeArm'
   | 'openDoor'
   | 'deskRest'
+  | 'standUp'
+  | 'openDrawer'
+  | 'placePaper'
   | 'confusedGlance'
   | 'embarrassed'
   | 'chuckle';
@@ -42,12 +53,13 @@ export type CutsceneExpression =
   | 'none'
   | 'confused'
   | 'warmSmile'
+  | 'happy'
   | 'embarrassed'
   | 'amused'
   | 'laugh'
   | 'surprised';
 
-export type CutsceneHeadGesture = 'none' | 'nod' | 'shake' | 'tilt';
+export type CutsceneHeadGesture = 'none' | 'nod' | 'gentleNod' | 'shake' | 'tilt';
 
 export interface CutsceneActorOverride {
   pose: CutsceneActorPose;
@@ -304,9 +316,7 @@ export async function discoverFlorieVrmBuffer(): Promise<{ buffer: ArrayBuffer; 
 
   // 3) Standard static public candidate paths (with bundled /Florie.vrm & /assets/models/Florie.vrm first)
   const staticPaths = [
-    '/Florie.vrm',
     '/assets/models/Florie.vrm',
-    '/florie.vrm',
     '/assets/models/florie.vrm',
     '/assets/models/player.vrm',
     '/assets/aistudio/Florie.vrm',
@@ -431,6 +441,8 @@ export async function parseFlorieVrmFromBuffer(
   const upperChest = getBone(VRMHumanBoneName.UpperChest);
   const neck = getBone(VRMHumanBoneName.Neck);
   const head = getBone(VRMHumanBoneName.Head);
+  const leftEye = getBone(VRMHumanBoneName.LeftEye);
+  const rightEye = getBone(VRMHumanBoneName.RightEye);
 
   const leftShoulder = getBone(VRMHumanBoneName.LeftShoulder);
   const rightShoulder = getBone(VRMHumanBoneName.RightShoulder);
@@ -945,19 +957,30 @@ export async function parseFlorieVrmFromBuffer(
     modelRoot.position.y -= scaledBox.min.y;
   }
 
-  // Locate Face mesh morph targets for delicate anime eyebrow/eye/mouth-corner expression control
-  let faceMorphDict: Record<string, number> | null = null;
-  let faceMorphInfluences: number[] | null = null;
+  // Locate ALL Face mesh primitives & eye-interior sub-meshes (iris/highlight/sclera)
+  const faceMorphTargets: Array<{
+    mesh: THREE.Mesh;
+    dict: Record<string, number>;
+    influences: number[];
+    isEyeInterior: boolean;
+  }> = [];
   modelRoot.traverse((child) => {
     const mesh = child as THREE.Mesh;
-    if (
-      mesh.isMesh &&
+    if (!mesh.isMesh) return;
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    const isEyeInterior = mats.some((m) => /EyeIris|EyeHighlight|EyeWhite/i.test(m?.name ?? ''));
+    const hasFaceMorphs = !!(
       mesh.morphTargetDictionary &&
       mesh.morphTargetInfluences &&
       'Fcl_MTH_Fun' in mesh.morphTargetDictionary
-    ) {
-      faceMorphDict = mesh.morphTargetDictionary;
-      faceMorphInfluences = mesh.morphTargetInfluences;
+    );
+    if (hasFaceMorphs || isEyeInterior) {
+      faceMorphTargets.push({
+        mesh,
+        dict: mesh.morphTargetDictionary ?? {},
+        influences: mesh.morphTargetInfluences ?? [],
+        isEyeInterior,
+      });
     }
   });
 
@@ -1061,6 +1084,10 @@ export async function parseFlorieVrmFromBuffer(
   void preloadBlenderSitAnim();
   void preloadBlenderInspectHandsAnim();
   void preloadBlenderFlorieArrivalAnim();
+  void preloadBlenderFloriePushDoorAnim();
+  void preloadBlenderFlorieEmbarrassedAnim();
+  void preloadBlenderPlayerConfusedGlanceAnim();
+  void preloadBlenderHelenDrawerPaperAnim();
 
   let prevSitAnimState: AnimState = 'idle';
   let sitDownTime = 0;
@@ -1075,8 +1102,16 @@ export async function parseFlorieVrmFromBuffer(
     speechTime: 0,
   };
   let npcTalkBlend = 0;
+  let npcLookBlend = 0;
+  let npcSpeechSmooth = 0;
   let npcTalkYaw = 0;
   let npcTalkPitch = 0;
+  let npcEyeYaw = 0;
+  let npcEyePitch = 0;
+  let cutHeadTiltZ = 0;
+  let cutNeckTiltZ = 0;
+  let prevCutPose: CutsceneActorPose = 'none';
+  let cutPoseElapsed = 0;
   const _npcHeadWorld = new THREE.Vector3();
   const _npcInvQuat = new THREE.Quaternion();
   const _npcLocalDir = new THREE.Vector3();
@@ -1139,68 +1174,42 @@ export async function parseFlorieVrmFromBuffer(
 
   const update = (state: AnimState, gaitPhase: number, interactTimer: number, dt: number) => {
     const safeDt = Math.min(Math.max(dt, 0.001), 0.05);
+    // Keep Helen standing (idle base) once she stands up at t >= 33.95s so she never sits back down
+    const effState: AnimState =
+      cutsceneOverride &&
+      (cutsceneOverride.pose === 'openDrawer' ||
+        cutsceneOverride.pose === 'placePaper' ||
+        (cutsceneOverride.pose === 'deskRest' && cutsceneOverride.time >= 34.25))
+        ? 'idle'
+        : state;
     const pose = computeStylizedAnimeGait(
-      state,
+      effState,
       gaitPhase,
       interactTimer,
       safeDt,
       gaitBlend,
-      gaitPose
+      gaitPose,
+      Boolean(cutsceneOverride)
     );
     const elapsedAccum = gaitBlend.elapsedAccum;
-    // Disable dramatic idle poses during scripted cutscenes so only cutsceneOverride controls the actor
-    if (cutsceneOverride && state === 'idle') {
+    // Completely disable all idle animations during scripted cutscenes so only cutsceneOverride controls the actor
+    if (cutsceneOverride && effState === 'idle') {
+      Object.assign(pose, createEmptyGaitPose());
       const breath = Math.sin(elapsedAccum * 2.1) * 0.012;
-      pose.hipsOffsetX = 0;
-      pose.hipsOffsetY = 0;
-      pose.hipsOffsetZ = 0;
-      pose.hipsRotX = 0;
-      pose.hipsRotY = 0;
-      pose.hipsRotZ = 0;
       pose.spineRotX = breath * 0.4;
-      pose.spineRotY = 0;
-      pose.spineRotZ = 0;
       pose.chestRotX = breath;
-      pose.chestRotY = 0;
-      pose.chestRotZ = 0;
       pose.upperChestRotX = breath * 0.5;
-      pose.upperChestRotY = 0;
-      pose.upperChestRotZ = 0;
-      pose.neckRotX = 0;
-      pose.neckRotY = 0;
-      pose.neckRotZ = 0;
-      pose.headRotX = 0;
-      pose.headRotY = 0;
-      pose.headRotZ = 0;
       pose.leftArmAdduction = 0.06;
       pose.rightArmAdduction = 0.06;
       pose.leftArmForwardX = 0.05;
       pose.rightArmForwardX = 0.05;
-      pose.leftArmRotY = 0;
-      pose.rightArmRotY = 0;
       pose.leftElbowBend = 0.16;
       pose.rightElbowBend = 0.16;
-      pose.leftForearmTwist = 0;
-      pose.rightForearmTwist = 0;
-      pose.leftWristX = 0;
-      pose.rightWristX = 0;
-      pose.leftWristZ = 0;
-      pose.rightWristZ = 0;
-      pose.leftFingerCurlScale = 0.22;
-      pose.rightFingerCurlScale = 0.22;
-      pose.leftThighX = 0;
-      pose.rightThighX = 0;
       pose.leftThighZ = 0.02;
       pose.rightThighZ = 0.02;
-      pose.leftKneeX = 0;
-      pose.rightKneeX = 0;
-      pose.leftAnkleX = 0;
-      pose.rightAnkleX = 0;
-      pose.leftToeX = 0;
-      pose.rightToeX = 0;
+      pose.leftFingerCurlScale = 0.22;
+      pose.rightFingerCurlScale = 0.22;
       pose.expressionHappy = 0;
-      pose.expressionEyeSquint = 0;
-      pose.expressionCuriousBrow = 0;
     }
     const dampRate = THREE.MathUtils.lerp(11.5, 19.0, pose.runWeight);
     const damp = 1 - Math.exp(-dampRate * safeDt);
@@ -1492,9 +1501,9 @@ export async function parseFlorieVrmFromBuffer(
       );
 
       // Apply Blender-authored VRM sitting / transition clips when active
-      const isSitClipState = state === 'sit_down' || state === 'sit' || state === 'stand_up';
+      const isSitClipState = effState === 'sit_down' || effState === 'sit' || effState === 'stand_up';
       if (isSitClipState && isBlenderSitAnimReady()) {
-        if (state === 'sit_down') {
+        if (effState === 'sit_down') {
           if (prevSitAnimState !== 'sit_down') {
             sitDownTime = 0;
             sitClipBlend = 0.25;
@@ -1502,7 +1511,7 @@ export async function parseFlorieVrmFromBuffer(
           sitDownTime += safeDt;
           sitClipBlend = Math.min(1, sitClipBlend + safeDt / 0.14);
           applyBlenderSitPose(vrm, baseHipsPos, 'sit_down', sitDownTime, sitClipBlend, false);
-        } else if (state === 'sit') {
+        } else if (effState === 'sit') {
           if (prevSitAnimState !== 'sit') {
             sitIdleTime = 0;
             sitClipBlend = prevSitAnimState === 'sit_down' ? 1 : 0.25;
@@ -1522,11 +1531,12 @@ export async function parseFlorieVrmFromBuffer(
       } else {
         sitClipBlend = 0;
       }
-      prevSitAnimState = state;
+      prevSitAnimState = effState;
 
-      // 5b) NPC dialogue head/gaze tracking toward camera + expressive speaking nods
+      // 5b) NPC dialogue head/gaze tracking toward target + expressive speaking nods
       npcTalkBlend = THREE.MathUtils.damp(npcTalkBlend, npcTalkState.isTalking ? 1 : 0, 7.5, safeDt);
-      if (npcTalkBlend > 0.005 && head) {
+      npcLookBlend = THREE.MathUtils.damp(npcLookBlend, npcTalkState.lookAtPos ? 1 : 0, 8.5, safeDt);
+      if (npcLookBlend > 0.005 && head) {
         let targetYaw = 0;
         let targetPitch = 0;
         if (npcTalkState.lookAtPos) {
@@ -1536,40 +1546,41 @@ export async function parseFlorieVrmFromBuffer(
           _npcLocalDir.applyQuaternion(_npcInvQuat);
           if (_npcLocalDir.lengthSq() > 0.0001) {
             _npcLocalDir.normalize();
-            targetYaw = THREE.MathUtils.clamp(Math.atan2(-_npcLocalDir.x, -_npcLocalDir.z), -0.82, 0.82);
+            targetYaw = THREE.MathUtils.clamp(Math.atan2(-_npcLocalDir.x, -_npcLocalDir.z), -1.08, 1.08);
             targetPitch = THREE.MathUtils.clamp(
               Math.atan2(_npcLocalDir.y, Math.hypot(_npcLocalDir.x, _npcLocalDir.z)),
-              -0.32,
-              0.32
+              -0.36,
+              0.36
             );
           }
         }
-        const gazeDamp = 1 - Math.exp(-8.0 * safeDt);
+        const gazeDamp = 1 - Math.exp(-9.0 * safeDt);
         npcTalkYaw = THREE.MathUtils.lerp(npcTalkYaw, targetYaw, gazeDamp);
         npcTalkPitch = THREE.MathUtils.lerp(npcTalkPitch, targetPitch, gazeDamp);
 
-        const sLvl = npcTalkState.speechLevel;
+        npcSpeechSmooth = THREE.MathUtils.damp(npcSpeechSmooth, npcTalkState.speechLevel, 6.0, safeDt);
         const sTime = npcTalkState.speechTime;
-        const talkNod = sLvl > 0.04 ? Math.sin(sTime * 4.8) * 0.035 * Math.min(1, sLvl * 1.4) : 0;
-        const gentleTilt = Math.sin(elapsedAccum * 1.35) * 0.045 * npcTalkBlend;
+        const talkNod =
+          npcSpeechSmooth > 0.04 ? Math.sin(sTime * 2.6) * 0.016 * Math.min(1, npcSpeechSmooth * 1.4) * npcTalkBlend : 0;
+        const gentleTilt = Math.sin(elapsedAccum * 1.35) * 0.032 * npcTalkBlend;
 
         if (neck) {
-          const targetNeckY = THREE.MathUtils.lerp(pose.neckRotY, npcTalkYaw * 0.36, npcTalkBlend);
+          const targetNeckY = THREE.MathUtils.lerp(pose.neckRotY, npcTalkYaw * 0.36, npcLookBlend);
           const targetNeckX = THREE.MathUtils.lerp(
             spineForwardXSign * pose.neckRotX,
             -spineForwardXSign * (npcTalkPitch * 0.35 + talkNod * 0.4),
-            npcTalkBlend
+            npcLookBlend
           );
           neck.rotation.y = targetNeckY;
           neck.rotation.x = targetNeckX;
         }
-        const targetHeadY = THREE.MathUtils.lerp(pose.headRotY, npcTalkYaw * 0.64, npcTalkBlend);
+        const targetHeadY = THREE.MathUtils.lerp(pose.headRotY, npcTalkYaw * 0.64, npcLookBlend);
         const targetHeadX = THREE.MathUtils.lerp(
           spineForwardXSign * pose.headRotX,
           -spineForwardXSign * (npcTalkPitch * 0.65 + talkNod),
-          npcTalkBlend
+          npcLookBlend
         );
-        const targetHeadZ = THREE.MathUtils.lerp(pose.headRotZ, gentleTilt, npcTalkBlend);
+        const targetHeadZ = THREE.MathUtils.lerp(pose.headRotZ, gentleTilt, npcLookBlend);
         head.rotation.y = targetHeadY;
         head.rotation.x = targetHeadX;
         head.rotation.z = targetHeadZ;
@@ -1580,6 +1591,16 @@ export async function parseFlorieVrmFromBuffer(
         const co = cutsceneOverride;
         const ct = co.time;
         const cDamp = 1 - Math.exp(-4.0 * safeDt);
+        const sameDrawerGroup =
+          (prevCutPose === 'openDrawer' && co.pose === 'placePaper') ||
+          (prevCutPose === 'placePaper' && co.pose === 'openDrawer');
+        if (co.pose !== prevCutPose && !sameDrawerGroup) {
+          cutPoseElapsed = 0;
+        } else {
+          cutPoseElapsed += safeDt;
+        }
+        prevCutPose = co.pose;
+        const clipBlend = Math.min(1, cutPoseElapsed / 0.28);
 
         if (co.pose === 'inspectHands') {
           if (vrm && applyBlenderInspectHandsPose(vrm, baseHipsPos, ct)) {
@@ -1788,24 +1809,24 @@ export async function parseFlorieVrmFromBuffer(
           if (leftUpperArm) {
             leftUpperArm.rotation.x = THREE.MathUtils.lerp(
               leftUpperArm.rotation.x,
-              leftArmForwardXSign * 0.36,
+              leftArmForwardXSign * 0.22,
               cDamp
             );
             leftUpperArm.rotation.z = THREE.MathUtils.lerp(
               leftUpperArm.rotation.z,
-              leftArmDownZ * 0.72,
+              leftArmDownZ * 0.85,
               cDamp
             );
           }
           if (leftLowerArm) {
             leftLowerArm.rotation.x = THREE.MathUtils.lerp(
               leftLowerArm.rotation.x,
-              leftPalmForwardXSign * 0.24,
+              leftPalmForwardXSign * 0.18,
               cDamp
             );
             leftLowerArm.rotation.y = THREE.MathUtils.lerp(
               leftLowerArm.rotation.y,
-              leftElbowForwardYSign * 0.72,
+              leftElbowForwardYSign * 0.86,
               cDamp
             );
           }
@@ -1817,58 +1838,64 @@ export async function parseFlorieVrmFromBuffer(
             );
           }
         } else if (co.pose === 'openDoor') {
-          // Florie reaches right hand forward to grasp & turn the door handle, then pushes door open
-          const reachU = smoothstep(15.7, 16.25, ct) * (1 - smoothstep(16.85, 17.35, ct));
-          if (rightUpperArm) {
-            rightUpperArm.rotation.x = THREE.MathUtils.lerp(
-              rightUpperArm.rotation.x,
-              rightArmForwardXSign * (0.12 + reachU * 0.68),
-              cDamp
-            );
-            rightUpperArm.rotation.z = THREE.MathUtils.lerp(
-              rightUpperArm.rotation.z,
-              rightArmDownZ * (0.88 - reachU * 0.22),
-              cDamp
-            );
-          }
-          if (rightLowerArm) {
-            rightLowerArm.rotation.y = THREE.MathUtils.lerp(
-              rightLowerArm.rotation.y,
-              rightElbowForwardYSign * (0.22 + reachU * 0.45),
-              cDamp
-            );
-            rightLowerArm.rotation.x = THREE.MathUtils.lerp(
-              rightLowerArm.rotation.x,
-              rightPalmForwardXSign * reachU * 0.25,
-              cDamp
-            );
-          }
-          if (rightHand) {
-            const handleTurn = smoothstep(16.1, 16.35, ct) * (1 - smoothstep(16.55, 16.85, ct));
-            rightHand.rotation.x = THREE.MathUtils.lerp(rightHand.rotation.x, handleTurn * 0.35, cDamp);
-          }
-          for (const f of rightFingerBones) {
-            f.bone.rotation.z = THREE.MathUtils.lerp(
-              f.bone.rotation.z,
-              rightCurlSign * (0.24 + reachU * 0.36),
-              cDamp
-            );
+          if (vrm && applyBlenderFloriePushDoorPose(vrm, baseHipsPos, Math.max(0, ct - 16.2))) {
+            // Driven by Blender-authored full-body florie_push_door.json
+          } else {
+            // Fallback procedural reach if clip is still loading
+            const reachU = smoothstep(15.7, 16.25, ct) * (1 - smoothstep(16.85, 17.35, ct));
+            if (rightUpperArm) {
+              rightUpperArm.rotation.x = THREE.MathUtils.lerp(
+                rightUpperArm.rotation.x,
+                rightArmForwardXSign * (0.12 + reachU * 0.68),
+                cDamp
+              );
+              rightUpperArm.rotation.z = THREE.MathUtils.lerp(
+                rightUpperArm.rotation.z,
+                rightArmDownZ * (0.88 - reachU * 0.22),
+                cDamp
+              );
+            }
+            if (rightLowerArm) {
+              rightLowerArm.rotation.y = THREE.MathUtils.lerp(
+                rightLowerArm.rotation.y,
+                rightElbowForwardYSign * (0.22 + reachU * 0.45),
+                cDamp
+              );
+              rightLowerArm.rotation.x = THREE.MathUtils.lerp(
+                rightLowerArm.rotation.x,
+                rightPalmForwardXSign * reachU * 0.25,
+                cDamp
+              );
+            }
+            if (rightHand) {
+              const handleTurn = smoothstep(16.1, 16.35, ct) * (1 - smoothstep(16.55, 16.85, ct));
+              rightHand.rotation.x = THREE.MathUtils.lerp(rightHand.rotation.x, handleTurn * 0.35, cDamp);
+            }
+            for (const f of rightFingerBones) {
+              f.bone.rotation.z = THREE.MathUtils.lerp(
+                f.bone.rotation.z,
+                rightCurlSign * (0.24 + reachU * 0.36),
+                cDamp
+              );
+            }
           }
         } else if (co.pose === 'deskRest') {
-          // Helen's hands calmly resting on the reception desk (zero typing/tapping)
+          // Helen's hands poised cleanly above the desk/keyboard (zero clipping, zero typing)
           if (leftUpperArm) {
-            leftUpperArm.rotation.x = THREE.MathUtils.lerp(leftUpperArm.rotation.x, leftArmForwardXSign * 0.26, cDamp);
-            leftUpperArm.rotation.z = THREE.MathUtils.lerp(leftUpperArm.rotation.z, leftArmDownZ * 0.86, cDamp);
+            leftUpperArm.rotation.x = THREE.MathUtils.lerp(leftUpperArm.rotation.x, leftArmForwardXSign * 0.14, cDamp);
+            leftUpperArm.rotation.z = THREE.MathUtils.lerp(leftUpperArm.rotation.z, leftArmDownZ * 0.66, cDamp);
           }
           if (rightUpperArm) {
-            rightUpperArm.rotation.x = THREE.MathUtils.lerp(rightUpperArm.rotation.x, rightArmForwardXSign * 0.26, cDamp);
-            rightUpperArm.rotation.z = THREE.MathUtils.lerp(rightUpperArm.rotation.z, rightArmDownZ * 0.86, cDamp);
+            rightUpperArm.rotation.x = THREE.MathUtils.lerp(rightUpperArm.rotation.x, rightArmForwardXSign * 0.14, cDamp);
+            rightUpperArm.rotation.z = THREE.MathUtils.lerp(rightUpperArm.rotation.z, rightArmDownZ * 0.66, cDamp);
           }
           if (leftLowerArm) {
-            leftLowerArm.rotation.y = THREE.MathUtils.lerp(leftLowerArm.rotation.y, leftElbowForwardYSign * 0.72, cDamp);
+            leftLowerArm.rotation.y = THREE.MathUtils.lerp(leftLowerArm.rotation.y, leftElbowForwardYSign * 1.02, cDamp);
+            leftLowerArm.rotation.x = THREE.MathUtils.lerp(leftLowerArm.rotation.x, leftPalmForwardXSign * 0.16, cDamp);
           }
           if (rightLowerArm) {
-            rightLowerArm.rotation.y = THREE.MathUtils.lerp(rightLowerArm.rotation.y, rightElbowForwardYSign * 0.72, cDamp);
+            rightLowerArm.rotation.y = THREE.MathUtils.lerp(rightLowerArm.rotation.y, rightElbowForwardYSign * 1.02, cDamp);
+            rightLowerArm.rotation.x = THREE.MathUtils.lerp(rightLowerArm.rotation.x, rightPalmForwardXSign * 0.16, cDamp);
           }
           for (const f of leftFingerBones) {
             f.bone.rotation.z = THREE.MathUtils.lerp(f.bone.rotation.z, leftCurlSign * 0.22, cDamp);
@@ -1876,38 +1903,56 @@ export async function parseFlorieVrmFromBuffer(
           for (const f of rightFingerBones) {
             f.bone.rotation.z = THREE.MathUtils.lerp(f.bone.rotation.z, rightCurlSign * 0.22, cDamp);
           }
+        } else if (co.pose === 'standUp') {
+          // Gentle, smooth sit-to-stand transition using Blender stand_up clip
+          const standBlend = Math.min(1, cutPoseElapsed / 0.35);
+          applyBlenderSitPose(vrm, baseHipsPos, 'stand_up', Math.max(0, ct - 32.8) * 0.78, standBlend, false);
+        } else if (co.pose === 'openDrawer' || co.pose === 'placePaper') {
+          // Use Blender-authored Helen drawer-to-desk paper animation (5.4s seamless clip after standing up)
+          applyBlenderHelenDrawerPaperPose(vrm, baseHipsPos, Math.max(0, ct - 34.25), clipBlend);
         } else if (co.pose === 'confusedGlance') {
-          // Player confused reaction ("Wait... she forgot my name?"): subtle head tilt + calm bewildered posture
-          if (spine) {
-            spine.rotation.z += Math.sin(ct * 1.4) * 0.012;
-          }
-          if (head) {
-            head.rotation.z = THREE.MathUtils.lerp(head.rotation.z, 0.11, cDamp);
-          }
+          // Use Blender-authored zero-tremble confused glance clip (with smooth return to neutral)
+          applyBlenderPlayerConfusedGlancePose(vrm, baseHipsPos, Math.max(0, ct - 26.8), clipBlend);
         } else if (co.pose === 'embarrassed') {
-          if (rightUpperArm) {
-            rightUpperArm.rotation.x = THREE.MathUtils.lerp(
-              rightUpperArm.rotation.x,
-              rightArmForwardXSign * 0.42,
-              cDamp
-            );
-            rightUpperArm.rotation.z = THREE.MathUtils.lerp(
-              rightUpperArm.rotation.z,
-              rightArmDownZ * 0.62,
-              cDamp
-            );
-          }
-          if (rightLowerArm) {
-            rightLowerArm.rotation.x = THREE.MathUtils.lerp(
-              rightLowerArm.rotation.x,
-              rightPalmForwardXSign * 0.45,
-              cDamp
-            );
-            rightLowerArm.rotation.y = THREE.MathUtils.lerp(
-              rightLowerArm.rotation.y,
-              rightElbowForwardYSign * 1.35,
-              cDamp
-            );
+          // Use Blender-authored zero-tremble embarrassed slouch & hand-on-hip clip
+          const appliedBlenderEmb = applyBlenderFlorieEmbarrassedPose(vrm, baseHipsPos, Math.max(0, ct - 26.8), clipBlend);
+          if (!appliedBlenderEmb) {
+            if (spine) {
+              spine.rotation.x += spineForwardXSign * 0.065;
+            }
+            if (chest) {
+              chest.rotation.x += spineForwardXSign * 0.055;
+            }
+            if (head) {
+              head.rotation.x += spineForwardXSign * 0.06;
+            }
+            if (leftShoulder) {
+              leftShoulder.rotation.z = THREE.MathUtils.lerp(leftShoulder.rotation.z, leftArmDownZ * 0.08, cDamp);
+            }
+            if (rightUpperArm) {
+              rightUpperArm.rotation.x = THREE.MathUtils.lerp(
+                rightUpperArm.rotation.x,
+                rightArmForwardXSign * 0.42,
+                cDamp
+              );
+              rightUpperArm.rotation.z = THREE.MathUtils.lerp(
+                rightUpperArm.rotation.z,
+                rightArmDownZ * 0.62,
+                cDamp
+              );
+            }
+            if (rightLowerArm) {
+              rightLowerArm.rotation.x = THREE.MathUtils.lerp(
+                rightLowerArm.rotation.x,
+                rightPalmForwardXSign * 0.45,
+                cDamp
+              );
+              rightLowerArm.rotation.y = THREE.MathUtils.lerp(
+                rightLowerArm.rotation.y,
+                rightElbowForwardYSign * 1.35,
+                cDamp
+              );
+            }
           }
         } else if (co.pose === 'chuckle') {
           if (chest) {
@@ -1929,28 +1974,35 @@ export async function parseFlorieVrmFromBuffer(
           }
           if (head) {
             head.rotation.x += Math.sin(ct * 8.0) * 0.035;
-            head.rotation.z = THREE.MathUtils.lerp(head.rotation.z, 0.06, cDamp);
           }
         } else if (co.pose === 'none') {
-          // Subtle living presence: gentle weight sway and attentive micro-motion while listening
-          if (spine) {
-            spine.rotation.z += Math.sin(ct * 1.6) * 0.014;
-          }
-          if (head) {
-            head.rotation.x += Math.sin(ct * 2.1) * 0.018;
-            head.rotation.z += Math.cos(ct * 1.4) * 0.016;
+          // Gentle breathing only (no idle sway/oscillation)
+          if (chest) {
+            chest.rotation.x += Math.sin(ct * 1.65) * 0.008;
           }
         }
 
+        const targetNeckTiltZ = co.headGesture === 'tilt' ? -0.04 : 0;
+        const targetHeadTiltZ = co.headGesture === 'tilt' ? -0.11 : co.pose === 'chuckle' ? 0.06 : 0;
+        cutNeckTiltZ = THREE.MathUtils.damp(cutNeckTiltZ, targetNeckTiltZ, 6.0, safeDt);
+        cutHeadTiltZ = THREE.MathUtils.damp(cutHeadTiltZ, targetHeadTiltZ, 6.0, safeDt);
+        if (neck && Math.abs(cutNeckTiltZ) > 0.0005) {
+          neck.rotation.z += cutNeckTiltZ;
+        }
         if (head) {
+          if (Math.abs(cutHeadTiltZ) > 0.0005) {
+            head.rotation.z += cutHeadTiltZ;
+          }
           if (co.headGesture === 'nod') {
             // Subtle upward affirmative chin-lift (-spineForwardXSign lifts chin UP), then returns cleanly to neutral
             const upNod = Math.max(0, Math.sin((ct - 8.5) * 4.2));
             head.rotation.x += -spineForwardXSign * 0.10 * upNod;
+          } else if (co.headGesture === 'gentleNod') {
+            // Warm, smooth affirmative nod (downward dip)
+            const dip = Math.max(0, Math.sin((ct - 21.0) * 3.2));
+            head.rotation.x += spineForwardXSign * 0.075 * dip;
           } else if (co.headGesture === 'shake') {
-            head.rotation.y += Math.sin(ct * 5.2) * 0.18;
-          } else if (co.headGesture === 'tilt') {
-            head.rotation.z = THREE.MathUtils.lerp(head.rotation.z, 0.12, cDamp);
+            head.rotation.y += Math.sin(ct * 3.0) * 0.09;
           }
         }
 
@@ -1958,35 +2010,102 @@ export async function parseFlorieVrmFromBuffer(
           blushLeftMat.opacity = THREE.MathUtils.lerp(blushLeftMat.opacity, co.blush * 0.72, cDamp);
           blushRightMat.opacity = blushLeftMat.opacity;
         }
-      } else if (blushLeftMat && blushRightMat && blushLeftMat.opacity > 0.005) {
-        blushLeftMat.opacity = THREE.MathUtils.lerp(blushLeftMat.opacity, 0, damp);
-        blushRightMat.opacity = blushLeftMat.opacity;
+      } else {
+        cutNeckTiltZ = THREE.MathUtils.damp(cutNeckTiltZ, 0, 8.0, safeDt);
+        cutHeadTiltZ = THREE.MathUtils.damp(cutHeadTiltZ, 0, 8.0, safeDt);
+        if (blushLeftMat && blushRightMat && blushLeftMat.opacity > 0.005) {
+          blushLeftMat.opacity = THREE.MathUtils.lerp(blushLeftMat.opacity, 0, damp);
+          blushRightMat.opacity = blushLeftMat.opacity;
+        }
+      }
+
+      // 5d) Lock irises (leftEye / rightEye) onto lookAtPos or scan during cutscenes ONLY.
+      //     In-game (cutsceneOverride === null), eyes stay strictly neutral.
+      if (cutsceneOverride && head && (leftEye || rightEye)) {
+        let targetEyeYaw = 0;
+        let targetEyePitch = 0;
+        const inspectEyesActive = cutsceneOverride.pose === 'inspectHands' && npcLookBlend <= 0.005;
+        const sideGlanceEyesActive = cutsceneOverride.pose === 'confusedGlance';
+        if (sideGlanceEyesActive) {
+          // Only irises glance sideways toward Florie while head stays facing Helen
+          targetEyeYaw = -0.20;
+          targetEyePitch = -0.02;
+        } else if (npcLookBlend > 0.005 && npcTalkState.lookAtPos) {
+          container.updateMatrixWorld(true);
+          head.getWorldPosition(_npcHeadWorld);
+          _npcLocalDir.copy(npcTalkState.lookAtPos).sub(_npcHeadWorld);
+          head.getWorldQuaternion(_npcInvQuat).invert();
+          _npcLocalDir.applyQuaternion(_npcInvQuat);
+          if (_npcLocalDir.lengthSq() > 0.0001) {
+            _npcLocalDir.normalize();
+            targetEyeYaw = THREE.MathUtils.clamp(Math.atan2(-_npcLocalDir.x, -_npcLocalDir.z), -0.22, 0.22);
+            targetEyePitch = THREE.MathUtils.clamp(
+              Math.atan2(_npcLocalDir.y, Math.hypot(_npcLocalDir.x, _npcLocalDir.z)),
+              -0.14,
+              0.14
+            );
+          }
+        } else if (inspectEyesActive) {
+          const tScan = cutsceneOverride.time;
+          targetEyeYaw = THREE.MathUtils.clamp(
+            Math.sin(tScan * 1.45) * 0.13 + Math.sin(tScan * 3.1) * 0.03,
+            -0.16,
+            0.16
+          );
+          targetEyePitch = THREE.MathUtils.clamp(-0.08 + Math.cos(tScan * 1.1) * 0.035, -0.12, 0.06);
+        }
+        const eyeBlend = inspectEyesActive || sideGlanceEyesActive ? 1 : npcLookBlend;
+        const eyeDamp = 1 - Math.exp(-16.0 * safeDt);
+        npcEyeYaw = THREE.MathUtils.lerp(npcEyeYaw, targetEyeYaw * eyeBlend, eyeDamp);
+        npcEyePitch = THREE.MathUtils.lerp(npcEyePitch, targetEyePitch * eyeBlend, eyeDamp);
+        const eyeRotX = -spineForwardXSign * npcEyePitch;
+        if (leftEye) {
+          leftEye.rotation.y = npcEyeYaw;
+          leftEye.rotation.x = eyeRotX;
+        }
+        if (rightEye) {
+          rightEye.rotation.y = npcEyeYaw;
+          rightEye.rotation.x = eyeRotX;
+        }
+      } else if (npcEyeYaw !== 0 || npcEyePitch !== 0) {
+        npcEyeYaw = 0;
+        npcEyePitch = 0;
+        if (leftEye) {
+          leftEye.rotation.y = 0;
+          leftEye.rotation.x = 0;
+        }
+        if (rightEye) {
+          rightEye.rotation.y = 0;
+          rightEye.rotation.x = 0;
+        }
       }
 
       // 6) Natural periodic eye blinking & nuanced facial expressions via VRM ExpressionManager
-      const hasVRoidMorphs = !!(faceMorphDict && faceMorphInfluences);
+      const hasVRoidMorphs = faceMorphTargets.length > 0;
       let activeBlink = 0;
       const talkSmile = npcTalkBlend * (0.34 + npcTalkState.speechLevel * 0.16);
       const talkBrow = npcTalkBlend * Math.max(0, (npcTalkState.speechLevel - 0.18) * 0.85);
       const cutExpr = cutsceneOverride?.expression ?? 'none';
       const cutHappy =
-        cutExpr === 'warmSmile'
-          ? 0.58
-          : cutExpr === 'embarrassed'
-            ? 0.42
+        cutExpr === 'happy'
+          ? 0.85
+          : cutExpr === 'warmSmile'
+            ? 0.58
             : cutExpr === 'amused'
               ? 0.5
               : cutExpr === 'laugh'
                 ? 0.72
                 : 0;
       const cutEyeSquint =
-        cutExpr === 'embarrassed'
-          ? 0.22
-          : cutExpr === 'laugh'
-            ? 0.38
-            : cutExpr === 'warmSmile' || cutExpr === 'amused'
-              ? 0.16
-              : 0;
+        cutExpr === 'happy'
+          ? 1.0
+          : cutExpr === 'embarrassed'
+            ? 0.22
+            : cutExpr === 'laugh'
+              ? 0.38
+              : cutExpr === 'warmSmile' || cutExpr === 'amused'
+                ? 0.16
+                : 0;
       const cutBrow = cutExpr === 'confused' ? 0.55 : cutExpr === 'surprised' ? 0.68 : 0;
       const effHappy = Math.max(pose.expressionHappy, talkSmile, cutHappy);
       const effEyeSquint = Math.max(pose.expressionEyeSquint, npcTalkBlend * 0.24, cutEyeSquint);
@@ -1998,16 +2117,26 @@ export async function parseFlorieVrmFromBuffer(
         if (blinkCycle > 3.64) {
           autoBlink = Math.sin(((blinkCycle - 3.64) / 0.16) * Math.PI);
         }
-        activeBlink = Math.max(0, Math.min(1, Math.max(autoBlink, pose.blinkOverride)));
+        let confusedBlink = 0;
+        if (cutExpr === 'confused' && cutsceneOverride && cutsceneOverride.time >= 26.8) {
+          const p = ((cutsceneOverride.time - 26.8) % 0.54) / 0.54;
+          if (p < 0.28) {
+            confusedBlink = Math.sin((p / 0.28) * Math.PI);
+          }
+        }
+        activeBlink =
+          cutExpr === 'happy'
+            ? 0
+            : Math.max(0, Math.min(1, Math.max(autoBlink, confusedBlink, pose.blinkOverride)));
         vrm.expressionManager.setValue('blink', activeBlink);
         // Let direct VRoid morphs render delicate closed smiles so 'happy' never pops the jaw wide open
-        vrm.expressionManager.setValue('happy', hasVRoidMorphs ? 0 : Math.min(0.75, effHappy));
+        vrm.expressionManager.setValue('happy', hasVRoidMorphs ? 0 : Math.min(0.85, effHappy));
         vrm.expressionManager.setValue('relaxed', hasVRoidMorphs ? 0 : effEyeSquint * 0.65);
         vrm.expressionManager.setValue('surprised', hasVRoidMorphs ? 0 : effCuriousBrow * 0.45);
         const sLvl = npcTalkState.speechLevel;
         const sTime = npcTalkState.speechTime;
         const lipActive = npcTalkBlend > 0.05 && sLvl > 0.03;
-        const lipDamp = lipActive ? 1 - Math.exp(-26 * safeDt) : damp;
+        const lipDamp = lipActive ? 1 - Math.exp(-34 * safeDt) : 1 - Math.exp(-18 * safeDt);
         const cycle = (sTime * 9.5) % 4.0;
         const wAa = lipActive ? sLvl * (0.42 + 0.38 * Math.max(0, Math.sin(cycle * 1.57))) : 0;
         const wOh = lipActive ? sLvl * 0.38 * Math.max(0, Math.cos(cycle * 1.57)) : 0;
@@ -2041,24 +2170,52 @@ export async function parseFlorieVrmFromBuffer(
       // 7) Advance VRM SpringBones & enforce supple, non-bouncing cloth physics on the dress
       vrm.update(safeDt);
 
-      // Apply delicate eyebrow/eye/mouth-corner VRoid morphs directly without stacking over blink or sticking
-      if (faceMorphDict && faceMorphInfluences) {
-        const brwJoyIdx = faceMorphDict['Fcl_BRW_Joy'];
-        const brwSurpIdx = faceMorphDict['Fcl_BRW_Surprised'];
-        const eyeFunIdx = faceMorphDict['Fcl_EYE_Fun'];
-        const mthFunIdx = faceMorphDict['Fcl_MTH_Fun'];
+      // Apply delicate eyebrow/eye/mouth-corner VRoid morphs across ALL Face primitives & hide eye interiors when eyes close
+      const eyesClosed = cutExpr === 'happy' || activeBlink > 0.65;
+      for (const entry of faceMorphTargets) {
+        if (entry.isEyeInterior) {
+          entry.mesh.visible = !eyesClosed;
+        }
+        const dict = entry.dict;
+        const inf = entry.influences;
+        if (!inf.length) continue;
+        const brwJoyIdx = dict['Fcl_BRW_Joy'];
+        const brwSurpIdx = dict['Fcl_BRW_Surprised'];
+        const brwSorrowIdx = dict['Fcl_BRW_Sorrow'];
+        const eyeFunIdx = dict['Fcl_EYE_Fun'];
+        const eyeJoyIdx = dict['Fcl_EYE_Joy'];
+        const eyeIrisHideIdx = dict['Fcl_EYE_Iris_Hide'];
+        const eyeHighlightHideIdx = dict['Fcl_EYE_Highlight_Hide'];
+        const mthFunIdx = dict['Fcl_MTH_Fun'];
+        const mthSorrowIdx = dict['Fcl_MTH_Sorrow'];
         if (brwJoyIdx !== undefined) {
-          faceMorphInfluences[brwJoyIdx] = Math.min(0.75, effHappy * 0.72);
+          inf[brwJoyIdx] = cutExpr === 'embarrassed' ? 0 : Math.min(0.75, effHappy * 0.72);
         }
         if (brwSurpIdx !== undefined) {
-          faceMorphInfluences[brwSurpIdx] = effCuriousBrow * 0.65;
+          inf[brwSurpIdx] = cutExpr === 'confused' ? 0.72 : effCuriousBrow * 0.65;
+        }
+        if (brwSorrowIdx !== undefined) {
+          inf[brwSorrowIdx] = cutExpr === 'confused' ? 0.55 : cutExpr === 'embarrassed' ? 0.72 : 0;
+        }
+        if (mthSorrowIdx !== undefined) {
+          inf[mthSorrowIdx] = cutExpr === 'confused' ? 0.28 : cutExpr === 'embarrassed' ? 0.36 : 0;
+        }
+        if (eyeJoyIdx !== undefined) {
+          inf[eyeJoyIdx] = cutExpr === 'happy' ? 1.0 : 0;
+        }
+        if (eyeIrisHideIdx !== undefined) {
+          inf[eyeIrisHideIdx] = eyesClosed ? 1 : 0;
+        }
+        if (eyeHighlightHideIdx !== undefined) {
+          inf[eyeHighlightHideIdx] = eyesClosed ? 1 : 0;
         }
         if (eyeFunIdx !== undefined) {
           // Attenuate happy eye-squint while blinking so eyelids never over-close or clip
-          faceMorphInfluences[eyeFunIdx] = effEyeSquint * 0.62 * (1 - activeBlink * 0.85);
+          inf[eyeFunIdx] =
+            cutExpr === 'happy' ? 0 : effEyeSquint * 0.62 * (1 - activeBlink * 0.85);
         }
         if (mthFunIdx !== undefined) {
-          faceMorphInfluences[mthFunIdx] = Math.min(0.45, effHappy * 0.48);
+          inf[mthFunIdx] = Math.min(0.45, effHappy * 0.48);
         }
       }
 
@@ -2161,7 +2318,8 @@ export async function parseFlorieVrmFromBuffer(
       0,
       safeDt,
       gaitBlend,
-      gaitPose
+      gaitPose,
+      true
     );
 
     const idleBounceY = Math.abs(Math.sin(introTime * 5.0)) * 0.016 + turnStepEnv * 0.022;
@@ -2670,23 +2828,34 @@ export async function parseFlorieVrmFromBuffer(
 
     // Apply expressive eyebrows, open clear eyes (brief warm squint only on pause smiles),
     // and gentle mouth-corner smile only when not speaking so vowel visemes never deform.
-    if (faceMorphDict && faceMorphInfluences) {
-      const brwJoyIdx = faceMorphDict['Fcl_BRW_Joy'];
-      const brwSurpIdx = faceMorphDict['Fcl_BRW_Surprised'];
-      const eyeFunIdx = faceMorphDict['Fcl_EYE_Fun'];
-      const mthFunIdx = faceMorphDict['Fcl_MTH_Fun'];
-      const excitedBurst =
-        (introTime < 1.2 || (introTime >= 6.2 && introTime < 7.3)) ? 0.32 : 0;
-      const briefEyeSmile =
-        smoothstep(5.15, 5.4, introTime) * (1 - smoothstep(5.9, 6.2, introTime)) +
-        smoothstep(11.35, 11.65, introTime);
-      if (brwJoyIdx !== undefined) faceMorphInfluences[brwJoyIdx] = 0.65;
-      if (brwSurpIdx !== undefined) faceMorphInfluences[brwSurpIdx] = excitedBurst;
+    const introEyesClosed = activeIntroBlink > 0.65;
+    const excitedBurst =
+      (introTime < 1.2 || (introTime >= 6.2 && introTime < 7.3)) ? 0.32 : 0;
+    const briefEyeSmile =
+      smoothstep(5.15, 5.4, introTime) * (1 - smoothstep(5.9, 6.2, introTime)) +
+      smoothstep(11.35, 11.65, introTime);
+    for (const entry of faceMorphTargets) {
+      if (entry.isEyeInterior) {
+        entry.mesh.visible = !introEyesClosed;
+      }
+      const dict = entry.dict;
+      const inf = entry.influences;
+      if (!inf.length) continue;
+      const brwJoyIdx = dict['Fcl_BRW_Joy'];
+      const brwSurpIdx = dict['Fcl_BRW_Surprised'];
+      const eyeFunIdx = dict['Fcl_EYE_Fun'];
+      const eyeIrisHideIdx = dict['Fcl_EYE_Iris_Hide'];
+      const eyeHighlightHideIdx = dict['Fcl_EYE_Highlight_Hide'];
+      const mthFunIdx = dict['Fcl_MTH_Fun'];
+      if (brwJoyIdx !== undefined) inf[brwJoyIdx] = 0.65;
+      if (brwSurpIdx !== undefined) inf[brwSurpIdx] = excitedBurst;
+      if (eyeIrisHideIdx !== undefined) inf[eyeIrisHideIdx] = introEyesClosed ? 1 : 0;
+      if (eyeHighlightHideIdx !== undefined) inf[eyeHighlightHideIdx] = introEyesClosed ? 1 : 0;
       if (eyeFunIdx !== undefined) {
-        faceMorphInfluences[eyeFunIdx] = Math.min(0.22, briefEyeSmile * 0.22) * (1 - activeIntroBlink * 0.85);
+        inf[eyeFunIdx] = Math.min(0.22, briefEyeSmile * 0.22) * (1 - activeIntroBlink * 0.85);
       }
       if (mthFunIdx !== undefined) {
-        faceMorphInfluences[mthFunIdx] = 0.16 * introMouthQuiet;
+        inf[mthFunIdx] = 0.16 * introMouthQuiet;
       }
     }
 
