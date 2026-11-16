@@ -73,7 +73,7 @@ const STARTING_POINTS: Array<{
     id: 'lobby',
     title: 'Suivre Florie dans le Hall d’Entrée',
     subtitle: 'Bâtiment Principal · Intérieur',
-    desc: 'Franchis les grandes portes avec Florie et rencontre Mme Vance à l’accueil pour lancer ta journée.',
+    desc: 'Franchis les grandes portes avec Florie et rencontre Mme Parker à l’accueil pour lancer ta journée.',
     recommended: true,
     spawn: {
       x: 0,
@@ -282,7 +282,7 @@ export const IntroPresentationAndChoiceModal: React.FC<
                     01 · Hall d’Entrée & Administration
                   </div>
                   <div className="text-sm font-bold text-white mt-0.5">
-                    Accueil de Mme Vance & Bureau du Proviseur
+                    Accueil de Mme Parker & Bureau du Proviseur
                   </div>
                   <p className="text-xs text-slate-300 mt-1">
                     Le cœur officiel du lycée : récupère ta feuille de route et

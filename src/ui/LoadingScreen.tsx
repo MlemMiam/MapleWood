@@ -8,6 +8,18 @@ interface LoadingScreenProps {
 
 export const LoadingScreen: React.FC<LoadingScreenProps> = ({ progress, tip }) => {
   const pct = Math.min(100, Math.max(0, Math.round(progress)));
+  const stage =
+    pct < 20
+      ? 'Initialisation…'
+      : pct < 45
+      ? 'Moteur physique (Rapier)…'
+      : pct < 70
+      ? 'Rendu 3D (Three.js)…'
+      : pct < 88
+      ? 'Construction du campus…'
+      : pct < 100
+      ? 'Chargement du joueur…'
+      : 'Prêt !';
   return (
     <div
       className="fixed inset-0 z-50 flex flex-col items-center justify-center px-6 overflow-hidden"
@@ -38,10 +50,11 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({ progress, tip }) =
           className="mb-4"
         />
 
-        <p className="text-sm text-rose-100/80 mb-7">
+        <p className="text-sm text-rose-100/80 mb-1">
           Chargement du lycée en 3D…{' '}
           <span className="font-mono-tabular font-bold text-rose-400">{pct}%</span>
         </p>
+        <p className="text-xs text-slate-400/80 mb-6 font-mono-tabular">{stage}</p>
 
         {/* Red-thread progress bar */}
         <div className="w-72 sm:w-96 h-2 rounded-full overflow-hidden bg-white/10 border border-rose-500/30 mb-6 shadow-[0_0_20px_rgba(239,35,60,0.22)]">

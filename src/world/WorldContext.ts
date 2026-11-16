@@ -13,6 +13,7 @@ export interface WorldCallbacks {
   onUseVending: (kind: 'Boissons' | 'Snacks') => void;
   onReadBook: (title: string) => void;
   onReadNotice: (title: string, details: string) => void;
+  onViewBrochure: () => void;
   onUseFountain: () => void;
   onUseSink: () => void;
   onToggleLights: (wing: string) => void;

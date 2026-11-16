@@ -6,6 +6,7 @@ export interface ActiveModalContent {
   title: string;
   subtitle?: string;
   body: string;
+  imageUrl?: string;
   npc?: NPCData;
   choices?: NPCChoiceData[];
   scheduleImageUrl?: string;
@@ -37,6 +38,7 @@ export const DialogueUI: React.FC<DialogueUIProps> = ({
   const [shotsLeft, setShotsLeft] = useState(5);
   const [baskets, setBaskets] = useState(0);
   const [cursor, setCursor] = useState(0);
+  const [choiceIndex, setChoiceIndex] = useState(0);
   const [lastShotMsg, setLastShotMsg] = useState(
     'Appuyez sur Tirer lorsque le curseur est dans la zone rose !'
   );
@@ -113,6 +115,50 @@ export const DialogueUI: React.FC<DialogueUIProps> = ({
   const isTyping = isNpc && subtitlesEnabled && typedCount < fullBody.length;
   const visibleBody = isNpc ? fullBody.slice(0, typedCount) : fullBody;
   const hasChoices = Boolean(modal.choices && modal.choices.length > 0);
+
+  useEffect(() => {
+    setChoiceIndex(0);
+  }, [modal]);
+
+  useEffect(() => {
+    if (!hasChoices || isTyping) return;
+    const choices = modal.choices!;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setChoiceIndex((i) => Math.min(i + 1, choices.length - 1));
+        onPlayHoverSfx?.();
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setChoiceIndex((i) => Math.max(i - 1, 0));
+        onPlayHoverSfx?.();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        onPlayChoiceSfx?.();
+        onSelectChoice(choices[choiceIndex]);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [hasChoices, isTyping, modal, choiceIndex, onSelectChoice, onPlayChoiceSfx, onPlayHoverSfx]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Enter') return;
+      if (isTyping) {
+        e.preventDefault();
+        setTypedCount(fullBody.length);
+        return;
+      }
+      if (!hasChoices) {
+        e.preventDefault();
+        onPlayChoiceSfx?.();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isTyping, hasChoices, fullBody.length, onClose, onPlayChoiceSfx]);
 
   const handleNpcSurfaceClick = () => {
     if (isTyping) {
@@ -210,6 +256,14 @@ export const DialogueUI: React.FC<DialogueUIProps> = ({
             </div>
 
             {subtitlesEnabled && fullBody && (
+              <>
+{modal.imageUrl && (
+                <img
+                  src={modal.imageUrl}
+                  alt={modal.title}
+                  className="max-w-full max-h-[50vh] rounded-xl border border-rose-300/60 shadow-lg mb-3"
+                />
+              )}
               <div className="border-l-2 border-rose-500 pl-4 py-0.5">
                 <p
                   className="text-white text-base md:text-lg font-medium leading-relaxed whitespace-pre-line"
@@ -218,6 +272,7 @@ export const DialogueUI: React.FC<DialogueUIProps> = ({
                   {visibleBody}
                 </p>
               </div>
+              </>
             )}
 
             {/* Animated Continue Indicator (only when advancing with a single click, never during choices) */}
@@ -238,7 +293,7 @@ export const DialogueUI: React.FC<DialogueUIProps> = ({
                   <path d="m7 13 5 5 5-5" />
                 </svg>
                 <span className="text-[11px] uppercase tracking-widest text-white/60">
-                  Clique pour continuer
+                  Appuie sur Entrée pour continuer
                 </span>
               </div>
             )}
@@ -261,7 +316,11 @@ export const DialogueUI: React.FC<DialogueUIProps> = ({
                     onPlayChoiceSfx?.();
                     onSelectChoice(c);
                   }}
-                  className="group w-full text-left px-4 py-2.5 rounded-full text-sm font-medium text-white/90 bg-[#161322]/60 backdrop-blur-md border border-white/20 hover:border-rose-400/95 hover:bg-[#221a34]/75 hover:text-white hover:shadow-[0_0_18px_rgba(225,29,72,0.45)] transition-all duration-200 cursor-pointer flex items-center justify-between gap-3"
+                  className={`group w-full text-left px-4 py-2.5 rounded-full text-sm font-medium transition-all duration-200 cursor-pointer flex items-center justify-between gap-3 ${
+                    idx === choiceIndex
+                      ? 'text-white bg-[#221a34]/80 border-2 border-rose-400 shadow-[0_0_18px_rgba(225,29,72,0.45)]'
+                      : 'text-white/90 bg-[#161322]/60 backdrop-blur-md border border-white/20 hover:border-rose-400/95 hover:bg-[#221a34]/75 hover:text-white hover:shadow-[0_0_18px_rgba(225,29,72,0.45)]'
+                  }`}
                 >
                   <span className="truncate">{c.label}</span>
                   <span className="text-rose-400/80 group-hover:text-rose-300 group-hover:translate-x-0.5 transition-all text-base leading-none shrink-0">

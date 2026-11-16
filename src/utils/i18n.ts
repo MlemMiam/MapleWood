@@ -9,7 +9,7 @@ export const UI_STRINGS: Record<Language, Record<string, string>> = {
     restart: 'Replacer à l\'entrée',
     quitToTitle: 'Écran titre',
     pausedTitle: 'Pause — Maplewood High School',
-    interactPrefix: 'Appuyer sur E pour',
+    interactPrefix: 'E —',
     loadingTitle: 'Préparation du campus Maplewood...',
     stamina: 'Endurance',
     missions: 'Missions du campus',

@@ -823,9 +823,9 @@ export class AudioManager {
       volume: 0.14,
     });
     this.worldOstLoop = new Howl({
-      src: ['/assets/audio/world_ost.mp3'],
+      src: ['/assets/audio/world_ost.wav'],
       loop: true,
-      volume: 0.19,
+      volume: 0.15,
     });
     this.fountainLoop = new Howl({
       src: [synthFountainWaterLoop()],
@@ -1090,7 +1090,7 @@ export class AudioManager {
       if (!this.worldOstLoop.playing()) {
         this.worldOstLoop.volume(0);
         this.worldOstLoop.play();
-        this.worldOstLoop.fade(0, 0.19, 1200);
+        this.worldOstLoop.fade(0, 0.15, 1200);
       }
       if (!this.fountainLoop.playing()) {
         this.fountainLoop.play();

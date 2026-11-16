@@ -845,11 +845,12 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
     };
     window.addEventListener('resize', handleResize);
 
-    const clock = new THREE.Clock();
+    const timer = new THREE.Timer();
     const animate = () => {
       if (disposed) return;
       animFrameId = requestAnimationFrame(animate);
-      const dt = Math.min(clock.getDelta(), 0.05);
+      timer.update();
+      const dt = Math.min(timer.getDelta(), 0.05);
 
       const opts = displayOptionsRef.current;
       if ((autoDemoActive || opts.turntableAutoSpin) && !isDraggingRef.current) {

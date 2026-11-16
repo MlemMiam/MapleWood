@@ -21,44 +21,8 @@ export interface QuestState {
 
 export function createInitialQuestState(): QuestState {
   return {
-    quests: {
-      'quest-find-room': {
-        id: 'quest-find-room',
-        title: 'Découverte de l\'Aile Sciences',
-        description: 'Trouvez le Laboratoire de Chimie à l\'est du couloir principal.',
-        giverNpcId: 'npc-receptionist',
-        status: 'not_started',
-        progress: 0,
-        target: 1,
-      },
-      'quest-lost-notebook': {
-        id: 'quest-lost-notebook',
-        title: 'Le Carnet de Léo',
-        description: 'Retrouvez le carnet bleu de biologie dans le Labo de Biologie et rapportez-le à Léo.',
-        giverNpcId: 'npc-nervous-student',
-        status: 'not_started',
-        progress: 0,
-        target: 1,
-      },
-      'quest-basketball': {
-        id: 'quest-basketball',
-        title: 'Défi des Aigles',
-        description: 'Marquez 3 paniers au gymnase sous l\'œil du Coach Miller.',
-        giverNpcId: 'npc-coach',
-        status: 'not_started',
-        progress: 0,
-        target: 3,
-      },
-      'quest-library-book': {
-        id: 'quest-library-book',
-        title: 'Archives de Maplewood',
-        description: 'Empruntez les Chroniques de Maplewood auprès de Mme Brooks à la bibliothèque.',
-        giverNpcId: 'npc-librarian',
-        status: 'not_started',
-        progress: 0,
-        target: 1,
-      },
-    },
+    quests: {},
+
     visitedRooms: ['courtyard'],
     hasNotebookItem: false,
     hasLibraryBook: false,
@@ -183,5 +147,5 @@ export function getPrincipalSummaryMessage(state: QuestState): string {
   if (completedCount === totalQuests) {
     return `Félicitations ! Vous avez exploré ${roomsCount} zones du campus et accompli toutes les missions (${completedCount}/${totalQuests}). Vous êtes un véritable ambassadeur des Aigles de Maplewood !`;
   }
-  return `Beau parcours ! Vous avez déjà visité ${roomsCount} zones et complété ${completedCount} mission(s) sur ${totalQuests}. Explorez la bibliothèque, les labos et le gymnase pour tout découvrir.`;
+  return `Beau parcours ! Vous avez déjà visité ${roomsCount} zones et complété ${completedCount} mission(s) sur ${totalQuests}. Explorez les salles de classe, les labos et la cour pour tout découvrir.`;
 }

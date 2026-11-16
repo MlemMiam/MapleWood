@@ -495,6 +495,43 @@ function loadHallFurniture(
       }
 
       const trophy1 = furniture.getObjectByName('Hall_TrophyCase_1');
+
+        // Register interactive welcome brochure on the coffee tables
+        let brochureRegistered = false;
+        furniture.traverse((obj) => {
+          if (!(obj as THREE.Mesh).isMesh) return;
+          const name = (obj.name || '').toLowerCase();
+          if (!name.includes('coffeetable')) return;
+          const wp = new THREE.Vector3();
+          obj.getWorldPosition(wp);
+          interactions.register({
+            id: `hall-brochure-${obj.name}`,
+            label: 'lire la brochure de bienvenue',
+            type: 'book',
+            targetObject: obj,
+            worldPosition: new THREE.Vector3(wp.x, floorY + 1.0, wp.z),
+            maxDistance: 3.2,
+            onInteract: () => callbacks.onViewBrochure(),
+          });
+          brochureRegistered = true;
+        });
+        if (!brochureRegistered) {
+          const proxyGeo = new THREE.BoxGeometry(1.6, 0.4, 1.2);
+          const proxyMat = new THREE.MeshBasicMaterial({ visible: false });
+          const proxy = new THREE.Mesh(proxyGeo, proxyMat);
+          proxy.position.set(0, floorY + 0.5, -15.6);
+          furniture.add(proxy);
+          furniture.updateMatrixWorld(true);
+          interactions.register({
+            id: 'hall-brochure',
+            label: 'lire la brochure de bienvenue',
+            type: 'book',
+            targetObject: proxy,
+            worldPosition: new THREE.Vector3(0, floorY + 0.5, -15.6),
+            maxDistance: 3.5,
+            onInteract: () => callbacks.onViewBrochure(),
+          });
+        }
       if (trophy1) {
         const wp = new THREE.Vector3();
         trophy1.getWorldPosition(wp);

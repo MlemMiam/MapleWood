@@ -235,15 +235,8 @@ export const HUD: React.FC<HUDProps> = ({
         </div>
       </div>
 
-      {/* Center Crosshair & Interaction Prompt */}
+      {/* Center Interaction Prompt */}
       <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center pointer-events-none">
-        <div
-          className="w-2 h-2 rounded-full transition-colors"
-          style={{
-            backgroundColor: interactPrompt ? '#e11d48' : 'rgba(255,255,255,0.8)',
-            boxShadow: '0 0 0 1.5px rgba(30, 27, 46, 0.55)',
-          }}
-        />
         {interactPrompt && (
           <div
             className="mt-4 px-3.5 py-1.5 rounded-full border border-rose-300 text-xs font-semibold text-[#1e1b2e] whitespace-nowrap backdrop-blur-md shadow-md flex items-center gap-1.5"

@@ -27,6 +27,7 @@ export interface GameSettings {
   colorblindMode: ColorblindMode;
   fontScale: FontScale;
   language: Language;
+  customCursorEnabled: boolean;
   bindings: KeyBindings;
 }
 
@@ -53,6 +54,7 @@ export const DEFAULT_SETTINGS: GameSettings = {
   colorblindMode: 'none',
   fontScale: 'normal',
   language: 'fr',
+  customCursorEnabled: true,
   bindings: DEFAULT_KEY_BINDINGS,
 };
 

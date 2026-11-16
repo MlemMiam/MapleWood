@@ -108,10 +108,13 @@ const INTRO_DURATION = 11.65;
 
 const LOADING_TIPS = [
   'Utilisez la touche E près des portes, casiers, tableaux et ordinateurs pour interagir.',
-  'Maintenez Shift pour sprinter à travers la cour centrale ou le terrain de sport.',
-  'Appuie sur M à tout moment pour ouvrir le plan complet du lycée.',
-  'Parlez à Mme Vance dans le hall d\'entrée et à Léo près des casiers pour démarrer les missions.',
-  'Le Coach Miller vous attend au gymnase pour un défi de lancers francs.',
+  'Maintenez Shift pour sprinter à travers la cour centrale.',
+  'Appuyez sur M à tout moment pour ouvrir le plan complet du lycée.',
+  'Parlez à Mme Parker dans le hall d\'entrée et à Léo près des casiers pour démarrer les missions.',
+  'Appuyez sur Échap ou P pour ouvrir le menu pause et ajuster les paramètres.',
+  'Faites défiler la molette pour zoomer la caméra à la troisième personne.',
+  'Appuyez sur F3 pour afficher le mode Debug (FPS, draw calls).',
+  'Rejouez les cinématiques à tout moment depuis la galerie des souvenirs.',
 ];
 
 export default function App() {
@@ -122,6 +125,7 @@ export default function App() {
     () => LOADING_TIPS[Math.floor(Math.random() * LOADING_TIPS.length)]
   );
   const [settings, setSettings] = useState<GameSettings>(() => loadSettings());
+  const [cursorPos, setCursorPos] = useState({ x: -100, y: -100 });
   const [muted, setMuted] = useState(false);
   const [fatalError, setFatalError] = useState<string | null>(null);
 
@@ -165,6 +169,7 @@ export default function App() {
   }, []);
 
   const handleCharacterBlip = useCallback((ch: string, speaker: string) => {
+    lastBlipTimeRef.current = performance.now();
     const s = speaker.toLowerCase();
     const voice =
       s.includes('parker') || s.includes('helen')
@@ -185,6 +190,7 @@ export default function App() {
   const lastWeatherRef = useRef<WeatherType>('sunny');
   const lastTimePhaseRef = useRef<TimePhase>('morning');
   const activeNpcIdRef = useRef<string | null>(null);
+  const lastBlipTimeRef = useRef<number>(0);
   const showCutsceneGalleryRef = useRef(false);
   showCutsceneGalleryRef.current = showCutsceneGallery;
   const introElapsedRef = useRef(0);
@@ -242,21 +248,26 @@ export default function App() {
     } else if (next === 'title') {
       audio?.startTitleMusic();
     } else if (next === 'intro') {
+      audio?.pauseLoops();
       audio?.stopTitleMusic();
       audio?.startAnimeIntroMusic();
     } else if (next === 'genderChoice' || next === 'customization') {
+      audio?.pauseLoops();
       audio?.stopTitleMusic();
       audio?.startCustomizationMusic();
       if (next === 'genderChoice') {
         audio?.playAnimeIntroSfx('sparkle');
       }
     } else if (next === 'postCustomCutscene') {
+      audio?.pauseLoops();
       audio?.stopTitleMusic();
       audio?.startAnimeIntroMusic();
     } else if (next === 'presentation2d') {
+      audio?.pauseLoops();
       audio?.stopTitleMusic();
       audio?.playAnimeIntroSfx('sparkle');
     } else if (next === 'playerChoice') {
+      audio?.pauseLoops();
       audio?.stopTitleMusic();
       audio?.stopAnimeIntroMusic();
       audio?.stopCustomizationMusic();
@@ -297,6 +308,35 @@ export default function App() {
       audio?.setVolume(settings.masterVolume);
     }
   }, [settings, muted]);
+
+  // Custom themed cursor (togglable with F4)
+  useEffect(() => {
+    document.documentElement.style.cursor = 'none';
+    document.body.style.cursor = 'none';
+    const canvas = document.getElementById('canvas-container');
+    if (canvas) canvas.style.cursor = 'none';
+    const onMove = (e: MouseEvent) => setCursorPos({ x: e.clientX, y: e.clientY });
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Control' && !e.repeat) {
+        e.preventDefault();
+        setSettings((s) => {
+          const next = !s.customCursorEnabled;
+          const { input } = engineRefs.current || {};
+          if (phaseRef.current === 'playing') {
+            if (next) input?.exitPointerLock();
+            else input?.requestPointerLock();
+          }
+          return { ...s, customCursorEnabled: next };
+        });
+      }
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, []);
 
   // Main Engine Lifecycle (mounts ONCE)
   useEffect(() => {
@@ -346,9 +386,9 @@ export default function App() {
 
       setLoadProgress(70);
 
-      const openInfoModal = (title: string, subtitle: string, body: string) => {
+      const openInfoModal = (title: string, subtitle: string, body: string, imageUrl?: string) => {
         audio.playInteractDing();
-        setActiveModal({ kind: 'info', title, subtitle, body });
+        setActiveModal({ kind: 'info', title, subtitle, body, imageUrl });
         updatePhase('dialogue');
       };
 
@@ -397,6 +437,14 @@ export default function App() {
           },
           onReadNotice: (title, details) => {
             openInfoModal(title, 'Annonces du campus', details);
+          },
+          onViewBrochure: () => {
+            openInfoModal(
+              'Brochure de bienvenue — Maplewood',
+              'Accueil',
+              'Bienvenue à Maplewood High School !\nDécouvre ton nouveau lycée, ses clubs, ses salles et ses événements. Bonne rentrée !',
+              '/assets/ui/brochure_maplewood.svg'
+            );
           },
           onUseFountain: () => {
             audio.playInteractDing();
@@ -510,7 +558,7 @@ export default function App() {
       };
       gameRenderer.renderer.domElement.addEventListener('click', onCanvasClick);
 
-      const clock = new THREE.Clock();
+      const timer = new THREE.Timer();
       let hudAccum = 0;
       let lastRoomId = 'courtyard';
       let lastPrompt: string | null = null;
@@ -529,10 +577,11 @@ export default function App() {
         }
         debug.beginFrame();
 
-        const rawDt = clock.getDelta();
+timer.update();
+        const rawDt = timer.getDelta();
         const frameDt = Math.min(rawDt, 0.22);
         const dt = Math.min(rawDt, 0.05);
-        const elapsed = clock.elapsedTime;
+        const elapsed = timer.getElapsed();
         const curPhase = phaseRef.current;
         const curSettings = settingsRef.current;
 
@@ -882,6 +931,17 @@ export default function App() {
                 speechLevel = Math.min(1, rms * 4.8);
               } else {
                 speechLevel = 0.45 + 0.35 * Math.sin(speechTime * 11);
+              }
+            } else {
+              // Lip-sync for text blips (no full voice audio)
+              const now = performance.now();
+              const sinceBlip = now - (lastBlipTimeRef.current ?? 0);
+              if (sinceBlip < 140) {
+                speechTime = sinceBlip / 1000;
+                speechLevel = 0.5 + 0.3 * Math.sin(sinceBlip * 0.05);
+              } else {
+                speechLevel = 0;
+                speechTime = 0;
               }
             }
 
@@ -1396,6 +1456,18 @@ export default function App() {
 
       {/* Isolated WebGL Viewport Container */}
       <div id="canvas-container" ref={mountRef} className="fixed inset-0 z-0" />
+
+      {(settings.customCursorEnabled || phase !== 'playing') && !activeModal && (
+        <div
+          className="pointer-events-none fixed z-[9999] -translate-x-1/2 -translate-y-1/2"
+          style={{ left: cursorPos.x, top: cursorPos.y }}
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+            <path d="M4 2 L4 20 L9 15 L12 22 L15 21 L12 14 L19 14 Z" fill="#1e1b2e" stroke="#e11d48" strokeWidth="1.5" strokeLinejoin="round" />
+          </svg>
+        </div>
+      )}
+      <style>{`*, *::before, *::after { cursor: none !important; }`}</style>
 
       {phase === 'loading' && (
         <LoadingScreen progress={loadProgress} tip={loadingTip} />

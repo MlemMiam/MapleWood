@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="560" viewBox="0 0 400 560">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fff1f2"/>
+      <stop offset="100%" stop-color="#fce7f3"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="560" fill="url(#bg)"/>
+  <rect x="20" y="20" width="360" height="520" fill="none" stroke="#e11d48" stroke-width="3" rx="12"/>
+  <text x="200" y="90" text-anchor="middle" font-family="Georgia, serif" font-size="26" font-weight="bold" fill="#1e1b2e">MAPLEWOOD</text>
+  <text x="200" y="120" text-anchor="middle" font-family="Georgia, serif" font-size="20" fill="#e11d48">HIGH SCHOOL</text>
+  <text x="200" y="160" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#5c516b">Brochure de bienvenue</text>
+  <!-- school building illustration -->
+  <rect x="90" y="220" width="220" height="140" fill="#fde68a" stroke="#b45309" stroke-width="2" rx="4"/>
+  <polygon points="90,220 200,170 310,220" fill="#e11d48" stroke="#9f1239" stroke-width="2"/>
+  <rect x="185" y="170" width="30" height="40" fill="#fde68a" stroke="#b45309" stroke-width="2"/>
+  <rect x="110" y="260" width="40" height="60" fill="#fff" stroke="#b45309" stroke-width="1.5"/>
+  <rect x="180" y="260" width="40" height="60" fill="#fff" stroke="#b45309" stroke-width="1.5"/>
+  <rect x="250" y="260" width="40" height="60" fill="#fff" stroke="#b45309" stroke-width="1.5"/>
+  <rect x="185" y="300" width="30" height="60" fill="#3b1c10" stroke="#1e1b2e" stroke-width="1.5"/>
+  <text x="200" y="400" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#1e1b2e">Bienvenue à Maplewood High !</text>
+  <text x="200" y="425" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#5c516b">Ton aventure commence ici.</text>
+  <text x="200" y="470" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#9f1239">Année scolaire 2026-2027</text>
+  <text x="200" y="510" text-anchor="middle" font-family="sans-serif" font-size="9" fill="#94a3b8">© Maplewood High School</text>
+</svg>
