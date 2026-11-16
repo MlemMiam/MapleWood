@@ -260,6 +260,13 @@ const ClothesCategorySvgIcon: React.FC<{
           <path d="M8.5 3h7l4.5 4.5-2.5 3-2-1.5V20H8.5V9l-2 1.5-2.5-3L8.5 3Z" />
         </SvgIcon>
       );
+    case 'outer':
+      return (
+        <SvgIcon size={size}>
+          <path d="M4 4.5 9 2h6l5 2.5v5l-3 1v10.5H7V10.5L4 9.5v-5Z" />
+          <path d="M12 2v19" />
+        </SvgIcon>
+      );
     case 'bottom':
       return (
         <SvgIcon size={size}>
@@ -438,6 +445,8 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
 
   const [activeClothingZone, setActiveClothingZone] =
     useState<ClothingColorZone>('main');
+  const [patternTargetZone, setPatternTargetZone] =
+    useState<ClothingColorZone | 'all'>('all');
   const [clothingColorTab, setClothingColorTab] =
     useState<'color' | 'pattern'>('color');
 
@@ -852,6 +861,7 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
     const numCounts: Record<PlayerGender, Record<ClothesCategoryId, number>> = {
       female: {
         top: 8,
+        outer: 3,
         bottom: 12,
         dress: 9,
         socks: 8,
@@ -862,6 +872,7 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
       },
       male: {
         top: 5,
+        outer: 2,
         bottom: 7,
         dress: 0,
         socks: 6,
@@ -873,6 +884,7 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
     };
     const prefixMap: Record<ClothesCategoryId, string> = {
       top: 'Top',
+      outer: 'Outer',
       bottom: 'Bottom',
       dress: 'Dress',
       socks: 'Socks',
@@ -880,6 +892,28 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
       arm: 'Arm',
       neck: 'Neck',
       glasses: 'Glasses',
+    };
+    const outerThumbMap: Record<PlayerGender, Record<number, string>> = {
+      female: {
+        1: '/assets/player/clothes/thumbnails/female/Top3.png',
+        2: '/assets/player/clothes/thumbnails/female/Top4.png',
+        3: '/assets/player/clothes/thumbnails/female/Top6.png',
+      },
+      male: {
+        1: '/assets/player/clothes/thumbnails/male/Top2.png',
+        2: '/assets/player/clothes/thumbnails/male/Top3.png',
+      },
+    };
+    const outerNameMap: Record<PlayerGender, Record<number, string>> = {
+      female: {
+        1: 'Parka à capuche',
+        2: 'Sweat sport zippé',
+        3: "Cardigan d'uniforme",
+      },
+      male: {
+        1: 'Sweat capuche zippé',
+        2: 'Veste sport urbaine',
+      },
     };
     const excludedIds: Record<PlayerGender, Set<string>> = {
       female: new Set(['Dress4', 'Arm5', 'Arm6']),
@@ -891,12 +925,21 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
     return Array.from({ length: count }, (_, idx) => {
       const n = idx + 1;
       const rawId = `${prefix}${n}`;
+      const isOuter = prefix === 'Outer';
+      const thumb =
+        isOuter && outerThumbMap[selectedGender]?.[n]
+          ? outerThumbMap[selectedGender][n]
+          : `/assets/player/clothes/thumbnails/${selectedGender}/${rawId}.png`;
+      const displayName =
+        isOuter && outerNameMap[selectedGender]?.[n]
+          ? outerNameMap[selectedGender][n]
+          : `${activeClothesCatMeta.shortLabel} #${n}`;
       return {
         id: `${selectedGender}_${rawId}`,
         rawId,
-        name: `${activeClothesCatMeta.shortLabel} #${n}`,
+        name: displayName,
         badge: rawId,
-        thumbnail: `/assets/player/clothes/thumbnails/${selectedGender}/${rawId}.png`,
+        thumbnail: thumb,
       };
     }).filter((item) => !excluded.has(item.rawId));
   }, [selectedGender, activeClothesCategory, activeClothesCatMeta]);
@@ -974,6 +1017,7 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
           ...prev,
           colors: {
             top: hex,
+            outer: hex,
             bottom: hex,
             dress: hex,
             socks: hex,
@@ -985,6 +1029,7 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
           zoneColors: {
             ...prevZones,
             top: { main: hex, sleeves: hex, collar: hex, belt: hex },
+            outer: { main: hex, sleeves: hex, collar: hex, belt: hex },
             bottom: { main: hex, belt: hex },
             dress: { main: hex, sleeves: hex, collar: hex, belt: hex },
           },
@@ -1018,16 +1063,33 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
 
   const handleSelectClothesPattern = (
     catId: ClothesCategoryId,
-    config: ClothingPatternConfig
+    config: ClothingPatternConfig,
+    targetZone: ClothingColorZone | 'all' = patternTargetZone
   ) => {
     onPlayClick?.();
-    setClothesSelection((prev) => ({
-      ...prev,
-      patterns: {
-        ...(prev.patterns || {}),
-        [catId]: config,
-      },
-    }));
+    setClothesSelection((prev) => {
+      const nextPatterns = { ...(prev.patterns || {}) };
+      const nextZonePatterns = { ...(prev.zonePatterns || {}) };
+      const catZonePatterns = { ...(nextZonePatterns[catId] || {}) };
+
+      if (targetZone === 'all') {
+        nextPatterns[catId] = config;
+        catZonePatterns.main = config;
+        catZonePatterns.sleeves = config;
+        catZonePatterns.collar = config;
+        catZonePatterns.belt = config;
+        nextZonePatterns[catId] = catZonePatterns;
+      } else {
+        catZonePatterns[targetZone] = config;
+        nextZonePatterns[catId] = catZonePatterns;
+      }
+
+      return {
+        ...prev,
+        patterns: nextPatterns,
+        zonePatterns: nextZonePatterns,
+      };
+    });
     triggerSelectionReaction();
   };
 
@@ -1036,6 +1098,7 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
     setClothesSelection({
       items: {
         top: null,
+        outer: null,
         bottom: null,
         dress: null,
         socks: null,
@@ -2071,178 +2134,241 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
 
                         {studioMode === 'clothes' && clothingColorTab === 'pattern' ? (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-                            <span style={{ fontSize: 11, fontWeight: 800, color: '#881337' }}>
-                              Motif pour {activeClothesCatMeta.shortLabel} :
-                            </span>
-                            <div
-                              style={{
-                                display: 'grid',
-                                gridTemplateColumns: 'repeat(2, 1fr)',
-                                gap: 6,
-                                maxHeight: 180,
-                                overflowY: 'auto',
-                                paddingRight: 2,
-                              }}
-                            >
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <span style={{ fontSize: 11, fontWeight: 800, color: '#881337' }}>
+                                Zone du motif ({activeClothesCatMeta.shortLabel}) :
+                              </span>
+                            </div>
+
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, padding: '2px 0' }}>
                               {[
-                                { id: 'none' as const, label: 'Uni', desc: 'Sans motif', icon: '⚪' },
-                                { id: 'dots' as const, label: 'Pois', desc: 'Petits pois', icon: '🔴' },
-                                { id: 'stripes' as const, label: 'Rayures', desc: 'Fines rayures', icon: '💈' },
-                                { id: 'plaid' as const, label: 'Carreaux', desc: 'Tartan classique', icon: '🏁' },
-                                { id: 'wool' as const, label: 'Laine', desc: 'Maille tricotée', icon: '🧶' },
-                                { id: 'cotton' as const, label: 'Coton', desc: 'Tissage lin/coton', icon: '🧵' },
-                                { id: 'denim' as const, label: 'Denim', desc: 'Toile de jean', icon: '👖' },
-                              ].map((pat) => {
-                                const currentPat =
-                                  clothesSelection.patterns?.[activeClothesCategory]?.type || 'none';
-                                const isSel = currentPat === pat.id;
+                                { id: 'all' as const, label: '🌐 Toute la pièce' },
+                                { id: 'main' as const, label: '👕 Corps' },
+                                ...((activeClothesCategory === 'top' || activeClothesCategory === 'dress' || activeClothesCategory === 'outer')
+                                  ? [
+                                      { id: 'sleeves' as const, label: '🦾 Manches' },
+                                      { id: 'collar' as const, label: '👔 Col' },
+                                    ]
+                                  : []),
+                                ...((activeClothesCategory === 'top' || activeClothesCategory === 'dress' || activeClothesCategory === 'outer' || activeClothesCategory === 'bottom')
+                                  ? [{ id: 'belt' as const, label: '🎗️ Ceinture' }]
+                                  : []),
+                              ].map((pz) => {
+                                const isPzActive = patternTargetZone === pz.id;
                                 return (
                                   <button
-                                    key={pat.id}
+                                    key={pz.id}
                                     type="button"
-                                    onClick={() => {
-                                      const oldCfg = (clothesSelection.patterns?.[activeClothesCategory] ||
-                                        {}) as Partial<ClothingPatternConfig>;
-                                      handleSelectClothesPattern(activeClothesCategory, {
-                                        type: pat.id,
-                                        color: oldCfg.color || '#ffffff',
-                                        scale: oldCfg.scale || 1.0,
-                                        opacity: oldCfg.opacity !== undefined ? oldCfg.opacity : 0.85,
-                                      });
-                                    }}
+                                    onClick={() => setPatternTargetZone(pz.id)}
                                     style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: 6,
-                                      padding: '6px 8px',
-                                      borderRadius: 10,
-                                      border: isSel
-                                        ? '1.5px solid #e11d48'
-                                        : '1px solid #fecdd3',
-                                      background: isSel ? '#fff1f2' : '#ffffff',
-                                      color: isSel ? '#881337' : '#475569',
-                                      textAlign: 'left',
+                                      padding: '3px 8px',
+                                      borderRadius: 8,
+                                      border: isPzActive ? '1.5px solid #e11d48' : '1px solid #fecdd3',
+                                      background: isPzActive ? '#e11d48' : '#ffffff',
+                                      color: isPzActive ? '#ffffff' : '#881337',
+                                      fontSize: 10,
+                                      fontWeight: 800,
                                       cursor: 'pointer',
                                     }}
                                   >
-                                    <span style={{ fontSize: 16 }}>{pat.icon}</span>
-                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                      <span style={{ fontSize: 11, fontWeight: 800 }}>
-                                        {pat.label}
-                                      </span>
-                                      <span style={{ fontSize: 9.5, opacity: 0.75 }}>
-                                        {pat.desc}
-                                      </span>
-                                    </div>
+                                    {pz.label}
                                   </button>
                                 );
                               })}
                             </div>
 
-                            {clothesSelection.patterns?.[activeClothesCategory]?.type &&
-                              clothesSelection.patterns[activeClothesCategory]!.type !== 'none' && (
-                                <div
-                                  style={{
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: 6,
-                                    paddingTop: 6,
-                                    borderTop: '1px solid #fecdd3',
-                                  }}
-                                >
+                            {(() => {
+                              const currentPatConfig = (
+                                patternTargetZone === 'all'
+                                  ? clothesSelection.patterns?.[activeClothesCategory]
+                                  : clothesSelection.zonePatterns?.[activeClothesCategory]?.[patternTargetZone] ||
+                                    clothesSelection.patterns?.[activeClothesCategory]
+                              ) as Partial<ClothingPatternConfig> | undefined;
+                              const currentPatType = currentPatConfig?.type || 'none';
+
+                              return (
+                                <>
                                   <div
                                     style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'space-between',
+                                      display: 'grid',
+                                      gridTemplateColumns: 'repeat(2, 1fr)',
+                                      gap: 6,
+                                      maxHeight: 180,
+                                      overflowY: 'auto',
+                                      paddingRight: 2,
                                     }}
                                   >
-                                    <span
-                                      style={{ fontSize: 10.5, fontWeight: 800, color: '#881337' }}
-                                    >
-                                      Couleur du motif :
-                                    </span>
-                                    <input
-                                      type="color"
-                                      value={
-                                        clothesSelection.patterns[activeClothesCategory]?.color ||
-                                        '#ffffff'
-                                      }
-                                      onChange={(e) => {
-                                        const oldCfg = (clothesSelection.patterns?.[activeClothesCategory] ||
-                                          {}) as Partial<ClothingPatternConfig>;
-                                        handleSelectClothesPattern(activeClothesCategory, {
-                                          ...oldCfg,
-                                          type: oldCfg.type || 'dots',
-                                          color: e.target.value,
-                                        });
-                                      }}
+                                    {[
+                                      { id: 'none' as const, label: 'Uni', desc: 'Sans motif', icon: '⚪' },
+                                      { id: 'dots' as const, label: 'Pois', desc: 'Petits pois', icon: '🔴' },
+                                      { id: 'stripes' as const, label: 'Rayures', desc: 'Fines rayures', icon: '💈' },
+                                      { id: 'plaid' as const, label: 'Carreaux', desc: 'Tartan classique', icon: '🏁' },
+                                      { id: 'wool' as const, label: 'Laine', desc: 'Maille tricotée', icon: '🧶' },
+                                      { id: 'cotton' as const, label: 'Coton', desc: 'Tissage lin/coton', icon: '🧵' },
+                                      { id: 'denim' as const, label: 'Denim', desc: 'Toile de jean', icon: '👖' },
+                                    ].map((pat) => {
+                                      const isSel = currentPatType === pat.id;
+                                      return (
+                                        <button
+                                          key={pat.id}
+                                          type="button"
+                                          onClick={() => {
+                                            handleSelectClothesPattern(
+                                              activeClothesCategory,
+                                              {
+                                                type: pat.id,
+                                                color: currentPatConfig?.color || '#ffffff',
+                                                scale: currentPatConfig?.scale || 1.0,
+                                                opacity:
+                                                  currentPatConfig?.opacity !== undefined
+                                                    ? currentPatConfig.opacity
+                                                    : 0.85,
+                                              },
+                                              patternTargetZone
+                                            );
+                                          }}
+                                          style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 6,
+                                            padding: '6px 8px',
+                                            borderRadius: 10,
+                                            border: isSel
+                                              ? '1.5px solid #e11d48'
+                                              : '1px solid #fecdd3',
+                                            background: isSel ? '#fff1f2' : '#ffffff',
+                                            color: isSel ? '#881337' : '#475569',
+                                            textAlign: 'left',
+                                            cursor: 'pointer',
+                                          }}
+                                        >
+                                          <span style={{ fontSize: 16 }}>{pat.icon}</span>
+                                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                            <span style={{ fontSize: 11, fontWeight: 800 }}>
+                                              {pat.label}
+                                            </span>
+                                            <span style={{ fontSize: 9.5, opacity: 0.75 }}>
+                                              {pat.desc}
+                                            </span>
+                                          </div>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+
+                                  {currentPatType !== 'none' && (
+                                    <div
                                       style={{
-                                        width: 22,
-                                        height: 22,
-                                        border: 'none',
-                                        background: 'transparent',
-                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: 6,
+                                        paddingTop: 6,
+                                        borderTop: '1px solid #fecdd3',
                                       }}
-                                    />
-                                  </div>
-                                  <div
-                                    style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'space-between',
-                                      gap: 4,
-                                    }}
-                                  >
-                                    <span
-                                      style={{ fontSize: 10.5, fontWeight: 800, color: '#881337' }}
                                     >
-                                      Échelle :
-                                    </span>
-                                    <div style={{ display: 'flex', gap: 3 }}>
-                                      {[
-                                        { label: 'Fin', val: 0.7 },
-                                        { label: 'Moyen', val: 1.0 },
-                                        { label: 'Grand', val: 1.5 },
-                                      ].map((sc) => {
-                                        const curScale =
-                                          clothesSelection.patterns?.[activeClothesCategory]?.scale ||
-                                          1.0;
-                                        const isCur = Math.abs(curScale - sc.val) < 0.1;
-                                        return (
-                                          <button
-                                            key={sc.label}
-                                            type="button"
-                                            onClick={() => {
-                                              const oldCfg = (clothesSelection.patterns?.[activeClothesCategory] ||
-                                                {}) as Partial<ClothingPatternConfig>;
-                                              handleSelectClothesPattern(activeClothesCategory, {
-                                                ...oldCfg,
-                                                type: oldCfg.type || 'dots',
-                                                scale: sc.val,
-                                              });
-                                            }}
-                                            style={{
-                                              padding: '2px 7px',
-                                              borderRadius: 6,
-                                              border: isCur
-                                                ? '1px solid #e11d48'
-                                                : '1px solid #fecdd3',
-                                              background: isCur ? '#e11d48' : '#fff1f2',
-                                              color: isCur ? '#ffffff' : '#881337',
-                                              fontSize: 9.5,
-                                              fontWeight: 700,
-                                              cursor: 'pointer',
-                                            }}
-                                          >
-                                            {sc.label}
-                                          </button>
-                                        );
-                                      })}
+                                      <div
+                                        style={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'space-between',
+                                        }}
+                                      >
+                                        <span
+                                          style={{ fontSize: 10.5, fontWeight: 800, color: '#881337' }}
+                                        >
+                                          Couleur du motif :
+                                        </span>
+                                        <input
+                                          type="color"
+                                          value={currentPatConfig?.color || '#ffffff'}
+                                          onChange={(e) => {
+                                            handleSelectClothesPattern(
+                                              activeClothesCategory,
+                                              {
+                                                type: currentPatType,
+                                                color: e.target.value,
+                                                scale: currentPatConfig?.scale || 1.0,
+                                                opacity:
+                                                  currentPatConfig?.opacity !== undefined
+                                                    ? currentPatConfig.opacity
+                                                    : 0.85,
+                                              },
+                                              patternTargetZone
+                                            );
+                                          }}
+                                          style={{
+                                            width: 22,
+                                            height: 22,
+                                            border: 'none',
+                                            background: 'transparent',
+                                            cursor: 'pointer',
+                                          }}
+                                        />
+                                      </div>
+                                      <div
+                                        style={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'space-between',
+                                          gap: 4,
+                                        }}
+                                      >
+                                        <span
+                                          style={{ fontSize: 10.5, fontWeight: 800, color: '#881337' }}
+                                        >
+                                          Échelle :
+                                        </span>
+                                        <div style={{ display: 'flex', gap: 3 }}>
+                                          {[
+                                            { label: 'Fin', val: 0.7 },
+                                            { label: 'Moyen', val: 1.0 },
+                                            { label: 'Grand', val: 1.5 },
+                                          ].map((sc) => {
+                                            const curScale = currentPatConfig?.scale || 1.0;
+                                            const isCur = Math.abs(curScale - sc.val) < 0.1;
+                                            return (
+                                              <button
+                                                key={sc.label}
+                                                type="button"
+                                                onClick={() => {
+                                                  handleSelectClothesPattern(
+                                                    activeClothesCategory,
+                                                    {
+                                                      type: currentPatType,
+                                                      color: currentPatConfig?.color || '#ffffff',
+                                                      scale: sc.val,
+                                                      opacity:
+                                                        currentPatConfig?.opacity !== undefined
+                                                          ? currentPatConfig.opacity
+                                                          : 0.85,
+                                                    },
+                                                    patternTargetZone
+                                                  );
+                                                }}
+                                                style={{
+                                                  padding: '2px 7px',
+                                                  borderRadius: 6,
+                                                  border: isCur
+                                                    ? '1px solid #e11d48'
+                                                    : '1px solid #fecdd3',
+                                                  background: isCur ? '#e11d48' : '#fff1f2',
+                                                  color: isCur ? '#ffffff' : '#881337',
+                                                  fontSize: 9.5,
+                                                  fontWeight: 700,
+                                                  cursor: 'pointer',
+                                                }}
+                                              >
+                                                {sc.label}
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
                                     </div>
-                                  </div>
-                                </div>
-                              )}
+                                  )}
+                                </>
+                              );
+                            })()}
                           </div>
                         ) : (
                           <>
@@ -2354,7 +2480,7 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
                               >
                                 {[
                                   { id: 'main' as const, label: '👕 Corps' },
-                                  ...((activeClothesCategory === 'top' || activeClothesCategory === 'dress')
+                                  ...((activeClothesCategory === 'top' || activeClothesCategory === 'dress' || activeClothesCategory === 'outer')
                                     ? [
                                         { id: 'sleeves' as const, label: '🦾 Manches' },
                                         { id: 'collar' as const, label: '👔 Col' },
@@ -3428,12 +3554,16 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
                     patterns: clothesSelection.patterns
                       ? JSON.parse(JSON.stringify(clothesSelection.patterns))
                       : undefined,
+                    zonePatterns: clothesSelection.zonePatterns
+                      ? JSON.parse(JSON.stringify(clothesSelection.zonePatterns))
+                      : undefined,
                   },
                   {
                     ...displayOptions,
                     isolateActiveCategory: false,
                     visibleCategories: {
                       top: true,
+                      outer: true,
                       bottom: true,
                       dress: true,
                       socks: true,

@@ -4,6 +4,7 @@ import type { PlayerGender } from './PlayerHairSystem';
 
 export type ClothesCategoryId =
   | 'top'
+  | 'outer'
   | 'bottom'
   | 'dress'
   | 'socks'
@@ -35,6 +36,7 @@ export interface PlayerClothesSelection {
   colors: Record<ClothesCategoryId, string>;
   zoneColors?: Partial<Record<ClothesCategoryId, Partial<Record<ClothingColorZone, string>>>>;
   patterns?: Partial<Record<ClothesCategoryId, ClothingPatternConfig>>;
+  zonePatterns?: Partial<Record<ClothesCategoryId, Partial<Record<ClothingColorZone, ClothingPatternConfig>>>>;
 }
 
 export interface PlayerDisplayOptions {
@@ -109,10 +111,20 @@ export interface ClothesCategoryMeta {
 export const CLOTHES_CATEGORIES: ClothesCategoryMeta[] = [
   {
     id: 'top',
-    label: 'Hauts & Vestes',
+    label: 'Hauts & Chemises',
     shortLabel: 'Hauts',
-    subtitle: 'Chemises, pulls, sweats & vestes superposables',
+    subtitle: 'Chemises, t-shirts, pulls & blouses',
     icon: '👕',
+    cameraPreset: 'torso',
+    defaultCameraYaw: 0.18,
+    defaultCameraPitch: 0.04,
+  },
+  {
+    id: 'outer',
+    label: 'Vestes & Manteaux',
+    shortLabel: 'Vestes',
+    subtitle: 'Vestes, sweats à capuche, cardigans & manteaux',
+    icon: '🧥',
     cameraPreset: 'torso',
     defaultCameraYaw: 0.18,
     defaultCameraPitch: 0.04,
@@ -234,6 +246,7 @@ export const CLOTHES_COLOR_SWATCHES: Array<{ name: string; hex: string }> = [
 
 export const DEFAULT_CLOTHES_COLORS: Record<ClothesCategoryId, string> = {
   top: '#ffffff',
+  outer: '#ffffff',
   bottom: '#ffffff',
   dress: '#ffffff',
   socks: '#ffffff',
@@ -246,6 +259,7 @@ export const DEFAULT_CLOTHES_COLORS: Record<ClothesCategoryId, string> = {
 export const DEFAULT_FEMALE_CLOTHES_SELECTION: PlayerClothesSelection = {
   items: {
     top: 'female_Top3',
+    outer: null,
     bottom: 'female_Bottom4',
     dress: null,
     socks: 'female_Socks1',
@@ -260,6 +274,7 @@ export const DEFAULT_FEMALE_CLOTHES_SELECTION: PlayerClothesSelection = {
 export const DEFAULT_MALE_CLOTHES_SELECTION: PlayerClothesSelection = {
   items: {
     top: 'male_Top2',
+    outer: null,
     bottom: 'male_Bottom1',
     dress: null,
     socks: 'male_Socks1',
@@ -284,6 +299,7 @@ export const DEFAULT_PLAYER_DISPLAY_OPTIONS: PlayerDisplayOptions = {
   showHair: true,
   visibleCategories: {
     top: true,
+    outer: true,
     bottom: true,
     dress: true,
     socks: true,
@@ -315,6 +331,7 @@ export const OUTFIT_PRESETS: OutfitPreset[] = [
     selection: {
       items: {
         top: 'female_Top8',
+        outer: null,
         bottom: 'female_Bottom4',
         dress: null,
         socks: 'female_Socks1',
@@ -333,7 +350,8 @@ export const OUTFIT_PRESETS: OutfitPreset[] = [
     gender: 'female',
     selection: {
       items: {
-        top: 'female_Top3',
+        top: 'female_Top8',
+        outer: 'female_Outer1',
         bottom: 'female_Bottom1',
         dress: null,
         socks: 'female_Socks3',
@@ -344,7 +362,7 @@ export const OUTFIT_PRESETS: OutfitPreset[] = [
       },
       colors: {
         ...DEFAULT_CLOTHES_COLORS,
-        top: '#ffd6e0',
+        outer: '#ffd6e0',
       },
     },
   },
@@ -356,6 +374,7 @@ export const OUTFIT_PRESETS: OutfitPreset[] = [
     selection: {
       items: {
         top: null,
+        outer: null,
         bottom: null,
         dress: 'female_Dress5',
         socks: 'female_Socks5',
@@ -378,6 +397,7 @@ export const OUTFIT_PRESETS: OutfitPreset[] = [
     selection: {
       items: {
         top: 'male_Top5',
+        outer: null,
         bottom: 'male_Bottom1',
         dress: null,
         socks: 'male_Socks1',
@@ -396,7 +416,8 @@ export const OUTFIT_PRESETS: OutfitPreset[] = [
     gender: 'male',
     selection: {
       items: {
-        top: 'male_Top2',
+        top: 'male_Top5',
+        outer: 'male_Outer1',
         bottom: 'male_Bottom3',
         dress: null,
         socks: 'male_Socks2',
@@ -407,7 +428,7 @@ export const OUTFIT_PRESETS: OutfitPreset[] = [
       },
       colors: {
         ...DEFAULT_CLOTHES_COLORS,
-        top: '#a0c4ff',
+        outer: '#a0c4ff',
       },
     },
   },
@@ -418,7 +439,8 @@ export const OUTFIT_PRESETS: OutfitPreset[] = [
     gender: 'male',
     selection: {
       items: {
-        top: 'male_Top3',
+        top: 'male_Top5',
+        outer: 'male_Outer2',
         bottom: 'male_Bottom2',
         dress: null,
         socks: 'male_Socks4',
@@ -429,7 +451,7 @@ export const OUTFIT_PRESETS: OutfitPreset[] = [
       },
       colors: {
         ...DEFAULT_CLOTHES_COLORS,
-        top: '#bdb2ff',
+        outer: '#bdb2ff',
       },
     },
   },
@@ -444,7 +466,54 @@ export function loadClothesCatalog(): Promise<ClothesCatalogData> {
   if (!_clothesCatalogPromise) {
     _clothesCatalogPromise = fetch('/assets/player/clothes_catalog.json').then(async (res) => {
       if (!res.ok) throw new Error('Impossible de charger clothes_catalog.json');
-      return (await res.json()) as ClothesCatalogData;
+      const data = (await res.json()) as ClothesCatalogData;
+
+      const synthesizeOuterItem = (
+        sourceId: string,
+        outerId: string,
+        rawId: string,
+        displayName: string,
+        gender: PlayerGender
+      ): CatalogClothesItem | null => {
+        const list = gender === 'female' ? data.female : data.male;
+        const src = list.find((it) => it.id === sourceId);
+        if (!src) return null;
+        return {
+          id: outerId,
+          rawId,
+          gender,
+          category: 'outer',
+          displayName,
+          thumbnailUrl: src.thumbnailUrl,
+          skinAlphaMaskUrl: src.skinAlphaMaskUrl,
+          layers: src.layers.map((l) => ({
+            ...l,
+            blendShapes: {
+              ...l.blendShapes,
+              SleeveThick: 100,
+            },
+          })),
+        };
+      };
+
+      const femOuters: (CatalogClothesItem | null)[] = [
+        synthesizeOuterItem('female_Top3', 'female_Outer1', 'Outer1', 'Parka à capuche', 'female'),
+        synthesizeOuterItem('female_Top4', 'female_Outer2', 'Outer2', 'Sweat sport zippé', 'female'),
+        synthesizeOuterItem('female_Top6', 'female_Outer3', 'Outer3', "Cardigan d'uniforme", 'female'),
+      ];
+      femOuters.forEach((it) => {
+        if (it && !data.female.some((x) => x.id === it.id)) data.female.push(it);
+      });
+
+      const maleOuters: (CatalogClothesItem | null)[] = [
+        synthesizeOuterItem('male_Top2', 'male_Outer1', 'Outer1', 'Sweat capuche zippé', 'male'),
+        synthesizeOuterItem('male_Top3', 'male_Outer2', 'Outer2', 'Veste sport urbaine', 'male'),
+      ];
+      maleOuters.forEach((it) => {
+        if (it && !data.male.some((x) => x.id === it.id)) data.male.push(it);
+      });
+
+      return data;
     });
   }
   return _clothesCatalogPromise;
@@ -517,6 +586,7 @@ export const CATEGORY_RENDER_ORDER: Record<ClothesCategoryId, number> = {
   bottom: 20,
   top: 30,
   dress: 35,
+  outer: 38,
   shoes: 40,
   neck: 50,
   glasses: 60,
@@ -538,6 +608,7 @@ const CATEGORY_CLEARANCE_METERS: Record<ClothesCategoryId, number> = {
   bottom: 0.0075,
   top: 0.0085,
   dress: 0.0110,
+  outer: 0.0140,
   shoes: 0.0050,
   neck: 0.0045,
   glasses: 0.0260,
@@ -1470,12 +1541,22 @@ function buildTemplateSkinnedMesh(
             under.category === 'bottom' ||
             under.category === 'arm' ||
             under.category === 'socks')) ||
-        (category === 'neck' && (under.category === 'top' || under.category === 'dress'));
+        (category === 'outer' &&
+          (under.category === 'top' ||
+            under.category === 'dress' ||
+            under.category === 'bottom' ||
+            under.category === 'arm' ||
+            under.category === 'socks')) ||
+        (category === 'neck' &&
+          (under.category === 'top' ||
+            under.category === 'dress' ||
+            under.category === 'outer'));
       if (!isUnder) continue;
 
       const interLayerMargin =
         isSameItemMultiLayer ? 0.0020 :
         category === 'neck' ? 0.0035 :
+        category === 'outer' ? 0.0090 :
         category === 'dress' ? 0.0085 :
         0.0075;
       const uCount = under.vertCount;
@@ -1512,7 +1593,74 @@ function buildTemplateSkinnedMesh(
       }
 
       const isRadialOverBottom =
-        (category === 'top' || category === 'dress') && under.category === 'bottom';
+        (category === 'top' || category === 'dress' || category === 'outer') &&
+        under.category === 'bottom';
+
+      // Cylindrical radial envelope clearance for tops/outers draped over bottom waistbands/skirts
+      if (isRadialOverBottom) {
+        const yBins = 24;
+        const aBins = 36;
+        const minY = 0.65;
+        const maxY = 1.15;
+        const grid = new Float32Array(yBins * aBins);
+
+        for (let j = 0; j < uCount; j++) {
+          if (!uMask[j]) continue;
+          const by = uPos[j * 3 + 1];
+          if (by < minY || by > maxY) continue;
+          const bx = uPos[j * 3];
+          const bz = uPos[j * 3 + 2];
+          const r = Math.hypot(bx, bz);
+          let ang = Math.atan2(bz, bx);
+          if (ang < 0) ang += 2 * Math.PI;
+          const yIdx = Math.min(
+            yBins - 1,
+            Math.max(0, Math.floor(((by - minY) / (maxY - minY)) * yBins))
+          );
+          const aIdx = Math.floor((ang / (2 * Math.PI)) * aBins) % aBins;
+          const idx = yIdx * aBins + aIdx;
+          if (r > grid[idx]) grid[idx] = r;
+        }
+
+        const smoothGrid = new Float32Array(grid);
+        for (let y = 0; y < yBins; y++) {
+          for (let a = 0; a < aBins; a++) {
+            let maxR = grid[y * aBins + a];
+            for (let dy = -1; dy <= 1; dy++) {
+              const yy = y + dy;
+              if (yy < 0 || yy >= yBins) continue;
+              for (let da = -1; da <= 1; da++) {
+                const aa = (a + da + aBins) % aBins;
+                const v = grid[yy * aBins + aa];
+                if (v > maxR) maxR = v;
+              }
+            }
+            smoothGrid[y * aBins + a] = maxR;
+          }
+        }
+
+        for (let i = 0; i < vertCount; i++) {
+          if (!activeMask[i]) continue;
+          const vy = posArr[i * 3 + 1];
+          if (vy < minY || vy > maxY) continue;
+          const vx = posArr[i * 3];
+          const vz = posArr[i * 3 + 2];
+          const tr = Math.hypot(vx, vz);
+          let ang = Math.atan2(vz, vx);
+          if (ang < 0) ang += 2 * Math.PI;
+          const yIdx = Math.min(
+            yBins - 1,
+            Math.max(0, Math.floor(((vy - minY) / (maxY - minY)) * yBins))
+          );
+          const aIdx = Math.floor((ang / (2 * Math.PI)) * aBins) % aBins;
+          const reqR = smoothGrid[yIdx * aBins + aIdx];
+          if (reqR > 0.05 && tr < reqR + interLayerMargin) {
+            const scale = (reqR + interLayerMargin) / (tr || 1);
+            posArr[i * 3] = vx * scale;
+            posArr[i * 3 + 2] = vz * scale;
+          }
+        }
+      }
 
       // General case: 2-iteration nearest-surface clearance with 12 cm search radius
       for (let pass = 0; pass < 2; pass++) {
@@ -1578,7 +1726,7 @@ function buildTemplateSkinnedMesh(
         const cBone = template.jointNames[template.joints[i * 4]] || 'J_Bip_C_Hips';
         const cReg = classifyBoneRegion(cBone);
         const vy = posArr[i * 3 + 1];
-        if (category === 'top') {
+        if (category === 'top' || category === 'outer') {
           if (!(cReg === 'torso' || cReg === 'arm_l' || cReg === 'arm_r') || vy < 0.78) {
             surfaceMask[i] = 0;
           }
@@ -1615,11 +1763,12 @@ function buildTemplateSkinnedMesh(
   geom.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(skinIndexArr, 4));
   geom.setAttribute('skinWeight', new THREE.Float32BufferAttribute(skinWeightArr, 4));
 
-  // Compute 4-channel clothing zone weights: [main, sleeves, collar/buttons, belt/waistband]
+  // Compute 4-channel clothing zone weights: [main, sleeves, collar/lapels, belt/hem]
   const zoneWeightsArr = new Float32Array(vertCount * 4);
   for (let v = 0; v < vertCount; v++) {
     const vx = posArr[v * 3];
     const vy = posArr[v * 3 + 1];
+    const vz = posArr[v * 3 + 2];
     let armW = 0;
     let neckW = 0;
     for (let k = 0; k < 4; k++) {
@@ -1635,12 +1784,17 @@ function buildTemplateSkinnedMesh(
     let wSleeves = 0;
     let wCollar = 0;
     let wBelt = 0;
-    if (category === 'top' || category === 'dress') {
+    if (category === 'top' || category === 'dress' || category === 'outer') {
       wSleeves = THREE.MathUtils.clamp((armW - 0.22) / 0.45, 0, 1);
-      const isPlacket = vy > 1.05 && Math.abs(vx) < 0.042;
-      const collarFactor = Math.max(neckW, isPlacket ? 0.85 : 0);
-      wCollar = (1 - wSleeves) * THREE.MathUtils.clamp((collarFactor - 0.18) / 0.5, 0, 1);
-      const isTopHem = category === 'top' && vy < 0.98;
+
+      // Refined collar & lapel detection (accurately seated without staining down the abdomen):
+      const distNeck = Math.hypot(vx, vz - (-0.015));
+      const isNeckRing = vy >= 1.25 && distNeck < 0.105;
+      const isLapel = vy >= 1.18 && vz < -0.055 && Math.abs(vx) < 0.075;
+      const collarGeoFactor = (neckW > 0.12 ? 1.0 : 0.0) || (isNeckRing ? 0.9 : 0.0) || (isLapel ? 0.8 : 0.0);
+      wCollar = (1 - wSleeves) * THREE.MathUtils.clamp((collarGeoFactor - 0.18) / 0.5, 0, 1);
+
+      const isTopHem = (category === 'top' || category === 'outer') && vy < 0.98;
       const isDressWaist = category === 'dress' && vy > 0.94 && vy < 1.02;
       if (isTopHem || isDressWaist) {
         wBelt = (1 - wSleeves - wCollar) * THREE.MathUtils.clamp(1.0 - Math.abs(vy - 0.98) / 0.06, 0, 1);
@@ -1978,6 +2132,7 @@ const LAYER_ORDER: ClothesCategoryId[] = [
   'bottom',
   'top',
   'dress',
+  'outer',
   'shoes',
   'neck',
   'glasses',
@@ -2125,20 +2280,25 @@ export function applyClothesSelectionToVrm(
     const collarHex = catZoneColors?.collar || mainHex;
     const beltHex = catZoneColors?.belt || mainHex;
 
-    const patternConfig = selection.patterns?.[catId];
-    const patternType = patternConfig?.type || 'none';
-    const patternColorHex = patternConfig?.color || '#ffffff';
-    const patternScaleVal = patternConfig?.scale || 1.0;
-    const patternOpacityVal =
-      patternConfig?.opacity !== undefined ? patternConfig.opacity : 0.85;
+    const catZonePatterns = selection.zonePatterns?.[catId];
+    const globalCatPattern = selection.patterns?.[catId];
 
-    const patternTypeIndex =
-      patternType === 'dots' ? 1 :
-      patternType === 'stripes' ? 2 :
-      patternType === 'plaid' ? 3 :
-      patternType === 'wool' ? 4 :
-      patternType === 'cotton' ? 5 :
-      patternType === 'denim' ? 6 :
+    const getZonePattern = (z: ClothingColorZone): ClothingPatternConfig => {
+      return catZonePatterns?.[z] || globalCatPattern || { type: 'none' };
+    };
+
+    const patMain = getZonePattern('main');
+    const patSleeves = getZonePattern('sleeves');
+    const patCollar = getZonePattern('collar');
+    const patBelt = getZonePattern('belt');
+
+    const toPatternIndex = (t: ClothingPatternType | undefined) =>
+      t === 'dots' ? 1 :
+      t === 'stripes' ? 2 :
+      t === 'plaid' ? 3 :
+      t === 'wool' ? 4 :
+      t === 'cotton' ? 5 :
+      t === 'denim' ? 6 :
       0;
 
     for (let lIdx = 0; lIdx < item.layers.length; lIdx++) {
@@ -2177,10 +2337,34 @@ export function applyClothesSelectionToVrm(
         shader.uniforms.uColorSleeves = { value: new THREE.Color(sleevesHex) };
         shader.uniforms.uColorCollar = { value: new THREE.Color(collarHex) };
         shader.uniforms.uColorBelt = { value: new THREE.Color(beltHex) };
-        shader.uniforms.uPatternType = { value: patternTypeIndex };
-        shader.uniforms.uPatternColor = { value: new THREE.Color(patternColorHex) };
-        shader.uniforms.uPatternScale = { value: patternScaleVal };
-        shader.uniforms.uPatternOpacity = { value: patternOpacityVal };
+
+        shader.uniforms.uPatternTypeMain = { value: toPatternIndex(patMain.type) };
+        shader.uniforms.uPatternColorMain = { value: new THREE.Color(patMain.color || '#ffffff') };
+        shader.uniforms.uPatternScaleMain = { value: patMain.scale || 1.0 };
+        shader.uniforms.uPatternOpacityMain = {
+          value: patMain.opacity !== undefined ? patMain.opacity : 0.85,
+        };
+
+        shader.uniforms.uPatternTypeSleeves = { value: toPatternIndex(patSleeves.type) };
+        shader.uniforms.uPatternColorSleeves = { value: new THREE.Color(patSleeves.color || '#ffffff') };
+        shader.uniforms.uPatternScaleSleeves = { value: patSleeves.scale || 1.0 };
+        shader.uniforms.uPatternOpacitySleeves = {
+          value: patSleeves.opacity !== undefined ? patSleeves.opacity : 0.85,
+        };
+
+        shader.uniforms.uPatternTypeCollar = { value: toPatternIndex(patCollar.type) };
+        shader.uniforms.uPatternColorCollar = { value: new THREE.Color(patCollar.color || '#ffffff') };
+        shader.uniforms.uPatternScaleCollar = { value: patCollar.scale || 1.0 };
+        shader.uniforms.uPatternOpacityCollar = {
+          value: patCollar.opacity !== undefined ? patCollar.opacity : 0.85,
+        };
+
+        shader.uniforms.uPatternTypeBelt = { value: toPatternIndex(patBelt.type) };
+        shader.uniforms.uPatternColorBelt = { value: new THREE.Color(patBelt.color || '#ffffff') };
+        shader.uniforms.uPatternScaleBelt = { value: patBelt.scale || 1.0 };
+        shader.uniforms.uPatternOpacityBelt = {
+          value: patBelt.opacity !== undefined ? patBelt.opacity : 0.85,
+        };
 
         if (physicsType === 'skirt') {
           shader.uniforms.uClothSway = physicsRuntime.springs.skirt.uniform;
@@ -2241,56 +2425,77 @@ uniform vec3 uColorMain;
 uniform vec3 uColorSleeves;
 uniform vec3 uColorCollar;
 uniform vec3 uColorBelt;
-uniform int uPatternType;
-uniform vec3 uPatternColor;
-uniform float uPatternScale;
-uniform float uPatternOpacity;
+
+uniform int uPatternTypeMain;
+uniform vec3 uPatternColorMain;
+uniform float uPatternScaleMain;
+uniform float uPatternOpacityMain;
+
+uniform int uPatternTypeSleeves;
+uniform vec3 uPatternColorSleeves;
+uniform float uPatternScaleSleeves;
+uniform float uPatternOpacitySleeves;
+
+uniform int uPatternTypeCollar;
+uniform vec3 uPatternColorCollar;
+uniform float uPatternScaleCollar;
+uniform float uPatternOpacityCollar;
+
+uniform int uPatternTypeBelt;
+uniform vec3 uPatternColorBelt;
+uniform float uPatternScaleBelt;
+uniform float uPatternOpacityBelt;
 
 varying vec4 vZoneWeights;
 varying vec2 vClothUv;
+
+vec3 evalClothPattern(vec3 baseCol, int pType, vec3 pColor, float pScale, float pOpacity, vec2 pUv) {
+  if (pType <= 0 || pOpacity <= 0.0) return baseCol;
+  float patMask = 0.0;
+  if (pType == 1) {
+    vec2 gUv = fract(pUv * (18.0 * pScale));
+    float d = length(gUv - vec2(0.5));
+    patMask = 1.0 - smoothstep(0.22, 0.28, d);
+  } else if (pType == 2) {
+    float s = sin((pUv.x + pUv.y * 0.12) * (36.0 * pScale));
+    patMask = smoothstep(-0.15, 0.15, s);
+  } else if (pType == 3) {
+    vec2 pGrid = fract(pUv * (14.0 * pScale));
+    float sX = smoothstep(0.40, 0.48, pGrid.x) - smoothstep(0.52, 0.60, pGrid.x);
+    float sY = smoothstep(0.40, 0.48, pGrid.y) - smoothstep(0.52, 0.60, pGrid.y);
+    patMask = clamp(sX + sY, 0.0, 1.0);
+  } else if (pType == 4) {
+    vec2 kUv = pUv * (26.0 * pScale);
+    float lx = sin(kUv.x * 6.28 + sin(kUv.y * 3.14) * 0.9);
+    float ly = cos(kUv.y * 6.28 + cos(kUv.x * 3.14) * 0.7);
+    patMask = clamp((lx * ly) * 0.5 + 0.5, 0.0, 1.0);
+  } else if (pType == 5) {
+    vec2 cUv = fract(pUv * (38.0 * pScale));
+    float wX = sin(cUv.x * 6.28);
+    float wY = cos(cUv.y * 6.28);
+    patMask = clamp((wX * wY) * 0.5 + 0.5, 0.0, 1.0);
+  } else if (pType == 6) {
+    float twill = sin((pUv.x * 2.2 + pUv.y) * (44.0 * pScale));
+    patMask = clamp(twill * 0.5 + 0.5, 0.0, 1.0);
+  }
+  return mix(baseCol, pColor, patMask * pOpacity);
+}
 ` + shader.fragmentShader;
 
         shader.fragmentShader = shader.fragmentShader.replace(
           '#include <color_fragment>',
           `#include <color_fragment>
 {
-  vec3 zoneColor = vZoneWeights.x * uColorMain +
-                   vZoneWeights.y * uColorSleeves +
-                   vZoneWeights.z * uColorCollar +
-                   vZoneWeights.w * uColorBelt;
-  diffuseColor.rgb *= zoneColor;
+  vec3 colMain = evalClothPattern(uColorMain, uPatternTypeMain, uPatternColorMain, uPatternScaleMain, uPatternOpacityMain, vClothUv);
+  vec3 colSleeves = evalClothPattern(uColorSleeves, uPatternTypeSleeves, uPatternColorSleeves, uPatternScaleSleeves, uPatternOpacitySleeves, vClothUv);
+  vec3 colCollar = evalClothPattern(uColorCollar, uPatternTypeCollar, uPatternColorCollar, uPatternScaleCollar, uPatternOpacityCollar, vClothUv);
+  vec3 colBelt = evalClothPattern(uColorBelt, uPatternTypeBelt, uPatternColorBelt, uPatternScaleBelt, uPatternOpacityBelt, vClothUv);
 
-  if (uPatternType > 0) {
-    vec2 pUv = vClothUv;
-    float patMask = 0.0;
-    if (uPatternType == 1) {
-      vec2 gUv = fract(pUv * (18.0 * uPatternScale));
-      float d = length(gUv - vec2(0.5));
-      patMask = 1.0 - smoothstep(0.22, 0.28, d);
-    } else if (uPatternType == 2) {
-      float s = sin((pUv.x + pUv.y * 0.12) * (36.0 * uPatternScale));
-      patMask = smoothstep(-0.15, 0.15, s);
-    } else if (uPatternType == 3) {
-      vec2 pGrid = fract(pUv * (14.0 * uPatternScale));
-      float sX = smoothstep(0.40, 0.48, pGrid.x) - smoothstep(0.52, 0.60, pGrid.x);
-      float sY = smoothstep(0.40, 0.48, pGrid.y) - smoothstep(0.52, 0.60, pGrid.y);
-      patMask = clamp(sX + sY, 0.0, 1.0);
-    } else if (uPatternType == 4) {
-      vec2 kUv = pUv * (26.0 * uPatternScale);
-      float lx = sin(kUv.x * 6.28 + sin(kUv.y * 3.14) * 0.9);
-      float ly = cos(kUv.y * 6.28 + cos(kUv.x * 3.14) * 0.7);
-      patMask = clamp((lx * ly) * 0.5 + 0.5, 0.0, 1.0);
-    } else if (uPatternType == 5) {
-      vec2 cUv = fract(pUv * (38.0 * uPatternScale));
-      float wX = sin(cUv.x * 6.28);
-      float wY = cos(cUv.y * 6.28);
-      patMask = clamp((wX * wY) * 0.5 + 0.5, 0.0, 1.0);
-    } else if (uPatternType == 6) {
-      float twill = sin((pUv.x * 2.2 + pUv.y) * (44.0 * uPatternScale));
-      patMask = clamp(twill * 0.5 + 0.5, 0.0, 1.0);
-    }
-    diffuseColor.rgb = mix(diffuseColor.rgb, uPatternColor, patMask * uPatternOpacity);
-  }
+  vec3 zoneColor = vZoneWeights.x * colMain +
+                   vZoneWeights.y * colSleeves +
+                   vZoneWeights.z * colCollar +
+                   vZoneWeights.w * colBelt;
+  diffuseColor.rgb *= zoneColor;
 }`
         );
 
@@ -2313,12 +2518,15 @@ varying vec2 vClothUv;
       const physicsType =
         catId === 'bottom' || catId === 'dress'
           ? 'skirt'
-          : catId === 'top'
+          : catId === 'top' || catId === 'outer'
             ? 'top'
             : undefined;
 
       mat.customProgramCacheKey = () =>
-        `cloth_anime_v3_${catId}_${lIdx}_${patternTypeIndex}_${patternColorHex}_${mainHex}_${sleevesHex}_${collarHex}_${beltHex}`;
+        `cloth_anime_v4_${catId}_${lIdx}_` +
+        `${toPatternIndex(patMain.type)}_${toPatternIndex(patSleeves.type)}_${toPatternIndex(patCollar.type)}_${toPatternIndex(patBelt.type)}_` +
+        `${mainHex}_${sleevesHex}_${collarHex}_${beltHex}_` +
+        `${patMain.color || ''}_${patSleeves.color || ''}_${patCollar.color || ''}_${patBelt.color || ''}`;
       mat.onBeforeCompile = (shader) => {
         setupClothShader(shader, physicsType);
       };
