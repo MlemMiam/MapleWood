@@ -74,7 +74,7 @@ export const HAIR_COLOR_PRESETS: Array<{
   hex: string;
   swatch: string;
 }> = [
-  { id: 'natural', name: 'Châtain Original', hex: '#ffffff', swatch: '#7e5643' },
+  { id: 'silver_orig', name: 'Gris Argent (Original)', hex: '#ffffff', swatch: '#9ca3af' },
   { id: 'espresso', name: 'Brun Chocolat', hex: '#8b634b', swatch: '#593a28' },
   { id: 'honey', name: 'Châtain Miel', hex: '#d4a36a', swatch: '#b58042' },
   { id: 'blonde', name: 'Blond Doré', hex: '#ffd88a', swatch: '#eab959' },

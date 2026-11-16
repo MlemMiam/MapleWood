@@ -12,9 +12,29 @@ export type ClothesCategoryId =
   | 'neck'
   | 'glasses';
 
+export type ClothingColorZone = 'main' | 'sleeves' | 'collar' | 'belt';
+
+export type ClothingPatternType =
+  | 'none'
+  | 'dots'
+  | 'stripes'
+  | 'plaid'
+  | 'wool'
+  | 'cotton'
+  | 'denim';
+
+export interface ClothingPatternConfig {
+  type: ClothingPatternType;
+  color?: string;
+  scale?: number;
+  opacity?: number;
+}
+
 export interface PlayerClothesSelection {
   items: Record<ClothesCategoryId, string | null>;
   colors: Record<ClothesCategoryId, string>;
+  zoneColors?: Partial<Record<ClothesCategoryId, Partial<Record<ClothingColorZone, string>>>>;
+  patterns?: Partial<Record<ClothesCategoryId, ClothingPatternConfig>>;
 }
 
 export interface PlayerDisplayOptions {
@@ -513,13 +533,13 @@ export interface BuiltClothSurface {
 }
 
 const CATEGORY_CLEARANCE_METERS: Record<ClothesCategoryId, number> = {
-  socks: 0.0040,
-  arm: 0.0052,
-  bottom: 0.0110,
-  top: 0.0165,
-  dress: 0.0210,
-  shoes: 0.0120,
-  neck: 0.0250,
+  socks: 0.0032,
+  arm: 0.0038,
+  bottom: 0.0075,
+  top: 0.0085,
+  dress: 0.0110,
+  shoes: 0.0050,
+  neck: 0.0045,
   glasses: 0.0260,
 };
 
@@ -884,6 +904,11 @@ function buildBodyOverlaySkinnedMesh(
   }
 
   geom.setAttribute('position', new THREE.Float32BufferAttribute(posArr, 3));
+  const overlayZoneWeights = new Float32Array(vertCount * 4);
+  for (let i = 0; i < vertCount; i++) {
+    overlayZoneWeights[i * 4] = 1.0;
+  }
+  geom.setAttribute('aZoneWeights', new THREE.Float32BufferAttribute(overlayZoneWeights, 4));
 
   const skinned = new THREE.SkinnedMesh(geom, material);
   skinned.userData.clothesCategory = category;
@@ -1131,29 +1156,6 @@ function buildTemplateSkinnedMesh(
       skinWeightArr[v * 4 + 2] = 0;
       skinWeightArr[v * 4 + 3] = 0;
     }
-  } else if (category === 'shoes') {
-    for (let v = 0; v < vertCount; v++) {
-      const vx = workPos[v * 3];
-      const vy = workPos[v * 3 + 1];
-      const vz = workPos[v * 3 + 2];
-      const isLeft = vx < 0;
-      const footBoneName = isLeft ? 'J_Bip_L_Foot' : 'J_Bip_R_Foot';
-      const srcFoot: [number, number, number] = isLeft
-        ? [-0.08098, 0.09577, 0.03419]
-        : [0.08098, 0.09577, 0.03419];
-      const dstFoot = dstBoneBindPos[footBoneName] || srcFoot;
-      const footScale = (dstFoot[1] || 0.0857) / 0.09577;
-      const xzMargin = partgroup === 'N00_003_01_Shoes' ? 1.045 : 1.015;
-
-      posArr[v * 3] = dstFoot[0] + (vx - srcFoot[0]) * footScale * xzMargin;
-      posArr[v * 3 + 1] = dstFoot[1] + (vy - srcFoot[1]) * footScale;
-      posArr[v * 3 + 2] = dstFoot[2] + (vz - srcFoot[2]) * footScale * xzMargin;
-
-      for (let k = 0; k < 4; k++) {
-        const localJ = template.joints[v * 4 + k];
-        skinIndexArr[v * 4 + k] = mappedJointIndices[localJ] ?? fallbackBoneIdx;
-      }
-    }
   } else {
     for (let v = 0; v < vertCount; v++) {
       const vx = workPos[v * 3];
@@ -1231,18 +1233,24 @@ function buildTemplateSkinnedMesh(
           posArr[v * 3 + 2] -= 0.008 * hFactor;
         }
       }
-    } else if (
-      itemId === 'female_Neck1' ||
-      itemId === 'female_Neck2' ||
-      itemId === 'female_Neck4'
-    ) {
-      // Lower neck ribbon/strap from mid-throat onto the collar base
-      for (let v = 0; v < vertCount; v++) {
-        const vy = posArr[v * 3 + 1];
-        if (vy > 1.255) {
-          const wDrop = THREE.MathUtils.clamp((vy - 1.255) / 0.055, 0.25, 1.0);
-          posArr[v * 3 + 1] = vy - 0.019 * wDrop;
-          posArr[v * 3 + 2] -= 0.003 * wDrop;
+    } else if (category === 'neck') {
+      if (gender === 'male') {
+        // Seat Male neck accessories cleanly at collar base (~1.37)
+        for (let v = 0; v < vertCount; v++) {
+          const vy = posArr[v * 3 + 1];
+          if (vy > 1.34) {
+            const wDrop = THREE.MathUtils.clamp((vy - 1.34) / 0.06, 0, 1);
+            posArr[v * 3 + 1] = vy - 0.016 * wDrop;
+          }
+        }
+      } else {
+        // Seat Female neck accessories cleanly at collar base (~1.29)
+        for (let v = 0; v < vertCount; v++) {
+          const vy = posArr[v * 3 + 1];
+          if (vy > 1.27) {
+            const wDrop = THREE.MathUtils.clamp((vy - 1.27) / 0.055, 0, 1.0);
+            posArr[v * 3 + 1] = vy - 0.012 * wDrop;
+          }
         }
       }
     } else if (itemId === 'male_Top1') {
@@ -1285,26 +1293,6 @@ function buildTemplateSkinnedMesh(
             const excess = vy - 1.365;
             posArr[v * 3 + 1] = 1.365 + excess * (1 - 0.52 * hoodBackW);
           }
-        }
-      }
-    } else if (itemId === 'male_Neck1' || itemId === 'male_Neck2') {
-      // Seat Male neck ribbons/ties at collar base (~1.37)
-      for (let v = 0; v < vertCount; v++) {
-        const vy = posArr[v * 3 + 1];
-        if (vy > 1.33) {
-          const wDrop = THREE.MathUtils.clamp((vy - 1.33) / 0.06, 0, 1);
-          posArr[v * 3 + 1] = vy - 0.024 * wDrop;
-          posArr[v * 3 + 2] -= 0.003 * wDrop;
-        }
-      }
-    } else if (itemId === 'male_Neck3') {
-      // Seat Male bow tie cleanly at collar base
-      for (let v = 0; v < vertCount; v++) {
-        const vy = posArr[v * 3 + 1];
-        if (vy > 1.33) {
-          const wDrop = THREE.MathUtils.clamp((vy - 1.33) / 0.06, 0, 1);
-          posArr[v * 3 + 1] = vy - 0.022 * wDrop;
-          posArr[v * 3 + 2] -= 0.004 * wDrop;
         }
       }
     }
@@ -1482,13 +1470,12 @@ function buildTemplateSkinnedMesh(
             under.category === 'bottom' ||
             under.category === 'arm' ||
             under.category === 'socks')) ||
-        (category === 'shoes' && (under.category === 'socks' || under.category === 'bottom')) ||
         (category === 'neck' && (under.category === 'top' || under.category === 'dress'));
       if (!isUnder) continue;
 
       const interLayerMargin =
         isSameItemMultiLayer ? 0.0020 :
-        category === 'neck' ? 0.0100 :
+        category === 'neck' ? 0.0035 :
         category === 'dress' ? 0.0085 :
         0.0075;
       const uCount = under.vertCount;
@@ -1539,8 +1526,6 @@ function buildTemplateSkinnedMesh(
           let bestU = -1;
           for (let j = 0; j < uCount; j++) {
             if (!uMask[j]) continue;
-            // Skip vertical-normal cap/rim vertices so waistbands never yank outer tops vertically
-            if (isRadialOverBottom && Math.abs(uNorm[j * 3 + 1]) > 0.65) continue;
             const dy = vy - uPos[j * 3 + 1];
             if (dy > 0.09 || dy < -0.09) continue;
             const dx = vx - uPos[j * 3];
@@ -1560,11 +1545,17 @@ function buildTemplateSkinnedMesh(
             let ny = uNorm[bestU * 3 + 1];
             let nz = uNorm[bestU * 3 + 2];
             if (isRadialOverBottom) {
-              ny *= 0.12;
-              const nLen = Math.hypot(nx, ny, nz) || 1;
-              nx /= nLen;
-              ny /= nLen;
-              nz /= nLen;
+              // Project clearance horizontally outward to drape cleanly over waistband
+              ny = 0;
+              const nLen = Math.hypot(nx, nz);
+              if (nLen > 0.01) {
+                nx /= nLen;
+                nz /= nLen;
+              } else {
+                const rLen = Math.hypot(vx, vz) || 1;
+                nx = vx / rLen;
+                nz = vz / rLen;
+              }
             }
             const signedDist = dx * nx + dy * ny + dz * nz;
             if (signedDist < interLayerMargin) {
@@ -1623,6 +1614,51 @@ function buildTemplateSkinnedMesh(
   geom.setAttribute('uv', new THREE.Float32BufferAttribute(uvArr, 2));
   geom.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(skinIndexArr, 4));
   geom.setAttribute('skinWeight', new THREE.Float32BufferAttribute(skinWeightArr, 4));
+
+  // Compute 4-channel clothing zone weights: [main, sleeves, collar/buttons, belt/waistband]
+  const zoneWeightsArr = new Float32Array(vertCount * 4);
+  for (let v = 0; v < vertCount; v++) {
+    const vx = posArr[v * 3];
+    const vy = posArr[v * 3 + 1];
+    let armW = 0;
+    let neckW = 0;
+    for (let k = 0; k < 4; k++) {
+      const localJ = template.joints[v * 4 + k];
+      const jName = template.jointNames[localJ] || '';
+      const w = template.weights[v * 4 + k];
+      if (/UpperArm|LowerArm|Hand|Thumb|Index|Middle|Ring|Little/i.test(jName)) {
+        armW += w;
+      } else if (/Neck|Head/i.test(jName)) {
+        neckW += w;
+      }
+    }
+    let wSleeves = 0;
+    let wCollar = 0;
+    let wBelt = 0;
+    if (category === 'top' || category === 'dress') {
+      wSleeves = THREE.MathUtils.clamp((armW - 0.22) / 0.45, 0, 1);
+      const isPlacket = vy > 1.05 && Math.abs(vx) < 0.042;
+      const collarFactor = Math.max(neckW, isPlacket ? 0.85 : 0);
+      wCollar = (1 - wSleeves) * THREE.MathUtils.clamp((collarFactor - 0.18) / 0.5, 0, 1);
+      const isTopHem = category === 'top' && vy < 0.98;
+      const isDressWaist = category === 'dress' && vy > 0.94 && vy < 1.02;
+      if (isTopHem || isDressWaist) {
+        wBelt = (1 - wSleeves - wCollar) * THREE.MathUtils.clamp(1.0 - Math.abs(vy - 0.98) / 0.06, 0, 1);
+      }
+    } else if (category === 'bottom') {
+      if (vy > 0.95) {
+        wBelt = THREE.MathUtils.clamp((vy - 0.95) / 0.055, 0, 1);
+      }
+    }
+    const wMain = Math.max(0, 1.0 - wSleeves - wCollar - wBelt);
+    const sumW = wMain + wSleeves + wCollar + wBelt || 1.0;
+    zoneWeightsArr[v * 4] = wMain / sumW;
+    zoneWeightsArr[v * 4 + 1] = wSleeves / sumW;
+    zoneWeightsArr[v * 4 + 2] = wCollar / sumW;
+    zoneWeightsArr[v * 4 + 3] = wBelt / sumW;
+  }
+  geom.setAttribute('aZoneWeights', new THREE.Float32BufferAttribute(zoneWeightsArr, 4));
+
   geom.setIndex(filteredIndices);
   geom.computeBoundingSphere();
 
@@ -1966,17 +2002,28 @@ export function applyClothesSelectionToVrm(
 
   // Body outline pass is an inverted-hull extrusion (0.0008) intended for naked models;
   // when clothes are worn, it pokes through clothing folds, waist, seams, and cuffs.
+  // Disable any inverted-hull outline passes across the entire avatar so outline backfaces never poke through clothing seams
+  vrm.scene.traverse((obj) => {
+    const sm = obj as THREE.SkinnedMesh;
+    if (sm.isMesh && sm.material) {
+      const mats = Array.isArray(sm.material) ? sm.material : [sm.material];
+      for (const m of mats) {
+        if (
+          /outline/i.test(m?.name ?? '') ||
+          (m as unknown as { isOutline?: boolean }).isOutline
+        ) {
+          m.visible = false;
+          if ('outlineWidthFactor' in m) {
+            (m as unknown as { outlineWidthFactor: number }).outlineWidthFactor = 0;
+          }
+        }
+      }
+    }
+  });
+
   const bodyMats = Array.isArray(bodyMesh.material) ? bodyMesh.material : [bodyMesh.material];
   for (const m of bodyMats) {
-    if (
-      /outline/i.test(m?.name ?? '') ||
-      (m as unknown as { isOutline?: boolean }).isOutline
-    ) {
-      m.visible = false;
-      if ('outlineWidthFactor' in m) {
-        (m as unknown as { outlineWidthFactor: number }).outlineWidthFactor = 0;
-      }
-    } else if (m) {
+    if (m && !/outline/i.test(m?.name ?? '') && !(m as unknown as { isOutline?: boolean }).isOutline) {
       // Push underlying body surface slightly back in the depth buffer so grazing body silhouettes never clip through clothes
       m.polygonOffset = true;
       m.polygonOffsetFactor = 1.0;
@@ -1984,6 +2031,7 @@ export function applyClothesSelectionToVrm(
       m.needsUpdate = true;
     }
   }
+  syncBodyGeometryGroups(bodyMesh.geometry, bodyMesh.geometry.index?.count || 0);
 
   const hostParent = bodyMesh.parent;
   const oldRoot = hostParent.getObjectByName('PlayerCustomClothesRoot');
@@ -2070,7 +2118,28 @@ export function applyClothesSelectionToVrm(
       hasActiveLowerGarment = true;
     }
 
-    const tintColor = new THREE.Color(selection.colors[catId] || '#ffffff');
+    const catZoneColors = selection.zoneColors?.[catId];
+    const mainHex = catZoneColors?.main || selection.colors[catId] || '#ffffff';
+    const tintColor = new THREE.Color(mainHex);
+    const sleevesHex = catZoneColors?.sleeves || mainHex;
+    const collarHex = catZoneColors?.collar || mainHex;
+    const beltHex = catZoneColors?.belt || mainHex;
+
+    const patternConfig = selection.patterns?.[catId];
+    const patternType = patternConfig?.type || 'none';
+    const patternColorHex = patternConfig?.color || '#ffffff';
+    const patternScaleVal = patternConfig?.scale || 1.0;
+    const patternOpacityVal =
+      patternConfig?.opacity !== undefined ? patternConfig.opacity : 0.85;
+
+    const patternTypeIndex =
+      patternType === 'dots' ? 1 :
+      patternType === 'stripes' ? 2 :
+      patternType === 'plaid' ? 3 :
+      patternType === 'wool' ? 4 :
+      patternType === 'cotton' ? 5 :
+      patternType === 'denim' ? 6 :
+      0;
 
     for (let lIdx = 0; lIdx < item.layers.length; lIdx++) {
       const layer = item.layers[lIdx];
@@ -2088,7 +2157,7 @@ export function applyClothesSelectionToVrm(
       // lighting so clothing colors look 100% identical in the Studio and In-Game.
       const mat = new THREE.MeshToonMaterial({
         map,
-        color: tintColor,
+        color: 0xffffff, // Tinting handled cleanly in custom shader via zone colors
         gradientMap,
         transparent: false,
         alphaTest: 0.5,
@@ -2100,32 +2169,40 @@ export function applyClothesSelectionToVrm(
         polygonOffsetUnits: isSkinOverlay ? -1.0 - lIdx : -2.0 - globalLayerCounter * 1.0,
       });
 
-      const injectAnimeColorFaithfulFragment = (shader: { fragmentShader: string }) => {
-        shader.fragmentShader = shader.fragmentShader.replace(
-          '#include <lights_fragment_end>',
-          `#include <lights_fragment_end>
-{
-  vec3 totalToonLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse;
-  float baseLum = max(dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114)), 0.0005);
-  float litLum = dot(totalToonLight, vec3(0.299, 0.587, 0.114));
-  float rawRatio = litLum / baseLum;
-  float celStep = smoothstep(0.18, 0.46, rawRatio);
-  float animeShade = mix(0.82, 1.0, celStep);
-  reflectedLight.directDiffuse = diffuseColor.rgb * animeShade;
-  reflectedLight.indirectDiffuse = vec3(0.0);
-}`
-        );
-      };
+      const setupClothShader = (
+        shader: THREE.WebGLProgramParametersWithUniforms,
+        physicsType?: 'skirt' | 'top'
+      ) => {
+        shader.uniforms.uColorMain = { value: new THREE.Color(mainHex) };
+        shader.uniforms.uColorSleeves = { value: new THREE.Color(sleevesHex) };
+        shader.uniforms.uColorCollar = { value: new THREE.Color(collarHex) };
+        shader.uniforms.uColorBelt = { value: new THREE.Color(beltHex) };
+        shader.uniforms.uPatternType = { value: patternTypeIndex };
+        shader.uniforms.uPatternColor = { value: new THREE.Color(patternColorHex) };
+        shader.uniforms.uPatternScale = { value: patternScaleVal };
+        shader.uniforms.uPatternOpacity = { value: patternOpacityVal };
 
-      // Hook up physics uniforms, vertex displacement, and color-faithful anime fragment shading
-      if (catId === 'bottom' || catId === 'dress') {
-        const skirtSpring = physicsRuntime.springs.skirt;
-        mat.customProgramCacheKey = () => `cloth_physics_skirt_v2_${catId}`;
-        mat.onBeforeCompile = (shader) => {
-          shader.uniforms.uClothSway = skirtSpring.uniform;
-          shader.vertexShader = `
-uniform vec3 uClothSway;
+        if (physicsType === 'skirt') {
+          shader.uniforms.uClothSway = physicsRuntime.springs.skirt.uniform;
+        } else if (physicsType === 'top') {
+          shader.uniforms.uTopSway = physicsRuntime.springs.top.uniform;
+        }
+
+        shader.vertexShader = `
+attribute vec4 aZoneWeights;
+varying vec4 vZoneWeights;
+varying vec2 vClothUv;
+${physicsType === 'skirt' ? 'uniform vec3 uClothSway;\n' : physicsType === 'top' ? 'uniform vec3 uTopSway;\n' : ''}
 ` + shader.vertexShader;
+
+        shader.vertexShader = shader.vertexShader.replace(
+          '#include <uv_vertex>',
+          `#include <uv_vertex>
+vZoneWeights = aZoneWeights;
+vClothUv = uv;`
+        );
+
+        if (physicsType === 'skirt') {
           shader.vertexShader = shader.vertexShader.replace(
             '#include <begin_vertex>',
             `#include <begin_vertex>
@@ -2150,51 +2227,101 @@ if (candCloth.y < 0.92 && candCloth.y > 0.42) {
 }
 transformed = candCloth;`
           );
-          injectAnimeColorFaithfulFragment(shader);
-        };
-      } else if (catId === 'top') {
-        const topSpring = physicsRuntime.springs.top;
-        mat.customProgramCacheKey = () => `cloth_physics_top_v2`;
-        mat.onBeforeCompile = (shader) => {
-          shader.uniforms.uTopSway = topSpring.uniform;
-          shader.vertexShader = `
-uniform vec3 uTopSway;
-` + shader.vertexShader;
+        } else if (physicsType === 'top') {
           shader.vertexShader = shader.vertexShader.replace(
             '#include <begin_vertex>',
             `#include <begin_vertex>
 float topHemFactor = clamp((1.06 - position.y) / 0.22, 0.0, 1.0);
 transformed += uTopSway * pow(topHemFactor, 1.35);`
           );
-          injectAnimeColorFaithfulFragment(shader);
-        };
-      } else if (catId === 'neck') {
-        const neckSpring = physicsRuntime.springs.neck;
-        mat.customProgramCacheKey = () => `cloth_physics_neck_v2`;
-        mat.onBeforeCompile = (shader) => {
-          shader.uniforms.uNeckSway = neckSpring.uniform;
-          shader.vertexShader = `
-uniform vec3 uNeckSway;
-` + shader.vertexShader;
-          shader.vertexShader = shader.vertexShader.replace(
-            '#include <begin_vertex>',
-            `#include <begin_vertex>
-float neckHemFactor = clamp((1.34 - position.y) / 0.20, 0.0, 1.0);
-vec3 neckDisp = uNeckSway * pow(neckHemFactor, 1.25);
-vec3 candNeck = position + neckDisp;
-if (candNeck.y < 1.34 && candNeck.y > 1.14 && candNeck.z > -0.076) {
-  candNeck.z = -0.076;
-}
-transformed = candNeck;`
-          );
-          injectAnimeColorFaithfulFragment(shader);
-        };
-      } else {
-        mat.customProgramCacheKey = () => `cloth_anime_color_v2_${catId}`;
-        mat.onBeforeCompile = (shader) => {
-          injectAnimeColorFaithfulFragment(shader);
-        };
-      }
+        }
+
+        shader.fragmentShader = `
+uniform vec3 uColorMain;
+uniform vec3 uColorSleeves;
+uniform vec3 uColorCollar;
+uniform vec3 uColorBelt;
+uniform int uPatternType;
+uniform vec3 uPatternColor;
+uniform float uPatternScale;
+uniform float uPatternOpacity;
+
+varying vec4 vZoneWeights;
+varying vec2 vClothUv;
+` + shader.fragmentShader;
+
+        shader.fragmentShader = shader.fragmentShader.replace(
+          '#include <color_fragment>',
+          `#include <color_fragment>
+{
+  vec3 zoneColor = vZoneWeights.x * uColorMain +
+                   vZoneWeights.y * uColorSleeves +
+                   vZoneWeights.z * uColorCollar +
+                   vZoneWeights.w * uColorBelt;
+  diffuseColor.rgb *= zoneColor;
+
+  if (uPatternType > 0) {
+    vec2 pUv = vClothUv;
+    float patMask = 0.0;
+    if (uPatternType == 1) {
+      vec2 gUv = fract(pUv * (18.0 * uPatternScale));
+      float d = length(gUv - vec2(0.5));
+      patMask = 1.0 - smoothstep(0.22, 0.28, d);
+    } else if (uPatternType == 2) {
+      float s = sin((pUv.x + pUv.y * 0.12) * (36.0 * uPatternScale));
+      patMask = smoothstep(-0.15, 0.15, s);
+    } else if (uPatternType == 3) {
+      vec2 pGrid = fract(pUv * (14.0 * uPatternScale));
+      float sX = smoothstep(0.40, 0.48, pGrid.x) - smoothstep(0.52, 0.60, pGrid.x);
+      float sY = smoothstep(0.40, 0.48, pGrid.y) - smoothstep(0.52, 0.60, pGrid.y);
+      patMask = clamp(sX + sY, 0.0, 1.0);
+    } else if (uPatternType == 4) {
+      vec2 kUv = pUv * (26.0 * uPatternScale);
+      float lx = sin(kUv.x * 6.28 + sin(kUv.y * 3.14) * 0.9);
+      float ly = cos(kUv.y * 6.28 + cos(kUv.x * 3.14) * 0.7);
+      patMask = clamp((lx * ly) * 0.5 + 0.5, 0.0, 1.0);
+    } else if (uPatternType == 5) {
+      vec2 cUv = fract(pUv * (38.0 * uPatternScale));
+      float wX = sin(cUv.x * 6.28);
+      float wY = cos(cUv.y * 6.28);
+      patMask = clamp((wX * wY) * 0.5 + 0.5, 0.0, 1.0);
+    } else if (uPatternType == 6) {
+      float twill = sin((pUv.x * 2.2 + pUv.y) * (44.0 * uPatternScale));
+      patMask = clamp(twill * 0.5 + 0.5, 0.0, 1.0);
+    }
+    diffuseColor.rgb = mix(diffuseColor.rgb, uPatternColor, patMask * uPatternOpacity);
+  }
+}`
+        );
+
+        shader.fragmentShader = shader.fragmentShader.replace(
+          '#include <lights_fragment_end>',
+          `#include <lights_fragment_end>
+{
+  vec3 totalToonLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse;
+  float baseLum = max(dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114)), 0.0005);
+  float litLum = dot(totalToonLight, vec3(0.299, 0.587, 0.114));
+  float rawRatio = litLum / baseLum;
+  float celStep = smoothstep(0.18, 0.46, rawRatio);
+  float animeShade = mix(0.82, 1.0, celStep);
+  reflectedLight.directDiffuse = diffuseColor.rgb * animeShade;
+  reflectedLight.indirectDiffuse = vec3(0.0);
+}`
+        );
+      };
+
+      const physicsType =
+        catId === 'bottom' || catId === 'dress'
+          ? 'skirt'
+          : catId === 'top'
+            ? 'top'
+            : undefined;
+
+      mat.customProgramCacheKey = () =>
+        `cloth_anime_v3_${catId}_${lIdx}_${patternTypeIndex}_${patternColorHex}_${mainHex}_${sleevesHex}_${collarHex}_${beltHex}`;
+      mat.onBeforeCompile = (shader) => {
+        setupClothShader(shader, physicsType);
+      };
 
       if (template) {
         const mesh = buildTemplateSkinnedMesh(

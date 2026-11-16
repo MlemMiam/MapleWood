@@ -25,6 +25,9 @@ import {
   type ClothesTemplatesBundle,
   type PlayerClothesSelection,
   type PlayerDisplayOptions,
+  type ClothingColorZone,
+  type ClothingPatternType,
+  type ClothingPatternConfig,
   applyClothesSelectionToVrm,
   getDefaultClothesSelection,
   loadClothesCatalog,
@@ -432,6 +435,11 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
   const [activeFaceCategory, setActiveFaceCategory] =
     useState<FaceTraitCategoryId>('skin');
   const [cameraFraming, setCameraFraming] = useState<CameraFramingPreset>('full');
+
+  const [activeClothingZone, setActiveClothingZone] =
+    useState<ClothingColorZone>('main');
+  const [clothingColorTab, setClothingColorTab] =
+    useState<'color' | 'pattern'>('color');
 
   // Dropdown states ("menus déroulants")
   const [openDropdown, setOpenDropdown] = useState<
@@ -954,10 +962,13 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
   const handleSelectClothesColor = (
     catId: ClothesCategoryId,
     hex: string,
-    applyToAll = colorAllClothes
+    applyToAll = colorAllClothes,
+    zone: ClothingColorZone = activeClothingZone
   ) => {
     onPlayColorSwatch ? onPlayColorSwatch() : onPlayClick?.();
     setClothesSelection((prev) => {
+      const prevZones = prev.zoneColors || {};
+      const catZones = { ...(prevZones[catId] || {}) };
       if (applyToAll) {
         return {
           ...prev,
@@ -971,16 +982,52 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
             neck: hex,
             glasses: hex,
           },
+          zoneColors: {
+            ...prevZones,
+            top: { main: hex, sleeves: hex, collar: hex, belt: hex },
+            bottom: { main: hex, belt: hex },
+            dress: { main: hex, sleeves: hex, collar: hex, belt: hex },
+          },
         };
       }
+      if (zone === 'main') {
+        catZones.main = hex;
+        return {
+          ...prev,
+          colors: {
+            ...prev.colors,
+            [catId]: hex,
+          },
+          zoneColors: {
+            ...prevZones,
+            [catId]: catZones,
+          },
+        };
+      }
+      catZones[zone] = hex;
       return {
         ...prev,
-        colors: {
-          ...prev.colors,
-          [catId]: hex,
+        zoneColors: {
+          ...prevZones,
+          [catId]: catZones,
         },
       };
     });
+    triggerSelectionReaction();
+  };
+
+  const handleSelectClothesPattern = (
+    catId: ClothesCategoryId,
+    config: ClothingPatternConfig
+  ) => {
+    onPlayClick?.();
+    setClothesSelection((prev) => ({
+      ...prev,
+      patterns: {
+        ...(prev.patterns || {}),
+        [catId]: config,
+      },
+    }));
     triggerSelectionReaction();
   };
 
@@ -1372,8 +1419,14 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
   // ============================================================================
   const activeCategorySelection = selection[activeCategory] as string | null;
   const activeClothesEquippedId = clothesSelection.items[activeClothesCategory];
+  const activeClothingZoneHex =
+    clothesSelection.zoneColors?.[activeClothesCategory]?.[activeClothingZone] ||
+    clothesSelection.colors[activeClothesCategory] ||
+    '#ffffff';
   const activeClothesColorHex =
-    clothesSelection.colors[activeClothesCategory] || '#ffffff';
+    activeClothingZone !== 'main'
+      ? activeClothingZoneHex
+      : clothesSelection.colors[activeClothesCategory] || '#ffffff';
 
   const activeFaceCatMeta =
     FACE_TRAIT_CATEGORIES.find((c) => c.id === activeFaceCategory) ||
@@ -1797,7 +1850,7 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
               flexDirection: 'column',
               gap: 10,
               position: 'relative',
-              zIndex: 20,
+              zIndex: 50,
             }}
           >
             {/* Row 1: Mode Switcher + Dropdown Triggers */}
@@ -1901,21 +1954,8 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
                 </button>
               </div>
 
-              {/* Right-side Dropdown Menus (Looks, Couleur, Cumul) */}
-              {(
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'flex-end',
-                    gap: 8,
-                    flexWrap: 'wrap',
-                    marginLeft: 'auto',
-                    position: 'relative',
-                  }}
-                >
-                  {/* 1) COLOR DROPDOWN MENU */}
-                  <div>
+              {/* COLOR DROPDOWN MENU (Centralized / Left-aligned, opens clearly towards right) */}
+              <div style={{ position: 'relative' }}>
                     <button
                       type="button"
                       onClick={() => toggleDropdown('colors')}
@@ -1965,237 +2005,525 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
                       <div
                         style={{
                           position: 'absolute',
-                          top: 'calc(100% + 6px)',
-                          right: 0,
-                          width: 265,
+                          top: 'calc(100% + 8px)',
+                          left: 0,
+                          width: 320,
                           maxWidth: 'calc(100vw - 48px)',
                           background: '#ffffff',
                           borderRadius: 18,
                           border: '1.5px solid #fecdd3',
-                          boxShadow: '0 16px 36px rgba(136, 19, 55, 0.2)',
+                          boxShadow: '0 20px 48px rgba(136, 19, 55, 0.22)',
                           padding: 12,
                           display: 'flex',
                           flexDirection: 'column',
                           gap: 10,
-                          zIndex: 40,
+                          zIndex: 100,
                         }}
                       >
-                        <div
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            gap: 6,
-                          }}
-                        >
-                          <span
+                        {studioMode === 'clothes' && (
+                          <div
                             style={{
-                              fontSize: 12,
-                              fontWeight: 800,
-                              color: '#881337',
+                              display: 'flex',
+                              borderRadius: 10,
+                              background: '#fff1f2',
+                              padding: 2,
+                              gap: 2,
                             }}
                           >
-                            Teinte :{' '}
-                            {studioMode === 'hair'
-                              ? 'Cheveux'
-                              : studioMode === 'face'
-                                ? activeFaceCatMeta.shortLabel
-                                : colorAllClothes
-                                  ? 'Toute la tenue'
-                                  : activeClothesCatMeta.shortLabel}
-                          </span>
-                          {studioMode === 'clothes' && (
-                            <div style={{ display: 'flex', gap: 5 }}>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  onPlayClick?.();
-                                  setColorAllClothes((prev) => !prev);
-                                }}
-                                style={{
-                                  padding: '3px 8px',
-                                  borderRadius: 999,
-                                  border: colorAllClothes
-                                    ? '1px solid #e11d48'
-                                    : '1px solid #fecdd3',
-                                  background: colorAllClothes ? '#e11d48' : '#fff1f2',
-                                  color: colorAllClothes ? '#ffffff' : '#be123c',
-                                  fontSize: 10.5,
-                                  fontWeight: 800,
-                                  cursor: 'pointer',
-                                }}
-                              >
-                                Toute la tenue
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleSelectClothesColor(
-                                    activeClothesCategory,
-                                    '#ffffff',
-                                    colorAllClothes
-                                  )
-                                }
-                                style={{
-                                  padding: '3px 8px',
-                                  borderRadius: 999,
-                                  border: '1px solid #fecdd3',
-                                  background: '#fff1f2',
-                                  color: '#be123c',
-                                  fontSize: 10.5,
-                                  fontWeight: 800,
-                                  cursor: 'pointer',
-                                }}
-                              >
-                                Original
-                              </button>
-                            </div>
-                          )}
-                          {studioMode === 'face' && (
                             <button
                               type="button"
-                              onClick={() =>
-                                handleSelectFaceTraitColor(
-                                  activeFaceCategory,
-                                  '#ffffff'
-                                )
-                              }
+                              onClick={() => setClothingColorTab('color')}
                               style={{
-                                padding: '3px 8px',
-                                borderRadius: 999,
-                                border: '1px solid #fecdd3',
-                                background: '#fff1f2',
-                                color: '#be123c',
-                                fontSize: 10.5,
+                                flex: 1,
+                                padding: '5px 8px',
+                                borderRadius: 8,
+                                border: 'none',
+                                background:
+                                  clothingColorTab === 'color' ? '#e11d48' : 'transparent',
+                                color: clothingColorTab === 'color' ? '#ffffff' : '#881337',
+                                fontSize: 11,
                                 fontWeight: 800,
                                 cursor: 'pointer',
                               }}
                             >
-                              Original
+                              🎨 Teintes & Zones
                             </button>
-                          )}
-                        </div>
+                            <button
+                              type="button"
+                              onClick={() => setClothingColorTab('pattern')}
+                              style={{
+                                flex: 1,
+                                padding: '5px 8px',
+                                borderRadius: 8,
+                                border: 'none',
+                                background:
+                                  clothingColorTab === 'pattern' ? '#e11d48' : 'transparent',
+                                color: clothingColorTab === 'pattern' ? '#ffffff' : '#881337',
+                                fontSize: 11,
+                                fontWeight: 800,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              ✨ Motifs & Tissus
+                            </button>
+                          </div>
+                        )}
 
-                        <div
-                          style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(5, 1fr)',
-                            gap: 7,
-                            justifyItems: 'center',
-                            maxHeight: 200,
-                            overflowY: 'auto',
-                            padding: '4px 2px',
-                          }}
-                        >
-                          {activeColorPresets.map((swatch) => {
-                            const isSelected =
-                              currentActiveColorHex.toLowerCase() ===
-                              swatch.hex.toLowerCase();
-                            const previewBg =
-                              'swatch' in swatch && typeof swatch.swatch === 'string'
-                                ? swatch.swatch
-                                : swatch.hex;
-                            return (
-                              <button
-                                key={`${swatch.name}_${swatch.hex}`}
-                                type="button"
-                                title={swatch.name}
-                                onClick={() => {
+                        {studioMode === 'clothes' && clothingColorTab === 'pattern' ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+                            <span style={{ fontSize: 11, fontWeight: 800, color: '#881337' }}>
+                              Motif pour {activeClothesCatMeta.shortLabel} :
+                            </span>
+                            <div
+                              style={{
+                                display: 'grid',
+                                gridTemplateColumns: 'repeat(2, 1fr)',
+                                gap: 6,
+                                maxHeight: 180,
+                                overflowY: 'auto',
+                                paddingRight: 2,
+                              }}
+                            >
+                              {[
+                                { id: 'none' as const, label: 'Uni', desc: 'Sans motif', icon: '⚪' },
+                                { id: 'dots' as const, label: 'Pois', desc: 'Petits pois', icon: '🔴' },
+                                { id: 'stripes' as const, label: 'Rayures', desc: 'Fines rayures', icon: '💈' },
+                                { id: 'plaid' as const, label: 'Carreaux', desc: 'Tartan classique', icon: '🏁' },
+                                { id: 'wool' as const, label: 'Laine', desc: 'Maille tricotée', icon: '🧶' },
+                                { id: 'cotton' as const, label: 'Coton', desc: 'Tissage lin/coton', icon: '🧵' },
+                                { id: 'denim' as const, label: 'Denim', desc: 'Toile de jean', icon: '👖' },
+                              ].map((pat) => {
+                                const currentPat =
+                                  clothesSelection.patterns?.[activeClothesCategory]?.type || 'none';
+                                const isSel = currentPat === pat.id;
+                                return (
+                                  <button
+                                    key={pat.id}
+                                    type="button"
+                                    onClick={() => {
+                                      const oldCfg = (clothesSelection.patterns?.[activeClothesCategory] ||
+                                        {}) as Partial<ClothingPatternConfig>;
+                                      handleSelectClothesPattern(activeClothesCategory, {
+                                        type: pat.id,
+                                        color: oldCfg.color || '#ffffff',
+                                        scale: oldCfg.scale || 1.0,
+                                        opacity: oldCfg.opacity !== undefined ? oldCfg.opacity : 0.85,
+                                      });
+                                    }}
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: 6,
+                                      padding: '6px 8px',
+                                      borderRadius: 10,
+                                      border: isSel
+                                        ? '1.5px solid #e11d48'
+                                        : '1px solid #fecdd3',
+                                      background: isSel ? '#fff1f2' : '#ffffff',
+                                      color: isSel ? '#881337' : '#475569',
+                                      textAlign: 'left',
+                                      cursor: 'pointer',
+                                    }}
+                                  >
+                                    <span style={{ fontSize: 16 }}>{pat.icon}</span>
+                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                      <span style={{ fontSize: 11, fontWeight: 800 }}>
+                                        {pat.label}
+                                      </span>
+                                      <span style={{ fontSize: 9.5, opacity: 0.75 }}>
+                                        {pat.desc}
+                                      </span>
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            {clothesSelection.patterns?.[activeClothesCategory]?.type &&
+                              clothesSelection.patterns[activeClothesCategory]!.type !== 'none' && (
+                                <div
+                                  style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 6,
+                                    paddingTop: 6,
+                                    borderTop: '1px solid #fecdd3',
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'space-between',
+                                    }}
+                                  >
+                                    <span
+                                      style={{ fontSize: 10.5, fontWeight: 800, color: '#881337' }}
+                                    >
+                                      Couleur du motif :
+                                    </span>
+                                    <input
+                                      type="color"
+                                      value={
+                                        clothesSelection.patterns[activeClothesCategory]?.color ||
+                                        '#ffffff'
+                                      }
+                                      onChange={(e) => {
+                                        const oldCfg = (clothesSelection.patterns?.[activeClothesCategory] ||
+                                          {}) as Partial<ClothingPatternConfig>;
+                                        handleSelectClothesPattern(activeClothesCategory, {
+                                          ...oldCfg,
+                                          type: oldCfg.type || 'dots',
+                                          color: e.target.value,
+                                        });
+                                      }}
+                                      style={{
+                                        width: 22,
+                                        height: 22,
+                                        border: 'none',
+                                        background: 'transparent',
+                                        cursor: 'pointer',
+                                      }}
+                                    />
+                                  </div>
+                                  <div
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'space-between',
+                                      gap: 4,
+                                    }}
+                                  >
+                                    <span
+                                      style={{ fontSize: 10.5, fontWeight: 800, color: '#881337' }}
+                                    >
+                                      Échelle :
+                                    </span>
+                                    <div style={{ display: 'flex', gap: 3 }}>
+                                      {[
+                                        { label: 'Fin', val: 0.7 },
+                                        { label: 'Moyen', val: 1.0 },
+                                        { label: 'Grand', val: 1.5 },
+                                      ].map((sc) => {
+                                        const curScale =
+                                          clothesSelection.patterns?.[activeClothesCategory]?.scale ||
+                                          1.0;
+                                        const isCur = Math.abs(curScale - sc.val) < 0.1;
+                                        return (
+                                          <button
+                                            key={sc.label}
+                                            type="button"
+                                            onClick={() => {
+                                              const oldCfg = (clothesSelection.patterns?.[activeClothesCategory] ||
+                                                {}) as Partial<ClothingPatternConfig>;
+                                              handleSelectClothesPattern(activeClothesCategory, {
+                                                ...oldCfg,
+                                                type: oldCfg.type || 'dots',
+                                                scale: sc.val,
+                                              });
+                                            }}
+                                            style={{
+                                              padding: '2px 7px',
+                                              borderRadius: 6,
+                                              border: isCur
+                                                ? '1px solid #e11d48'
+                                                : '1px solid #fecdd3',
+                                              background: isCur ? '#e11d48' : '#fff1f2',
+                                              color: isCur ? '#ffffff' : '#881337',
+                                              fontSize: 9.5,
+                                              fontWeight: 700,
+                                              cursor: 'pointer',
+                                            }}
+                                          >
+                                            {sc.label}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                          </div>
+                        ) : (
+                          <>
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                gap: 6,
+                              }}
+                            >
+                              <span
+                                style={{
+                                  fontSize: 12,
+                                  fontWeight: 800,
+                                  color: '#881337',
+                                }}
+                              >
+                                Teinte :{' '}
+                                {studioMode === 'hair'
+                                  ? 'Cheveux'
+                                  : studioMode === 'face'
+                                    ? activeFaceCatMeta.shortLabel
+                                    : colorAllClothes
+                                      ? 'Toute la tenue'
+                                      : activeClothesCatMeta.shortLabel}
+                              </span>
+                              {studioMode === 'clothes' && (
+                                <div style={{ display: 'flex', gap: 5 }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      onPlayClick?.();
+                                      setColorAllClothes((prev) => !prev);
+                                    }}
+                                    style={{
+                                      padding: '3px 8px',
+                                      borderRadius: 999,
+                                      border: colorAllClothes
+                                        ? '1px solid #e11d48'
+                                        : '1px solid #fecdd3',
+                                      background: colorAllClothes ? '#e11d48' : '#fff1f2',
+                                      color: colorAllClothes ? '#ffffff' : '#be123c',
+                                      fontSize: 10.5,
+                                      fontWeight: 800,
+                                      cursor: 'pointer',
+                                    }}
+                                  >
+                                    Toute la tenue
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleSelectClothesColor(
+                                        activeClothesCategory,
+                                        '#ffffff',
+                                        colorAllClothes,
+                                        activeClothingZone
+                                      )
+                                    }
+                                    style={{
+                                      padding: '3px 8px',
+                                      borderRadius: 999,
+                                      border: '1px solid #fecdd3',
+                                      background: '#fff1f2',
+                                      color: '#be123c',
+                                      fontSize: 10.5,
+                                      fontWeight: 800,
+                                      cursor: 'pointer',
+                                    }}
+                                  >
+                                    Original
+                                  </button>
+                                </div>
+                              )}
+                              {studioMode === 'face' && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleSelectFaceTraitColor(
+                                      activeFaceCategory,
+                                      '#ffffff'
+                                    )
+                                  }
+                                  style={{
+                                    padding: '3px 8px',
+                                    borderRadius: 999,
+                                    border: '1px solid #fecdd3',
+                                    background: '#fff1f2',
+                                    color: '#be123c',
+                                    fontSize: 10.5,
+                                    fontWeight: 800,
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  Original
+                                </button>
+                              )}
+                            </div>
+
+                            {studioMode === 'clothes' && !colorAllClothes && (
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  flexWrap: 'wrap',
+                                  gap: 4,
+                                  padding: '4px 0',
+                                }}
+                              >
+                                {[
+                                  { id: 'main' as const, label: '👕 Corps' },
+                                  ...((activeClothesCategory === 'top' || activeClothesCategory === 'dress')
+                                    ? [
+                                        { id: 'sleeves' as const, label: '🦾 Manches' },
+                                        { id: 'collar' as const, label: '👔 Col' },
+                                        { id: 'belt' as const, label: '🎗️ Ceinture' },
+                                      ]
+                                    : activeClothesCategory === 'bottom'
+                                      ? [{ id: 'belt' as const, label: '🎗️ Ceinture' }]
+                                      : []),
+                                ].map((z) => {
+                                  const isZActive = activeClothingZone === z.id;
+                                  return (
+                                    <button
+                                      key={z.id}
+                                      type="button"
+                                      onClick={() => setActiveClothingZone(z.id)}
+                                      style={{
+                                        padding: '3px 8px',
+                                        borderRadius: 8,
+                                        border: isZActive
+                                          ? '1.5px solid #e11d48'
+                                          : '1px solid #fecdd3',
+                                        background: isZActive ? '#fff1f2' : '#ffffff',
+                                        color: isZActive ? '#881337' : '#64748b',
+                                        fontSize: 10.5,
+                                        fontWeight: 800,
+                                        cursor: 'pointer',
+                                      }}
+                                    >
+                                      {z.label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            <div
+                              style={{
+                                display: 'grid',
+                                gridTemplateColumns: 'repeat(5, 1fr)',
+                                gap: 7,
+                                justifyItems: 'center',
+                                maxHeight: 180,
+                                overflowY: 'auto',
+                                padding: '4px 2px',
+                              }}
+                            >
+                              {activeColorPresets.map((swatch) => {
+                                const isSelected =
+                                  currentActiveColorHex.toLowerCase() ===
+                                  swatch.hex.toLowerCase();
+                                const previewBg =
+                                  'swatch' in swatch && typeof swatch.swatch === 'string'
+                                    ? swatch.swatch
+                                    : swatch.hex;
+                                return (
+                                  <button
+                                    key={`${swatch.name}_${swatch.hex}`}
+                                    type="button"
+                                    title={swatch.name}
+                                    onClick={() => {
+                                      if (studioMode === 'hair') {
+                                        onPlayColorSwatch
+                                          ? onPlayColorSwatch()
+                                          : onPlayClick?.();
+                                        setSelection((prev) => ({
+                                          ...prev,
+                                          colorHex: swatch.hex,
+                                        }));
+                                        triggerSelectionReaction();
+                                      } else if (studioMode === 'face') {
+                                        handleSelectFaceTraitColor(
+                                          activeFaceCategory,
+                                          swatch.hex
+                                        );
+                                      } else {
+                                        handleSelectClothesColor(
+                                          activeClothesCategory,
+                                          swatch.hex,
+                                          colorAllClothes,
+                                          activeClothingZone
+                                        );
+                                      }
+                                    }}
+                                    style={{
+                                      width: 28,
+                                      height: 28,
+                                      borderRadius: '50%',
+                                      background: previewBg,
+                                      border: isSelected
+                                        ? '3px solid #e11d48'
+                                        : '1.5px solid rgba(136, 19, 55, 0.25)',
+                                      cursor: 'pointer',
+                                    }}
+                                  />
+                                );
+                              })}
+                            </div>
+
+                            <label
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                padding: '6px 10px',
+                                borderRadius: 10,
+                                background: '#fff1f2',
+                                border: '1px solid #fecdd3',
+                                fontSize: 11.5,
+                                fontWeight: 800,
+                                color: '#881337',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              <span>Couleur personnalisée</span>
+                              <input
+                                type="color"
+                                value={currentActiveColorHex}
+                                onChange={(e) => {
                                   if (studioMode === 'hair') {
                                     onPlayColorSwatch
                                       ? onPlayColorSwatch()
                                       : onPlayClick?.();
                                     setSelection((prev) => ({
                                       ...prev,
-                                      colorHex: swatch.hex,
+                                      colorHex: e.target.value,
                                     }));
-                                    triggerSelectionReaction();
                                   } else if (studioMode === 'face') {
                                     handleSelectFaceTraitColor(
                                       activeFaceCategory,
-                                      swatch.hex
+                                      e.target.value
                                     );
                                   } else {
                                     handleSelectClothesColor(
                                       activeClothesCategory,
-                                      swatch.hex,
-                                      colorAllClothes
+                                      e.target.value,
+                                      colorAllClothes,
+                                      activeClothingZone
                                     );
                                   }
                                 }}
                                 style={{
-                                  width: 28,
-                                  height: 28,
-                                  borderRadius: '50%',
-                                  background: previewBg,
-                                  border: isSelected
-                                    ? '3px solid #e11d48'
-                                    : '1.5px solid rgba(136, 19, 55, 0.25)',
+                                  width: 24,
+                                  height: 24,
+                                  border: 'none',
+                                  padding: 0,
+                                  background: 'transparent',
                                   cursor: 'pointer',
                                 }}
                               />
-                            );
-                          })}
-                        </div>
-
-                        <label
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            padding: '6px 10px',
-                            borderRadius: 10,
-                            background: '#fff1f2',
-                            border: '1px solid #fecdd3',
-                            fontSize: 11.5,
-                            fontWeight: 800,
-                            color: '#881337',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          <span>Couleur personnalisée</span>
-                          <input
-                            type="color"
-                            value={currentActiveColorHex}
-                            onChange={(e) => {
-                              if (studioMode === 'hair') {
-                                onPlayColorSwatch
-                                  ? onPlayColorSwatch()
-                                  : onPlayClick?.();
-                                setSelection((prev) => ({
-                                  ...prev,
-                                  colorHex: e.target.value,
-                                }));
-                              } else if (studioMode === 'face') {
-                                handleSelectFaceTraitColor(
-                                  activeFaceCategory,
-                                  e.target.value
-                                );
-                              } else {
-                                handleSelectClothesColor(
-                                  activeClothesCategory,
-                                  e.target.value,
-                                  colorAllClothes
-                                );
-                              }
-                            }}
-                            style={{
-                              width: 24,
-                              height: 24,
-                              border: 'none',
-                              padding: 0,
-                              background: 'transparent',
-                              cursor: 'pointer',
-                            }}
-                          />
-                        </label>
+                            </label>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
 
-                  {/* 2) EQUIPPED LAYERS DROPDOWN MENU (Clothes mode) */}
+                  {/* 2) EQUIPPED LAYERS DROPDOWN MENU (Clothes mode, on the right) */}
                   {studioMode === 'clothes' && (
-                    <div style={{ position: 'relative' }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'flex-end',
+                        gap: 8,
+                        marginLeft: 'auto',
+                        position: 'relative',
+                      }}
+                    >
+                      <div style={{ position: 'relative' }}>
                       <button
                         type="button"
                         onClick={() => toggleDropdown('layers')}
@@ -2368,10 +2696,9 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
                         </div>
                       )}
                     </div>
-                  )}
-                </div>
-              )}
-            </div>
+                  </div>
+                )}
+              </div>
 
             {/* Row 2: Category Pills (with custom SVG icons) */}
             {studioMode === 'clothes' && (
@@ -3095,6 +3422,12 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
                   {
                     items: { ...clothesSelection.items },
                     colors: { ...clothesSelection.colors },
+                    zoneColors: clothesSelection.zoneColors
+                      ? JSON.parse(JSON.stringify(clothesSelection.zoneColors))
+                      : undefined,
+                    patterns: clothesSelection.patterns
+                      ? JSON.parse(JSON.stringify(clothesSelection.patterns))
+                      : undefined,
                   },
                   {
                     ...displayOptions,
