@@ -559,7 +559,13 @@ export default function App() {
           // Throttle expensive world/NPC updates on title screen for smoother FPS
           titleFrameCounter.current = (titleFrameCounter.current + 1) % 3;
           if (titleFrameCounter.current === 0) {
-            world.update(elapsed, dt * 3, gameRenderer.camera.position);
+            world.update(
+              elapsed,
+              dt * 3,
+              gameRenderer.camera.position,
+              gameRenderer.getWindTime(),
+              gameRenderer.getWindStrength()
+            );
             for (const npc of npcs) {
               npc.update(dt * 3, gameRenderer.camera.position, false);
             }
@@ -584,7 +590,13 @@ export default function App() {
 
           cameraCtrl.updateIntroCutsceneCamera(gameRenderer.camera, player.position, t);
           player.updateIntroCutscene(t, dt, gameRenderer.camera.position);
-          world.update(elapsed, dt, player.position);
+          world.update(
+            elapsed,
+            dt,
+            player.position,
+            gameRenderer.getWindTime(),
+            gameRenderer.getWindStrength()
+          );
           for (const npc of npcs) {
             npc.update(dt, player.position, false);
           }
@@ -705,7 +717,13 @@ export default function App() {
               remaining -= stepDt;
             }
 
-            world.update(elapsed, frameDt, player.position);
+            world.update(
+              elapsed,
+              frameDt,
+              player.position,
+              gameRenderer.getWindTime(),
+              gameRenderer.getWindStrength()
+            );
 
             for (const npc of npcs) {
               npc.update(frameDt, player.position, false);
@@ -774,7 +792,12 @@ export default function App() {
               audio.updateFountainSpatialAudio(
                 player.position.x,
                 player.position.z,
-                currentRoom?.type === 'exterior'
+                isOutdoors
+              );
+              audio.updateWeatherAudio(
+                gameRenderer.getRainIntensity(),
+                gameRenderer.getWindStrength(),
+                isOutdoors
               );
               if (
                 Math.abs(player.position.x - lastHudX) > 0.02 ||

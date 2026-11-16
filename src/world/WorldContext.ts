@@ -22,6 +22,11 @@ export interface WorldCallbacks {
   onSit?: (x: number, y: number, z: number, yaw: number) => void;
 }
 
+export interface WindUniforms {
+  uWindTime: { value: number };
+  uWindStrength: { value: number };
+}
+
 export interface WorldBuildContext {
   scene: THREE.Scene;
   physics: PhysicsWorld;
@@ -32,5 +37,6 @@ export interface WorldBuildContext {
   cameraColliders: THREE.Object3D[];
   animatedObjects: Array<(elapsed: number, dt: number) => void>;
   wingLights: Record<string, THREE.PointLight[]>;
+  windUniforms: WindUniforms;
   callbacks: WorldCallbacks;
 }

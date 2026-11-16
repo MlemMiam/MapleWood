@@ -242,6 +242,126 @@ function synthFountainWaterLoop(): string {
 }
 
 /**
+ * Synthesizes a gentle 5-second looping outdoor breeze:
+ * - Warm band-passed airflow + subtle organic rustling waves
+ */
+function synthBreezeLoop(): string {
+  const sr = 22050;
+  const duration = 5.0;
+  const len = Math.floor(sr * duration);
+  const data = new Float32Array(len);
+
+  let seed = 88421;
+  const rand = () => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 0xffffffff;
+  };
+
+  let lpLow = 0;
+  let lpMid = 0;
+  let lpLeaf = 0;
+  let hpLeaf = 0;
+  for (let w = 0; w < 2048; w++) {
+    const white = rand() * 2 - 1;
+    lpLow += 0.025 * (white - lpLow);
+    lpMid += 0.08 * (white - lpMid);
+    lpLeaf += 0.22 * (white - lpLeaf);
+    hpLeaf = lpLeaf - lpMid;
+  }
+
+  for (let i = 0; i < len; i++) {
+    const t = i / sr;
+    const phase = (t / duration) * Math.PI * 2;
+    const white = rand() * 2 - 1;
+
+    lpLow += 0.025 * (white - lpLow);
+    lpMid += 0.08 * (white - lpMid);
+    lpLeaf += 0.22 * (white - lpLeaf);
+    hpLeaf = lpLeaf - lpMid;
+
+    const airBody = lpMid - lpLow * 0.65;
+    const gustEnv = 0.68 + 0.22 * Math.sin(phase) + 0.1 * Math.cos(phase * 3.0 + 0.6);
+    const leafSwell = 0.55 + 0.45 * Math.sin(phase * 2.0 + 1.1);
+    data[i] = (airBody * 0.46 + hpLeaf * 0.16 * leafSwell) * gustEnv;
+  }
+
+  const seam = 1024;
+  for (let i = 0; i < seam; i++) {
+    const alpha = i / seam;
+    const head = data[i];
+    const tail = data[len - seam + i];
+    const blended = tail * (1 - alpha) + head * alpha;
+    data[i] = blended;
+    data[len - seam + i] = blended * (1 - alpha) + tail * alpha;
+  }
+
+  return encodeWavDataUri(data, sr);
+}
+
+/**
+ * Synthesizes a fine, delicate 4-second looping drizzle/rain sound:
+ * - Soft airy rainfall hiss + tiny high-frequency raindrop patters
+ */
+function synthRainLoop(): string {
+  const sr = 22050;
+  const duration = 4.0;
+  const len = Math.floor(sr * duration);
+  const data = new Float32Array(len);
+
+  let seed = 49107;
+  const rand = () => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 0xffffffff;
+  };
+
+  let lpLow = 0;
+  let lpHigh = 0;
+  for (let w = 0; w < 2048; w++) {
+    const white = rand() * 2 - 1;
+    lpLow += 0.055 * (white - lpLow);
+    lpHigh += 0.34 * (white - lpHigh);
+  }
+
+  for (let i = 0; i < len; i++) {
+    const t = i / sr;
+    const phase = (t / duration) * Math.PI * 2;
+    const white = rand() * 2 - 1;
+    lpLow += 0.055 * (white - lpLow);
+    lpHigh += 0.34 * (white - lpHigh);
+    const fineRain = lpHigh - lpLow;
+    const mod = 0.88 + 0.12 * Math.sin(phase * 2.0 + 0.4);
+    data[i] = (fineRain * 0.32 + lpLow * 0.12) * mod;
+  }
+
+  // Light sprinkle micro-droplets wrapped across the buffer
+  for (let d = 0; d < 120; d++) {
+    const startIdx = Math.floor(rand() * len);
+    const dropDur = 0.008 + rand() * 0.012;
+    const dropSamples = Math.floor(sr * dropDur);
+    const freq = 1400 + rand() * 2200;
+    const amp = 0.025 + rand() * 0.03;
+    for (let j = 0; j < dropSamples; j++) {
+      const jt = j / sr;
+      const win = Math.sin((j / dropSamples) * Math.PI) * Math.exp(-jt * 110);
+      const idx = (startIdx + j) % len;
+      data[idx] += Math.sin(2 * Math.PI * freq * jt) * win * amp;
+    }
+  }
+
+  const seam = 1024;
+  for (let i = 0; i < seam; i++) {
+    const alpha = i / seam;
+    const head = data[i];
+    const tail = data[len - seam + i];
+    const blended = tail * (1 - alpha) + head * alpha;
+    data[i] = blended;
+    data[len - seam + i] = blended * (1 - alpha) + tail * alpha;
+  }
+
+  return encodeWavDataUri(data, sr);
+}
+
+/**
  * Synthesizes an upbeat 7.5-second J-Pop / Slice-of-Life Anime Opening theme loop:
  * - Bright bell/celesta lead melody over warm maj7/7th anime chords (Fmaj7 - G7 - Em7 - Am7)
  * - Bouncy synth bassline and light rhythmic hi-hat pulse
@@ -654,6 +774,8 @@ export class AudioManager {
   private ambientLoop: Howl;
   private worldOstLoop: Howl;
   private fountainLoop: Howl;
+  private breezeLoop: Howl;
+  private rainLoop: Howl;
   private animeMusicLoop: Howl;
   private titleMusicLoop: Howl;
   private animeSparkleSfx: Howl;
@@ -663,6 +785,8 @@ export class AudioManager {
   private florieVoiceCue1: Howl;
   private startedAmbient = false;
   private lastFountainVol = 0;
+  private lastBreezeVol = 0;
+  private lastRainVol = 0;
   private activeVoiceHowl: Howl | null = null;
 
   constructor(initialVolume = 0.65) {
@@ -707,6 +831,16 @@ export class AudioManager {
       src: [synthFountainWaterLoop()],
       loop: true,
       volume: 0.24,
+    });
+    this.breezeLoop = new Howl({
+      src: [synthBreezeLoop()],
+      loop: true,
+      volume: 0,
+    });
+    this.rainLoop = new Howl({
+      src: [synthRainLoop()],
+      loop: true,
+      volume: 0,
     });
     this.animeMusicLoop = new Howl({
       src: ['/assets/audio/anime_intro_ost.mp3', '/assets/audio/anime_intro_music.mp3', synthAnimeOpeningMusicLoop()],
@@ -759,6 +893,12 @@ export class AudioManager {
       if (this.worldOstLoop.playing()) {
         this.worldOstLoop.pause();
       }
+      if (this.breezeLoop.playing()) {
+        this.breezeLoop.pause();
+      }
+      if (this.rainLoop.playing()) {
+        this.rainLoop.pause();
+      }
       if (!this.titleMusicLoop.playing()) {
         this.titleMusicLoop.volume(0);
         this.titleMusicLoop.seek(0);
@@ -787,6 +927,12 @@ export class AudioManager {
       }
       if (this.worldOstLoop.playing()) {
         this.worldOstLoop.pause();
+      }
+      if (this.breezeLoop.playing()) {
+        this.breezeLoop.pause();
+      }
+      if (this.rainLoop.playing()) {
+        this.rainLoop.pause();
       }
       if (!this.animeMusicLoop.playing()) {
         this.animeMusicLoop.volume(0);
@@ -949,6 +1095,14 @@ export class AudioManager {
       if (!this.fountainLoop.playing()) {
         this.fountainLoop.play();
       }
+      if (!this.breezeLoop.playing()) {
+        this.breezeLoop.volume(0);
+        this.breezeLoop.play();
+      }
+      if (!this.rainLoop.playing()) {
+        this.rainLoop.volume(0);
+        this.rainLoop.play();
+      }
     } catch {
       // Autoplay blocked until next interaction
     }
@@ -965,6 +1119,12 @@ export class AudioManager {
       }
       if (this.fountainLoop.playing()) {
         this.fountainLoop.pause();
+      }
+      if (this.breezeLoop.playing()) {
+        this.breezeLoop.pause();
+      }
+      if (this.rainLoop.playing()) {
+        this.rainLoop.pause();
       }
 
       if (!this.customizationMusicLoop.playing()) {
@@ -1024,6 +1184,12 @@ export class AudioManager {
         if (!this.fountainLoop.playing()) {
           this.fountainLoop.play();
         }
+        if (!this.breezeLoop.playing()) {
+          this.breezeLoop.play();
+        }
+        if (!this.rainLoop.playing()) {
+          this.rainLoop.play();
+        }
       } catch {
         // Ignore
       }
@@ -1039,6 +1205,12 @@ export class AudioManager {
     }
     if (this.fountainLoop.playing()) {
       this.fountainLoop.pause();
+    }
+    if (this.breezeLoop.playing()) {
+      this.breezeLoop.pause();
+    }
+    if (this.rainLoop.playing()) {
+      this.rainLoop.pause();
     }
     if (this.animeMusicLoop.playing()) {
       this.animeMusicLoop.pause();
@@ -1061,6 +1233,12 @@ export class AudioManager {
     if (this.startedAmbient && !this.fountainLoop.playing()) {
       this.fountainLoop.play();
     }
+    if (this.startedAmbient && !this.breezeLoop.playing()) {
+      this.breezeLoop.play();
+    }
+    if (this.startedAmbient && !this.rainLoop.playing()) {
+      this.rainLoop.play();
+    }
   }
 
   public updateFountainSpatialAudio(
@@ -1082,6 +1260,29 @@ export class AudioManager {
     if (Math.abs(targetVol - this.lastFountainVol) > 0.008) {
       this.lastFountainVol = targetVol;
       this.fountainLoop.volume(targetVol);
+    }
+  }
+
+  public updateWeatherAudio(
+    rainIntensity: number,
+    windStrength: number,
+    isExterior: boolean
+  ): void {
+    if (!this.startedAmbient) return;
+    const clampedWind = Math.max(0, Math.min(1.6, windStrength));
+    const clampedRain = Math.max(0, Math.min(1, rainIntensity));
+
+    const breezeExterior = 0.045 + clampedWind * 0.095;
+    const targetBreeze = isExterior ? breezeExterior : breezeExterior * 0.14;
+    if (Math.abs(targetBreeze - this.lastBreezeVol) > 0.006) {
+      this.lastBreezeVol = targetBreeze;
+      this.breezeLoop.volume(targetBreeze);
+    }
+
+    const targetRain = clampedRain * (isExterior ? 0.22 : 0.055);
+    if (Math.abs(targetRain - this.lastRainVol) > 0.006) {
+      this.lastRainVol = targetRain;
+      this.rainLoop.volume(targetRain);
     }
   }
 
@@ -1150,6 +1351,8 @@ export class AudioManager {
     this.ambientLoop.unload();
     this.worldOstLoop.unload();
     this.fountainLoop.unload();
+    this.breezeLoop.unload();
+    this.rainLoop.unload();
     this.animeMusicLoop.unload();
     this.titleMusicLoop.unload();
     this.animeSparkleSfx.unload();

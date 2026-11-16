@@ -14,6 +14,10 @@ export class CampusWorld {
   public readonly cameraColliders: THREE.Object3D[] = [];
   public readonly wingLights: Record<string, THREE.PointLight[]> = {};
   private animatedObjects: Array<(elapsed: number, dt: number) => void> = [];
+  private windUniforms = {
+    uWindTime: { value: 0 },
+    uWindStrength: { value: 0.32 },
+  };
   private lightsOn = true;
   private clockTimer = 1.0;
   private lightCullTimer = 0.25;
@@ -36,6 +40,7 @@ export class CampusWorld {
       cameraColliders: this.cameraColliders,
       animatedObjects: this.animatedObjects,
       wingLights: this.wingLights,
+      windUniforms: this.windUniforms,
       callbacks,
     };
 
@@ -67,7 +72,22 @@ export class CampusWorld {
     return this.lightsOn;
   }
 
-  public update(elapsed: number, dt: number, focusPos?: THREE.Vector3): void {
+  public update(
+    elapsed: number,
+    dt: number,
+    focusPos?: THREE.Vector3,
+    windTime?: number,
+    windStrength?: number
+  ): void {
+    if (windTime !== undefined) {
+      this.windUniforms.uWindTime.value = windTime;
+    } else {
+      this.windUniforms.uWindTime.value = elapsed * 1.45;
+    }
+    if (windStrength !== undefined) {
+      this.windUniforms.uWindStrength.value = windStrength;
+    }
+
     for (const door of this.doors) {
       door.update(dt, focusPos);
     }

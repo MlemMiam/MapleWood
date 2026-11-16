@@ -3,14 +3,90 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { buildFlutedColumnGeo } from '../../utils/Geometry';
 import { createSignTexture, createUSFlagTexture } from '../../utils/Materials';
-import type { WorldBuildContext } from '../WorldContext';
+import type { WindUniforms, WorldBuildContext } from '../WorldContext';
 import { createBench } from '../props/Bench';
+
+function applyWindShader(
+  mat: THREE.MeshStandardMaterial,
+  kind: 'canopy' | 'shrub' | 'flower' | 'flag',
+  windUniforms: WindUniforms
+): void {
+  mat.customProgramCacheKey = () => `maplewood-wind-${kind}`;
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uWindTime = windUniforms.uWindTime;
+    shader.uniforms.uWindStrength = windUniforms.uWindStrength;
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <common>',
+      `#include <common>
+uniform float uWindTime;
+uniform float uWindStrength;`
+    );
+
+    let windBlock = '';
+    if (kind === 'canopy') {
+      windBlock = `
+  #ifdef USE_INSTANCING
+    vec3 wSeedPos = instanceMatrix[3].xyz;
+  #else
+    vec3 wSeedPos = modelMatrix[3].xyz;
+  #endif
+  float canopyHeight = smoothstep(2.5, 5.9, transformed.y);
+  float phase = uWindTime * 1.45 + wSeedPos.x * 0.21 + wSeedPos.z * 0.17 + transformed.x * 0.45 + transformed.z * 0.35;
+  float gust = 0.045 + uWindStrength * 0.13;
+  transformed.x += sin(phase) * canopyHeight * gust;
+  transformed.z += cos(phase * 0.87 + 0.9) * canopyHeight * gust * 0.72;
+  transformed.y += sin(phase * 1.9 + transformed.y) * canopyHeight * gust * 0.28;`;
+    } else if (kind === 'shrub') {
+      windBlock = `
+  #ifdef USE_INSTANCING
+    vec3 wSeedPos = instanceMatrix[3].xyz;
+  #else
+    vec3 wSeedPos = modelMatrix[3].xyz;
+  #endif
+  float shrubHeight = clamp((transformed.y + 0.28) * 1.1, 0.0, 1.0);
+  float phase = uWindTime * 1.85 + wSeedPos.x * 0.31 + wSeedPos.z * 0.27 + transformed.x * 0.65;
+  float sway = (0.014 + uWindStrength * 0.042) * shrubHeight;
+  transformed.x += sin(phase) * sway;
+  transformed.z += cos(phase * 0.93 + 0.6) * sway * 0.75;`;
+    } else if (kind === 'flower') {
+      windBlock = `
+  #ifdef USE_INSTANCING
+    vec3 wSeedPos = instanceMatrix[3].xyz;
+  #else
+    vec3 wSeedPos = modelMatrix[3].xyz;
+  #endif
+  float flowerHeight = clamp(transformed.y / 0.075, 0.0, 1.0);
+  float phase = uWindTime * 2.25 + wSeedPos.x * 0.55 + wSeedPos.z * 0.43;
+  float sway = (0.010 + uWindStrength * 0.032) * flowerHeight * flowerHeight;
+  transformed.x += sin(phase) * sway;
+  transformed.z += cos(phase * 0.91 + 0.5) * sway * 0.75;`;
+    } else {
+      windBlock = `
+  float pin = clamp((transformed.x + 1.05) / 2.1, 0.0, 1.0);
+  float fAmp = (0.045 + uWindStrength * 0.145) * pin * pin;
+  float fWave = uWindTime * (3.2 + uWindStrength * 2.4) - pin * 4.4;
+  transformed.z += sin(fWave) * fAmp + sin(fWave * 1.9 + transformed.y * 2.4) * fAmp * 0.32;
+  transformed.y += cos(fWave * 0.95) * fAmp * 0.26;`;
+    }
+
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <begin_vertex>',
+      `#include <begin_vertex>${windBlock}`
+    );
+  };
+}
 
 export function buildCourtyard(ctx: WorldBuildContext): THREE.Group {
   const group = new THREE.Group();
   group.name = 'Courtyard';
 
-  const { physics, mats, interactions, animatedObjects, callbacks } = ctx;
+  const { physics, mats, interactions, animatedObjects, windUniforms, callbacks } = ctx;
+  const canopyMat = mats.foliage.clone();
+  applyWindShader(canopyMat, 'canopy', windUniforms);
+  const shrubMat = mats.foliage.clone();
+  applyWindShader(shrubMat, 'shrub', windUniforms);
+  const stemMat = mats.foliage.clone();
+  applyWindShader(stemMat, 'flower', windUniforms);
 
   // Extended Campus Terrain Ground (340m x 340m at Y = 0)
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(340, 340), mats.grass);
@@ -1025,13 +1101,15 @@ export function buildCourtyard(ctx: WorldBuildContext): THREE.Group {
   poleShaft.castShadow = true;
   const finial = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 10), mats.gold);
   finial.position.y = 10.58;
+  const flagMat = new THREE.MeshStandardMaterial({
+    map: createUSFlagTexture(),
+    side: THREE.DoubleSide,
+    roughness: 0.72,
+  });
+  applyWindShader(flagMat, 'flag', windUniforms);
   const flag = new THREE.Mesh(
-    new THREE.PlaneGeometry(2.1, 1.2, 8, 4),
-    new THREE.MeshStandardMaterial({
-      map: createUSFlagTexture(),
-      side: THREE.DoubleSide,
-      roughness: 0.72,
-    })
+    new THREE.PlaneGeometry(2.1, 1.2, 12, 4),
+    flagMat
   );
   flag.position.set(1.08, 9.6, 0);
   poleGroup.add(poleBase, poleShaft, finial, flag);
@@ -1039,7 +1117,10 @@ export function buildCourtyard(ctx: WorldBuildContext): THREE.Group {
   physics.addStaticBox(5.5, 1.0, 1.5, 0.45, 1.0, 0.45);
 
   animatedObjects.push((elapsed) => {
-    flag.rotation.y = Math.sin(elapsed * 2.1) * 0.14;
+    const w = windUniforms.uWindStrength.value;
+    const freq = 2.0 + w * 2.2;
+    const amp = 0.08 + w * 0.14;
+    flag.rotation.y = Math.sin(elapsed * freq) * amp;
   });
 
   // Repositioned Courtyard Plaza Benches (flush on circular plaza facing fountain, R ≈ 4.98m)
@@ -1282,7 +1363,7 @@ export function buildCourtyard(ctx: WorldBuildContext): THREE.Group {
   ]);
 
   const trunks = new THREE.InstancedMesh(trunkGeo, mats.bark, treePositions.length);
-  const canopies = new THREE.InstancedMesh(canopyGeo, mats.foliage, treePositions.length);
+  const canopies = new THREE.InstancedMesh(canopyGeo, canopyMat, treePositions.length);
   trunks.castShadow = true;
   canopies.castShadow = true;
   canopies.receiveShadow = true;
@@ -1342,7 +1423,7 @@ export function buildCourtyard(ctx: WorldBuildContext): THREE.Group {
     [-20.8, 0, 23.5],
     [20.8, 0, 23.5],
   ];
-  const shrubs = new THREE.InstancedMesh(shrubGeo, mats.foliage, shrubSpots.length);
+  const shrubs = new THREE.InstancedMesh(shrubGeo, shrubMat, shrubSpots.length);
   shrubs.castShadow = true;
   shrubs.receiveShadow = true;
   shrubSpots.forEach(([sx, sy, sz], i) => {
@@ -1435,7 +1516,7 @@ export function buildCourtyard(ctx: WorldBuildContext): THREE.Group {
     planterBox.receiveShadow = true;
     const coping = new THREE.Mesh(new THREE.BoxGeometry(3.96, 0.08, 1.66), mats.concreteDark);
     coping.position.set(px, 0.52, pz);
-    const hedge = new THREE.Mesh(hedgeGeo, mats.foliage);
+    const hedge = new THREE.Mesh(hedgeGeo, shrubMat);
     hedge.position.set(px, 0.68, pz);
     hedge.castShadow = true;
     group.add(planterBox, coping, hedge);
@@ -1489,7 +1570,7 @@ export function buildCourtyard(ctx: WorldBuildContext): THREE.Group {
 
   const bpBoxes = new THREE.InstancedMesh(bpBoxGeo, mats.limestone, benchPlanterSpots.length);
   const bpSoils = new THREE.InstancedMesh(bpSoilGeo, mats.woodDark, benchPlanterSpots.length);
-  const bpMounds = new THREE.InstancedMesh(bpMoundGeo, mats.foliage, benchPlanterSpots.length);
+  const bpMounds = new THREE.InstancedMesh(bpMoundGeo, shrubMat, benchPlanterSpots.length);
   bpBoxes.castShadow = true;
   bpBoxes.receiveShadow = true;
   bpMounds.castShadow = true;
@@ -1555,10 +1636,12 @@ export function buildCourtyard(ctx: WorldBuildContext): THREE.Group {
 
   const petalMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.45, metalness: 0.02 });
   const centerMat = new THREE.MeshStandardMaterial({ color: 0xfde047, roughness: 0.4, metalness: 0.04 });
+  applyWindShader(petalMat, 'flower', windUniforms);
+  applyWindShader(centerMat, 'flower', windUniforms);
 
   const blossomPetals = new THREE.InstancedMesh(blossomPetalGeo, petalMat, flowerCoords.length);
   const blossomCenters = new THREE.InstancedMesh(blossomCenterGeo, centerMat, flowerCoords.length);
-  const blossomStems = new THREE.InstancedMesh(blossomStemGeo, mats.foliage, flowerCoords.length);
+  const blossomStems = new THREE.InstancedMesh(blossomStemGeo, stemMat, flowerCoords.length);
   const flowerPalette = [0xf43f5e, 0xf59e0b, 0xfbbf24, 0xf472b6, 0x8b5cf6, 0xfb7185, 0xfff7ed];
 
   flowerCoords.forEach((fc, i) => {
