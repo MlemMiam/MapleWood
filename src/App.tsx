@@ -143,6 +143,7 @@ export default function App() {
     side: 'east' | 'west';
     currentFloor: number;
     onSelectFloor: (floorIndex: number) => void;
+    onCancel?: () => void;
   } | null>(null);
   const [, setVrmFileName] = useState<string | null>('Florie.vrm');
   const [introTime, setIntroTime] = useState(0);
@@ -496,9 +497,9 @@ export default function App() {
               player.sitAt(x, y, z, yaw);
             }
           },
-          onOpenElevatorMenu: (side, currentFloor, onSelectFloor) => {
+          onOpenElevatorMenu: (side, currentFloor, onSelectFloor, onCancel) => {
             engineRefs.current.input?.exitPointerLock();
-            setElevatorModal({ side, currentFloor, onSelectFloor });
+            setElevatorModal({ side, currentFloor, onSelectFloor, onCancel });
           },
           onElevatorArrive: () => {
             audio.playInteractDing();
@@ -1614,7 +1615,11 @@ timer.update();
             setElevatorModal(null);
             cb(floorIndex);
           }}
-          onClose={() => setElevatorModal(null)}
+          onClose={() => {
+            const onCancel = elevatorModal.onCancel;
+            setElevatorModal(null);
+            onCancel?.();
+          }}
         />
       )}
 

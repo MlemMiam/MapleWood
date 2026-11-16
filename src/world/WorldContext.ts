@@ -25,7 +25,8 @@ export interface WorldCallbacks {
   onOpenElevatorMenu?: (
     side: 'east' | 'west',
     currentFloor: number,
-    onSelectFloor: (floorIndex: number) => void
+    onSelectFloor: (floorIndex: number) => void,
+    onCancel?: () => void
   ) => void;
   onElevatorArrive?: () => void;
 }

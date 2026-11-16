@@ -39,6 +39,25 @@ export class PhysicsWorld {
     return this.world.createCollider(colliderDesc, body);
   }
 
+  public addStaticBodyBox(
+    cx: number,
+    cy: number,
+    cz: number,
+    hx: number,
+    hy: number,
+    hz: number
+  ): { body: RAPIER.RigidBody; collider: RAPIER.Collider } {
+    const bodyDesc = RAPIER.RigidBodyDesc.fixed().setTranslation(cx, cy, cz);
+    const body = this.world.createRigidBody(bodyDesc);
+    const colliderDesc = RAPIER.ColliderDesc.cuboid(
+      Math.max(0.02, hx),
+      Math.max(0.02, hy),
+      Math.max(0.02, hz)
+    );
+    const collider = this.world.createCollider(colliderDesc, body);
+    return { body, collider };
+  }
+
   public addStaticTrimesh(vertices: Float32Array, indices: Uint32Array): RAPIER.Collider {
     const bodyDesc = RAPIER.RigidBodyDesc.fixed();
     const body = this.world.createRigidBody(bodyDesc);

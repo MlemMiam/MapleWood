@@ -59,6 +59,13 @@ export class ElevatorCabin {
   private cabinLeafL!: THREE.Mesh;
   private cabinLeafR!: THREE.Mesh;
   private floorCollider: { body: RAPIER.RigidBody; collider: RAPIER.Collider };
+  private cabinWallColliders: Array<{
+    body: RAPIER.RigidBody;
+    x: number;
+    yOffset: number;
+    z: number;
+  }> = [];
+  private panelWorldPos: THREE.Vector3;
   private indicatorCanvas!: HTMLCanvasElement;
   private indicatorTexture!: THREE.CanvasTexture;
   private indicatorMesh!: THREE.Mesh;
@@ -69,6 +76,7 @@ export class ElevatorCabin {
   // Player boarding & auto-menu state
   private playerInsideCabin = false;
   private menuTriggeredThisRide = false;
+  private justArrived = false;
 
   // NPC autonomous ride queue
   private activeNpcPassenger: {
@@ -245,17 +253,19 @@ export class ElevatorCabin {
     panelPlate.position.set(halfW - 0.24, 1.25, halfD - 0.105);
     this.cabinGroup.add(panelPlate);
 
+    this.panelWorldPos = new THREE.Vector3(
+      this.shaftX + halfW - 0.24,
+      this.currentY + 1.25,
+      this.shaftZ + halfD - 0.12
+    );
+
     // Manual Interior Control Panel Interaction (backup in case player wants to reopen menu)
     interactions.register({
       id: `elev-panel-${side}`,
       label: "E — Choisir l'étage de destination",
       type: 'elevator',
       targetObject: panelPlate,
-      worldPosition: new THREE.Vector3(
-        this.shaftX + halfW - 0.24,
-        this.currentY + 1.25,
-        this.shaftZ + halfD - 0.12
-      ),
+      worldPosition: this.panelWorldPos,
       maxDistance: 3.0,
       onInteract: () => this.openDestinationMenu(callbacks),
     });
@@ -271,8 +281,8 @@ export class ElevatorCabin {
       this.cabinGroup.add(btnMesh);
     }
 
-    // Kinematic Rapier Floor Collider (spans seamlessly from back glass to 14cm past doorway)
-    this.floorCollider = physics.addKinematicDoorBox(
+    // Fixed Rapier Floor Collider (KinematicCharacterController requires a fixed body for seamless walking across floor thresholds)
+    this.floorCollider = physics.addStaticBodyBox(
       this.shaftX,
       this.currentY - 0.05,
       this.floorCenterZ,
@@ -280,6 +290,36 @@ export class ElevatorCabin {
       0.05,
       this.floorHalfD
     );
+
+    // Fixed Rapier Cabin Wall Colliders (back, left, right glass + front doorway side jambs leaving a 1.80m clear doorway)
+    const wallSpecs = [
+      // Back glass wall
+      { x: this.shaftX, yOffset: this.cabinH * 0.5, z: this.shaftZ - halfD + 0.02, hx: halfW, hy: this.cabinH * 0.5, hz: 0.04 },
+      // Left glass wall
+      { x: this.shaftX - halfW + 0.02, yOffset: this.cabinH * 0.5, z: this.shaftZ, hx: 0.04, hy: this.cabinH * 0.5, hz: halfD },
+      // Right glass wall
+      { x: this.shaftX + halfW - 0.02, yOffset: this.cabinH * 0.5, z: this.shaftZ, hx: 0.04, hy: this.cabinH * 0.5, hz: halfD },
+      // Front doorway left jamb (inner edge at shaftX - 0.90)
+      { x: this.shaftX - halfW + 0.175, yOffset: this.cabinH * 0.5, z: this.doorZ - 0.03, hx: 0.175, hy: this.cabinH * 0.5, hz: 0.04 },
+      // Front doorway right jamb (inner edge at shaftX + 0.90)
+      { x: this.shaftX + halfW - 0.175, yOffset: this.cabinH * 0.5, z: this.doorZ - 0.03, hx: 0.175, hy: this.cabinH * 0.5, hz: 0.04 },
+    ];
+    for (const w of wallSpecs) {
+      const box = physics.addStaticBodyBox(
+        w.x,
+        this.currentY + w.yOffset,
+        w.z,
+        w.hx,
+        w.hy,
+        w.hz
+      );
+      this.cabinWallColliders.push({
+        body: box.body,
+        x: w.x,
+        yOffset: w.yOffset,
+        z: w.z,
+      });
+    }
 
     // 2. Build Floor Doors for each of the 4 floors at shaft entrance (Z = -26.19)
     for (let f = 0; f < ELEVATOR_FLOORS.length; f++) {
@@ -384,10 +424,33 @@ export class ElevatorCabin {
     this.indicatorTexture.needsUpdate = true;
   }
 
+  private syncCabinPhysics(y: number): void {
+    this.floorCollider.body.setTranslation(
+      { x: this.shaftX, y: y - 0.05, z: this.floorCenterZ },
+      true
+    );
+    for (const w of this.cabinWallColliders) {
+      w.body.setTranslation({ x: w.x, y: y + w.yOffset, z: w.z }, true);
+    }
+    this.panelWorldPos.y = y + 1.25;
+  }
+
   public openDestinationMenu(callbacks?: WorldBuildContext['callbacks']): void {
-    callbacks?.onOpenElevatorMenu?.(this.side, this.currentFloor, (chosenFloor) => {
-      this.requestFloor(chosenFloor, callbacks);
-    });
+    callbacks?.onOpenElevatorMenu?.(
+      this.side,
+      this.currentFloor,
+      (chosenFloor) => {
+        this.requestFloor(chosenFloor, callbacks);
+      },
+      () => {
+        // Player closed/cancelled menu without travelling: reopen doors so they can walk back out freely
+        if (this.state === 'idle' || this.state === 'closing') {
+          this.justArrived = true;
+          this.state = 'opening';
+          callbacks?.onDoorToggle(true);
+        }
+      }
+    );
   }
 
   public handleExteriorCall(floorIndex: number, callbacks?: WorldBuildContext['callbacks']): void {
@@ -417,14 +480,18 @@ export class ElevatorCabin {
 
   public requestFloor(floorIndex: number, callbacks?: WorldBuildContext['callbacks']): void {
     if (this.currentFloor === floorIndex) {
-      // Already at requested floor: reopen doors
+      // Already at requested floor: reopen doors and mark ready for exit
+      this.justArrived = true;
       if (this.state === 'idle' || this.state === 'closing') {
         this.state = 'opening';
         callbacks?.onDoorToggle(true);
+      } else if (this.state === 'open') {
+        this.waitOpenTimer = Math.max(this.waitOpenTimer, 5.0);
       }
       return;
     }
     // Set target and start moving immediately
+    this.justArrived = false;
     this.targetFloor = floorIndex;
     this.startY = this.currentY;
     this.targetY = ELEVATOR_FLOORS[floorIndex].y;
@@ -479,53 +546,59 @@ export class ElevatorCabin {
       const dz = player.position.z - this.doorZ;
       const dy = Math.abs(player.position.y - this.currentY);
 
-      // Player near exterior doorway on current elevator floor (strictly outside the doorway)
-      const isNearDoorway = Math.abs(dx) < 1.7 && dz > 0.05 && dz < 2.6 && dy < 1.0;
+      // Player near exterior doorway on current elevator floor (outside the doorway)
+      const isNearOutside = Math.abs(dx) < 1.7 && dz > 0.02 && dz < 2.6 && dy < 1.2;
 
-      // Player inside cabin (spans from 5cm past doorway threshold to back glass)
+      // Player crossing the doorway threshold (keep doors safely open so they aren't clipped!)
+      const inDoorwayZone = Math.abs(dx) < 1.1 && dz >= -0.45 && dz <= 0.45 && dy < 1.2;
+
+      // Player cleanly inside cabin (past threshold radius to back glass)
       const inCabin =
-        Math.abs(dx) < this.cabinW * 0.5 - 0.05 &&
-        player.position.z <= this.doorZ + 0.05 &&
+        Math.abs(dx) < this.cabinW * 0.5 &&
+        player.position.z < this.doorZ - 0.30 &&
         player.position.z >= this.shaftZ - this.cabinD * 0.5 - 0.1 &&
         dy < 2.5;
 
-      // Automatic Door Opening when approaching elevator from outside
-      if (isNearDoorway && !inCabin && (this.state === 'idle' || this.state === 'closing')) {
-        this.state = 'opening';
-        callbacks?.onDoorToggle(true);
-      }
-      if (isNearDoorway && this.state === 'open') {
-        // Keep doors safely open while player is approaching outside
-        this.waitOpenTimer = Math.max(this.waitOpenTimer, 4.0);
+      // Player standing right inside a closed door wanting to walk out
+      const approachingExitFromInside =
+        inCabin && dz > -1.10 && dy < 1.2 && (this.menuTriggeredThisRide || this.justArrived);
+
+      // Automatic Door Opening when approaching doorway from outside, crossing doorway, or exiting from inside
+      if (
+        this.state !== 'moving' &&
+        (isNearOutside || inDoorwayZone || approachingExitFromInside)
+      ) {
+        if (this.state === 'idle' || this.state === 'closing') {
+          this.state = 'opening';
+          callbacks?.onDoorToggle(true);
+        } else if (this.state === 'open') {
+          // Hold doors open while player is approaching or standing in the doorway
+          this.waitOpenTimer = Math.max(this.waitOpenTimer, 3.0);
+        }
       }
 
       // Track passenger boarding
       if (inCabin) {
         if (!this.playerInsideCabin) {
           this.playerInsideCabin = true;
-          // Step in: start closing doors smoothly after 1.5s delay
-          if (this.state === 'open') {
-            this.waitOpenTimer = Math.min(this.waitOpenTimer, 1.5);
+          // Newly stepped in: close doors smoothly after 1.3s to pick destination
+          if (this.state === 'open' && !this.justArrived) {
+            this.waitOpenTimer = Math.min(this.waitOpenTimer, 1.3);
           }
         }
       } else {
         if (this.playerInsideCabin) {
           this.playerInsideCabin = false;
           this.menuTriggeredThisRide = false;
-          if (player) {
-            player.isRidingElevator = false;
-          }
+          this.justArrived = false;
+          player.isRidingElevator = false;
         }
       }
 
-      // Root player to moving cabin
-      if (this.playerInsideCabin) {
-        if (this.state === 'moving' || this.state === 'closing') {
-          player.isRidingElevator = true;
-          player.elevatorY = this.currentY;
-        } else if (this.state === 'open' || this.state === 'opening') {
-          player.isRidingElevator = false;
-        }
+      // Root player vertically to cabin strictly while cabin is moving
+      if (this.playerInsideCabin && this.state === 'moving') {
+        player.isRidingElevator = true;
+        player.elevatorY = this.currentY;
       } else if (player.isRidingElevator) {
         player.isRidingElevator = false;
       }
@@ -546,8 +619,8 @@ export class ElevatorCabin {
           } else {
             this.state = 'idle';
             // Doors are now fully closed!
-            // If player is inside cabin, automatically open destination menu on all floors!
-            if (this.playerInsideCabin && !this.menuTriggeredThisRide) {
+            // If player just boarded, automatically open destination menu
+            if (this.playerInsideCabin && !this.menuTriggeredThisRide && !this.justArrived) {
               this.menuTriggeredThisRide = true;
               this.openDestinationMenu(callbacks);
             }
@@ -572,12 +645,8 @@ export class ElevatorCabin {
           this.updateIndicatorDisplay();
         }
 
-        // Update Kinematic Rapier floor collider translation
-        this.floorCollider.body.setNextKinematicTranslation({
-          x: this.shaftX,
-          y: this.currentY - 0.05,
-          z: this.floorCenterZ,
-        });
+        // Update Fixed Rapier cabin floor & wall colliders
+        this.syncCabinPhysics(this.currentY);
 
         if (player && this.playerInsideCabin) {
           player.isRidingElevator = true;
@@ -588,7 +657,9 @@ export class ElevatorCabin {
           this.currentY = this.targetY;
           this.currentFloor = this.targetFloor;
           this.cabinGroup.position.y = this.currentY;
+          this.syncCabinPhysics(this.currentY);
           this.state = 'opening';
+          this.justArrived = true;
           this.updateIndicatorDisplay();
           this.menuTriggeredThisRide = false; // Reset for next ride
           if (player) {
@@ -606,7 +677,7 @@ export class ElevatorCabin {
           this.doorOpenFactor = 1;
           this.setDoorsOpen(1);
           this.state = 'open';
-          this.waitOpenTimer = 5.0; // Hold open for 5.0s
+          this.waitOpenTimer = 6.0; // Hold open for 6.0s
         }
         break;
       }
@@ -625,7 +696,12 @@ export class ElevatorCabin {
       case 'idle': {
         if (this.queuedFloors.length > 0) {
           this.processNextQueuedFloor(callbacks);
-        } else if (this.playerInsideCabin && !this.menuTriggeredThisRide && this.doorOpenFactor <= 0.01) {
+        } else if (
+          this.playerInsideCabin &&
+          !this.menuTriggeredThisRide &&
+          !this.justArrived &&
+          this.doorOpenFactor <= 0.01
+        ) {
           // In case doors were already closed when player was inside
           this.menuTriggeredThisRide = true;
           this.openDestinationMenu(callbacks);
