@@ -8,7 +8,37 @@ export default defineConfig(() => {
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(import.meta.dirname, '.'),
+      },
+    },
+    build: {
+      rolldownOptions: {
+        output: {
+          codeSplitting: {
+            groups: [
+              {
+                name: 'three',
+                test: /node_modules[\\/](three|@pixiv[\\/]three-vrm|three-stdlib|three-mesh-bvh)/,
+                priority: 30,
+              },
+              {
+                name: 'physics',
+                test: /node_modules[\\/]@dimforge/,
+                priority: 20,
+              },
+              {
+                name: 'react',
+                test: /node_modules[\\/](react|react-dom|scheduler)/,
+                priority: 10,
+              },
+              {
+                name: 'vendor',
+                test: /node_modules/,
+                priority: 1,
+              },
+            ],
+          },
+        },
       },
     },
     server: {

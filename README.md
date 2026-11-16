@@ -11,7 +11,7 @@ Jeu d'exploration et de narration 3D à la troisième personne dans un lycée am
 
 ## Prérequis
 
-- **Node.js** >= 18
+- **Node.js** `^20.19.0` ou `>=22.12.0` (exigé par Vite 8)
 - **npm** >= 9
 - Navigateur compatible WebGL2
 
@@ -32,6 +32,12 @@ Ouvrez ensuite `http://localhost:3000`.
 | `npm run build` | Compile le bundle de production dans `dist/` |
 | `npm run preview` | Prévisualise le build de production |
 | `npm run lint` | Vérifie le typage TypeScript strict (`tsc --noEmit`) |
+| `npm test` | Exécute les tests unitaires (`node:test` via `tsx`) |
+| `npm run clean` | Supprime `dist/` et `server.js` |
+
+### Configuration
+
+Copiez `.env.example` vers `.env` et renseignez éventuellement `GEMINI_API_KEY`. La clé est utilisée par les endpoints serveur `/api/intro/*` (génération de la vidéo et de la voix d'introduction) ; sans clé, ces routes répondent `400` et le reste du jeu fonctionne normalement.
 
 ## Contrôles
 
@@ -49,11 +55,11 @@ Ouvrez ensuite `http://localhost:3000`.
 
 ## Dépendances principales
 
-- **`three` & `@types/three`** : Moteur de rendu 3D WebGL (PBR, ombres PCFSoft, `RoomEnvironment`, `Sky`, `UnrealBloomPass`, `GLTFLoader`).
-- **`@pixiv/three-vrm`** : Chargement, squelette humanoïde normalisé, expressions et look-at des personnages VRM.
-- **`@dimforge/rapier3d-compat`** : Moteur physique WASM (`KinematicCharacterController`, collisions de portes cinématiques).
-- **`howler` & `@types/howler`** : Gestion unifiée du volume global et lecture des ambiances/effets.
-- **`react`, `react-dom`, `lucide-react`, `tailwindcss`** : Interface utilisateur, personnalisation, menus et overlays de cinématiques.
+- **`three` & `@types/three`** : moteur de rendu 3D WebGL (PBR, ombres PCFSoft, `RoomEnvironment`, `Sky`, `GLTFLoader`).
+- **`@pixiv/three-vrm`** : chargement, squelette humanoïde normalisé, expressions et look-at des personnages VRM.
+- **`@dimforge/rapier3d-compat`** : moteur physique WASM (`KinematicCharacterController`, collisions de portes cinématiques).
+- **`howler` & `@types/howler`** : gestion unifiée du volume global et lecture des ambiances/effets.
+- **`react`, `react-dom`, `lucide-react`, `tailwindcss`** : interface utilisateur, personnalisation, menus et overlays de cinématiques.
 
 ## Structure du projet
 
@@ -61,14 +67,14 @@ Ouvrez ensuite `http://localhost:3000`.
 src/
 ├── engine/         # Renderer, Physics (Rapier), CameraController, InputManager, AudioManager, PostCustomCutscene
 ├── world/
-│   ├── buildings/  # MainBuilding, AdminOffice, ScienceWing, Gymnasium, Cafeteria, Library
-│   ├── exterior/   # Courtyard, ExteriorDetails, Fencing, ParkingLot, SportsField
+│   ├── buildings/  # MainBuilding, Gymnasium, Library, Cafeteria
+│   ├── exterior/   # Courtyard, Fencing
 │   └── props/      # Door, Locker, Desk, Chair, Whiteboard, Bookshelf, VendingMachine, Bench
 ├── character/      # Player, FlorieVRM, NPC, StylizedWalk, BlenderSitAnim, BlenderCutsceneAnim, Hair/Clothes
 ├── interaction/    # InteractionSystem, Interactable, QuestLogic, DialogueUI
 ├── ui/             # LoadingScreen, TitleOverlay, HUD, Minimap, CampusMapModal, CutsceneGalleryModal, Customization
 ├── data/           # rooms.json, npcs.json
-└── utils/          # Materials, Geometry, CampusLayout, ModelLoader, Debug, i18n
+└── utils/          # Materials, Geometry, CampusLayout, Debug, i18n
 ```
 
 ## Ajouter une pièce ou un bâtiment
@@ -79,4 +85,18 @@ src/
 
 ## Importer un modèle GLTF / GLB
 
-Déposez vos fichiers `.glb` dans `public/assets/models/` et chargez-les via `loadOptionalGltfModel('/assets/models/mon_modele.glb', fallbackBuilder)` depuis `src/utils/ModelLoader.ts`.
+Déposez vos fichiers `.glb` dans `public/assets/models/`, puis chargez-les avec le `GLTFLoader` de Three.js (`three/addons/loaders/GLTFLoader.js`) ou avec le loader VRM existant dans `src/character/`.
+
+## Tests et intégration continue
+
+Les tests unitaires couvrent la logique de quêtes et la validation de l'architecture du campus :
+
+```bash
+npm test
+```
+
+Le workflow GitHub Actions (`.github/workflows/ci.yml`) exécute le typage, les tests et le build de production à chaque push sur `main` et à chaque pull request.
+
+## Licence
+
+MIT — voir [LICENSE](LICENSE).

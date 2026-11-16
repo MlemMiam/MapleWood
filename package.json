@@ -1,15 +1,21 @@
 {
-  "name": "react-example",
+  "name": "maplewood-high-school-3d",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "One More Line — jeu d'exploration et de narration 3D à la troisième personne dans un lycée américain.",
+  "license": "MIT",
   "type": "module",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
   "scripts": {
     "dev": "tsx server.ts",
     "start": "node server.ts",
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.21.0",

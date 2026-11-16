@@ -165,8 +165,9 @@ async function startServer() {
     '/assets/player/FemPlayer.vrm',
     '/assets/player/MalePlayer.vrm',
   ];
+  const publicRoot = path.resolve(__dirname, 'public');
 
-  app.get('/assets/{*vrmPath}', async (req, res, next) => {
+  app.get(/^\/assets\/.*\.vrm$/i, async (req, res, next) => {
     if (!req.path.toLowerCase().endsWith('.vrm')) {
       next();
       return;
@@ -175,7 +176,13 @@ async function startServer() {
       (p) => p.toLowerCase() === req.path.toLowerCase()
     );
     const relPath = matchedRel || req.path;
-    const localFile = path.join(__dirname, 'public', relPath);
+    const localFile = path.resolve(publicRoot, `.${path.posix.normalize(relPath)}`);
+
+    // Never let a crafted asset path escape the public directory.
+    if (localFile !== publicRoot && !localFile.startsWith(`${publicRoot}${path.sep}`)) {
+      res.status(400).json({ error: 'Chemin de modèle invalide.' });
+      return;
+    }
 
     try {
       if (fs.existsSync(localFile) && fs.statSync(localFile).size > 1024) {
@@ -197,7 +204,7 @@ async function startServer() {
     } catch (err) {
       console.warn(`Error serving VRM ${relPath}:`, err);
     }
-    next();
+    res.status(404).json({ error: `Modèle VRM introuvable : ${path.basename(relPath)}` });
   });
 
   if (process.env.NODE_ENV !== 'production') {

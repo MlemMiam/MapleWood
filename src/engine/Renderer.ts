@@ -87,6 +87,7 @@ export class GameRenderer {
   private container: HTMLElement;
   private resizeObserver: ResizeObserver;
   private envRT: THREE.WebGLRenderTarget;
+  private contextLost = false;
   private sunTime = 0.25; // Morning sunlight (~9:30 AM)
   private weather: WeatherType = 'sunny';
   private rainIntensity = 0;
@@ -120,6 +121,11 @@ export class GameRenderer {
     this.renderer.domElement.style.height = '100%';
     this.renderer.domElement.setAttribute('data-testid', 'campus-canvas');
     container.appendChild(this.renderer.domElement);
+    this.renderer.domElement.addEventListener('webglcontextlost', this.handleContextLost);
+    this.renderer.domElement.addEventListener(
+      'webglcontextrestored',
+      this.handleContextRestored
+    );
 
     this.scene = new THREE.Scene();
     const horizonColor = new THREE.Color(0x9bc4eb);
@@ -625,8 +631,31 @@ export class GameRenderer {
     this.renderer.setSize(width, height);
   };
 
+  private handleContextLost = (event: Event): void => {
+    event.preventDefault();
+    this.contextLost = true;
+    window.dispatchEvent(new CustomEvent('maplewood:webgl-context-lost'));
+  };
+
+  private handleContextRestored = (): void => {
+    this.contextLost = false;
+    window.dispatchEvent(new CustomEvent('maplewood:webgl-context-restored'));
+  };
+
+  public isContextLost(): boolean {
+    return this.contextLost;
+  }
+
   public dispose(): void {
     window.removeEventListener('resize', this.handleResize);
+    this.renderer.domElement.removeEventListener(
+      'webglcontextlost',
+      this.handleContextLost
+    );
+    this.renderer.domElement.removeEventListener(
+      'webglcontextrestored',
+      this.handleContextRestored
+    );
     this.resizeObserver.disconnect();
     this.envRT.dispose();
     this.renderer.dispose();

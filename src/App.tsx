@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { GameRenderer, type TimePhase, type WeatherType } from './engine/Renderer';
 import { PhysicsWorld } from './engine/Physics';
@@ -38,14 +38,10 @@ import { TitleOverlay } from './ui/TitleOverlay';
 import { HUD } from './ui/HUD';
 import { type MinimapNpcMarker } from './ui/Minimap';
 import { type ActiveModalContent, DialogueUI } from './interaction/DialogueUI';
-import { CampusMapModal } from './ui/CampusMapModal';
-import { SettingsMenu } from './ui/SettingsMenu';
+import type { CutsceneGalleryId } from './ui/CutsceneGalleryModal';
 import { IntroCutsceneOverlay } from './ui/IntroCutsceneOverlay';
-import {
-  CutsceneGalleryModal,
-  type CutsceneGalleryId,
-} from './ui/CutsceneGalleryModal';
 import { PostCustomCutsceneOverlay } from './ui/PostCustomCutsceneOverlay';
+import { SettingsMenu } from './ui/SettingsMenu';
 import {
   POST_CUSTOM_CUTSCENE_DURATION,
   PostCustomCutsceneDirector,
@@ -55,7 +51,7 @@ import {
   IntroPresentationAndChoiceModal,
   type PlayerChoiceSelection,
 } from './ui/IntroPresentationAndChoiceModal';
-import { PlayerCustomizationModal } from './ui/PlayerCustomizationModal';
+import { FatalErrorScreen } from './ui/FatalErrorScreen';
 import {
   DEFAULT_PLAYER_HAIR_SELECTION,
   type PlayerGender,
@@ -68,6 +64,35 @@ import {
   type PlayerClothesSelection,
   type PlayerDisplayOptions,
 } from './character/PlayerClothesSystem';
+
+// Heavy overlays are loaded on demand so the initial 3D bundle stays smaller.
+const PlayerCustomizationModal = lazy(() =>
+  import('./ui/PlayerCustomizationModal').then((module) => ({
+    default: module.PlayerCustomizationModal,
+  }))
+);
+const CutsceneGalleryModal = lazy(() =>
+  import('./ui/CutsceneGalleryModal').then((module) => ({
+    default: module.CutsceneGalleryModal,
+  }))
+);
+const CampusMapModal = lazy(() =>
+  import('./ui/CampusMapModal').then((module) => ({
+    default: module.CampusMapModal,
+  }))
+);
+
+function ModalLoadingOverlay() {
+  return (
+    <div
+      className="fixed inset-0 z-40 flex items-center justify-center bg-black/45 text-sm font-medium text-white/80 backdrop-blur-sm"
+      role="status"
+      aria-live="polite"
+    >
+      Chargement…
+    </div>
+  );
+}
 
 type GamePhase =
   | 'loading'
@@ -102,6 +127,7 @@ export default function App() {
   );
   const [settings, setSettings] = useState<GameSettings>(() => loadSettings());
   const [muted, setMuted] = useState(false);
+  const [fatalError, setFatalError] = useState<string | null>(null);
 
   // Throttled HUD state
   const [zoneName, setZoneName] = useState('Cour Centrale');
@@ -281,6 +307,17 @@ export default function App() {
 
     let disposed = false;
     let frameId = 0;
+
+    const handleContextLost = () => {
+      setFatalError(
+        'Le contexte graphique WebGL a été perdu. Rechargez le jeu pour reprendre la partie.'
+      );
+    };
+    const handleContextRestored = () => {
+      setFatalError(null);
+    };
+    window.addEventListener('maplewood:webgl-context-lost', handleContextLost);
+    window.addEventListener('maplewood:webgl-context-restored', handleContextRestored);
 
     const boot = async () => {
       setLoadProgress(20);
@@ -487,6 +524,10 @@ export default function App() {
 
       const tick = () => {
         if (disposed) return;
+        if (gameRenderer.isContextLost()) {
+          frameId = requestAnimationFrame(tick);
+          return;
+        }
         debug.beginFrame();
 
         const rawDt = clock.getDelta();
@@ -906,12 +947,28 @@ export default function App() {
     };
 
     let cleanupInner: (() => void) | undefined;
-    boot().then((cleanup) => {
-      cleanupInner = cleanup;
-    });
+    boot()
+      .then((cleanup) => {
+        cleanupInner = cleanup;
+      })
+      .catch((error: unknown) => {
+        console.error('Impossible de démarrer la scène 3D', error);
+        if (!disposed) {
+          setFatalError(
+            error instanceof Error
+              ? error.message
+              : 'Erreur inconnue lors du chargement de la scène 3D.'
+          );
+        }
+      });
 
     return () => {
       disposed = true;
+      window.removeEventListener('maplewood:webgl-context-lost', handleContextLost);
+      window.removeEventListener(
+        'maplewood:webgl-context-restored',
+        handleContextRestored
+      );
       cancelAnimationFrame(frameId);
       clearTimeout(frameId);
       cleanupInner?.();
@@ -1309,6 +1366,14 @@ export default function App() {
         }}
       />
 
+      {fatalError && (
+        <FatalErrorScreen
+          title="Le rendu 3D s'est arrêté"
+          message="Le navigateur a interrompu le rendu ou une erreur est survenue au démarrage. Rechargez le jeu pour reprendre."
+          details={fatalError}
+        />
+      )}
+
       {/* Isolated WebGL Viewport Container */}
       <div id="canvas-container" ref={mountRef} className="fixed inset-0 z-0" />
 
@@ -1358,26 +1423,28 @@ export default function App() {
       )}
 
       {(phase === 'genderChoice' || phase === 'customization') && (
-        <PlayerCustomizationModal
-          step={phase}
-          initialGender={playerGender}
-          initialSelection={hairSelection}
-          initialClothesSelection={clothesSelection}
-          initialDisplayOptions={displayOptions}
-          onSelectGender={handleSelectGenderChoice}
-          onBackToGender={() => updatePhase('genderChoice')}
-          onConfirmCustomization={handleConfirmCustomization}
-          onPlayHover={() => engineRefs.current.audio?.playUiHover()}
-          onPlayClick={() => engineRefs.current.audio?.playUiClick()}
-          onPlayConfirm={() => engineRefs.current.audio?.playUiConfirm()}
-          onPlayClothEquip={() => engineRefs.current.audio?.playClothEquipSfx()}
-          onPlayAccessoryEquip={() =>
-            engineRefs.current.audio?.playAccessoryEquipSfx()
-          }
-          onPlayColorSwatch={() => engineRefs.current.audio?.playColorSwatchSfx()}
-          onStartMusic={() => engineRefs.current.audio?.startCustomizationMusic()}
-          onStopMusic={() => engineRefs.current.audio?.stopCustomizationMusic()}
-        />
+        <Suspense fallback={<ModalLoadingOverlay />}>
+          <PlayerCustomizationModal
+            step={phase}
+            initialGender={playerGender}
+            initialSelection={hairSelection}
+            initialClothesSelection={clothesSelection}
+            initialDisplayOptions={displayOptions}
+            onSelectGender={handleSelectGenderChoice}
+            onBackToGender={() => updatePhase('genderChoice')}
+            onConfirmCustomization={handleConfirmCustomization}
+            onPlayHover={() => engineRefs.current.audio?.playUiHover()}
+            onPlayClick={() => engineRefs.current.audio?.playUiClick()}
+            onPlayConfirm={() => engineRefs.current.audio?.playUiConfirm()}
+            onPlayClothEquip={() => engineRefs.current.audio?.playClothEquipSfx()}
+            onPlayAccessoryEquip={() =>
+              engineRefs.current.audio?.playAccessoryEquipSfx()
+            }
+            onPlayColorSwatch={() => engineRefs.current.audio?.playColorSwatchSfx()}
+            onStartMusic={() => engineRefs.current.audio?.startCustomizationMusic()}
+            onStopMusic={() => engineRefs.current.audio?.stopCustomizationMusic()}
+          />
+        </Suspense>
       )}
 
       {phase === 'playing' && (
@@ -1405,12 +1472,14 @@ export default function App() {
       )}
 
       {showCutsceneGallery && phase === 'playing' && (
-        <CutsceneGalleryModal
-          onSelectCutscene={handlePlayCutsceneFromGallery}
-          onClose={() => setShowCutsceneGallery(false)}
-          onPlayHoverSfx={() => engineRefs.current.audio?.playUiHover()}
-          onPlayClickSfx={() => engineRefs.current.audio?.playUiClick()}
-        />
+        <Suspense fallback={<ModalLoadingOverlay />}>
+          <CutsceneGalleryModal
+            onSelectCutscene={handlePlayCutsceneFromGallery}
+            onClose={() => setShowCutsceneGallery(false)}
+            onPlayHoverSfx={() => engineRefs.current.audio?.playUiHover()}
+            onPlayClickSfx={() => engineRefs.current.audio?.playUiClick()}
+          />
+        </Suspense>
       )}
 
       {phase === 'dialogue' && activeModal && (
@@ -1428,14 +1497,16 @@ export default function App() {
       )}
 
       {phase === 'map' && (
-        <CampusMapModal
-          playerX={hudPos.x}
-          playerZ={hudPos.z}
-          visitedRooms={questState.visitedRooms}
-          npcs={npcMarkers}
-          onFastTravel={handleFastTravel}
-          onClose={() => updatePhase('playing')}
-        />
+        <Suspense fallback={<ModalLoadingOverlay />}>
+          <CampusMapModal
+            playerX={hudPos.x}
+            playerZ={hudPos.z}
+            visitedRooms={questState.visitedRooms}
+            npcs={npcMarkers}
+            onFastTravel={handleFastTravel}
+            onClose={() => updatePhase('playing')}
+          />
+        </Suspense>
       )}
 
       {phase === 'paused' && (

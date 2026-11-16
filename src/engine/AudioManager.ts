@@ -699,7 +699,7 @@ export class AudioManager {
       volume: 0.14,
     });
     this.worldOstLoop = new Howl({
-      src: ['/assets/audio/world_ost.wav'],
+      src: ['/assets/audio/world_ost.mp3'],
       loop: true,
       volume: 0.19,
     });
@@ -709,12 +709,12 @@ export class AudioManager {
       volume: 0.24,
     });
     this.animeMusicLoop = new Howl({
-      src: ['/assets/audio/anime_intro_ost.wav', '/assets/audio/anime_intro_music.mp3', synthAnimeOpeningMusicLoop()],
+      src: ['/assets/audio/anime_intro_ost.mp3', '/assets/audio/anime_intro_music.mp3', synthAnimeOpeningMusicLoop()],
       loop: true,
       volume: 0.34,
     });
     this.titleMusicLoop = new Howl({
-      src: ['/assets/audio/title_menu_ost.wav'],
+      src: ['/assets/audio/title_menu_ost.mp3'],
       loop: true,
       volume: 0.28,
       preload: true,
