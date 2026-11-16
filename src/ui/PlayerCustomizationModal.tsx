@@ -166,22 +166,6 @@ const IconScissors: React.FC<{ size?: number }> = ({ size = 16 }) => (
   </SvgIcon>
 );
 
-const IconPalette: React.FC<{ size?: number }> = ({ size = 16 }) => (
-  <SvgIcon size={size}>
-    <path d="M12 2a10 10 0 0 0 0 20 2.5 2.5 0 0 0 2.5-2.5c0-.6-.2-1.1-.6-1.5-.4-.4-.6-.9-.6-1.5a2.5 2.5 0 0 1 2.5-2.5H17a5 5 0 0 0 5-5c0-3.9-4.5-7-10-7Z" />
-    <circle cx="7.5" cy="10.5" r="1" fill="currentColor" />
-    <circle cx="12" cy="7.5" r="1" fill="currentColor" />
-    <circle cx="16.5" cy="10.5" r="1" fill="currentColor" />
-  </SvgIcon>
-);
-
-const IconSparkles: React.FC<{ size?: number }> = ({ size = 16 }) => (
-  <SvgIcon size={size}>
-    <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3Z" />
-    <path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16Z" />
-  </SvgIcon>
-);
-
 const IconRotate360: React.FC<{ size?: number }> = ({ size = 16 }) => (
   <SvgIcon size={size}>
     <path d="M21 12a9 9 0 1 1-2.64-6.36" />
@@ -351,6 +335,144 @@ const FaceTraitSvgIcon: React.FC<{
           <path d="M4 11c2.5-3 6.5-3.5 10-1.5" />
           <path d="M14 9.5c2 .8 4 2 6 3.5" />
           <circle cx="11" cy="15" r="2" />
+        </SvgIcon>
+      );
+  }
+};
+
+const IconPalette: React.FC<{ size?: number }> = ({ size = 14 }) => (
+  <SvgIcon size={size}>
+    <circle cx="13.5" cy="6.5" r=".5" fill="currentColor" />
+    <circle cx="17.5" cy="10.5" r=".5" fill="currentColor" />
+    <circle cx="8.5" cy="7.5" r=".5" fill="currentColor" />
+    <circle cx="6.5" cy="12.5" r=".5" fill="currentColor" />
+    <path d="M12 2C6.5 2 2 6.5 2 12c0 3.5 2.5 6 6 6 1 0 1.5-.5 1.5-1.5 0-.5-.2-1-.5-1.5-.3-.5-.5-1-.5-1.5 0-1.5 1.5-2.5 3-2.5H13c4.5 0 8-3.5 8-8 0-1.5-.5-3-1.5-4C18 3 15 2 12 2Z" />
+  </SvgIcon>
+);
+
+const IconSparkles: React.FC<{ size?: number }> = ({ size = 14 }) => (
+  <SvgIcon size={size}>
+    <path d="m12 3 1.9 5.6a2 2 0 0 0 1.5 1.5L21 12l-5.6 1.9a2 2 0 0 0-1.5 1.5L12 21l-1.9-5.6a2 2 0 0 0-1.5-1.5L3 12l5.6-1.9a2 2 0 0 0 1.5-1.5L12 3Z" />
+  </SvgIcon>
+);
+
+const IconZoneAll: React.FC<{ size?: number }> = ({ size = 12 }) => (
+  <SvgIcon size={size}>
+    <rect x="3" y="3" width="18" height="18" rx="3" />
+    <path d="M3 9h18M9 21V9" />
+  </SvgIcon>
+);
+
+const IconZoneMain: React.FC<{ size?: number }> = ({ size = 12 }) => (
+  <SvgIcon size={size}>
+    <path d="M9 4h6l2 4v12H7V8l2-4Z" />
+  </SvgIcon>
+);
+
+const IconZoneSleeves: React.FC<{ size?: number }> = ({ size = 12 }) => (
+  <SvgIcon size={size}>
+    <path d="M4 6l4-2v14l-4-2V6ZM16 4l4 2v12l-4 2V4Z" />
+  </SvgIcon>
+);
+
+const IconZoneCollar: React.FC<{ size?: number }> = ({ size = 12 }) => (
+  <SvgIcon size={size}>
+    <path d="M5 4l5 6-3 10 5-2 5 2-3-10 5-6h-5l-2 3-2-3H5Z" />
+  </SvgIcon>
+);
+
+const IconZoneBelt: React.FC<{ size?: number }> = ({ size = 12 }) => (
+  <SvgIcon size={size}>
+    <rect x="2" y="8" width="20" height="8" rx="2" />
+    <rect x="9" y="6" width="6" height="12" rx="1.5" />
+    <circle cx="12" cy="12" r="1.5" />
+  </SvgIcon>
+);
+
+const renderZoneIcon = (zoneId: string, size = 12) => {
+  switch (zoneId) {
+    case 'all':
+      return <IconZoneAll size={size} />;
+    case 'main':
+      return <IconZoneMain size={size} />;
+    case 'sleeves':
+      return <IconZoneSleeves size={size} />;
+    case 'collar':
+      return <IconZoneCollar size={size} />;
+    case 'belt':
+      return <IconZoneBelt size={size} />;
+    default:
+      return null;
+  }
+};
+
+const PatternSvgIcon: React.FC<{ type: ClothingPatternType; size?: number }> = ({
+  type,
+  size = 18,
+}) => {
+  switch (type) {
+    case 'none':
+      return (
+        <SvgIcon size={size}>
+          <circle cx="12" cy="12" r="8" fill="none" strokeWidth="2" />
+        </SvgIcon>
+      );
+    case 'dots':
+      return (
+        <SvgIcon size={size}>
+          <circle cx="7" cy="7" r="2.2" fill="currentColor" stroke="none" />
+          <circle cx="17" cy="7" r="2.2" fill="currentColor" stroke="none" />
+          <circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none" />
+          <circle cx="7" cy="17" r="2.2" fill="currentColor" stroke="none" />
+          <circle cx="17" cy="17" r="2.2" fill="currentColor" stroke="none" />
+        </SvgIcon>
+      );
+    case 'stripes':
+      return (
+        <SvgIcon size={size}>
+          <line x1="5" y1="3" x2="5" y2="21" strokeWidth="2.5" />
+          <line x1="12" y1="3" x2="12" y2="21" strokeWidth="2.5" />
+          <line x1="19" y1="3" x2="19" y2="21" strokeWidth="2.5" />
+        </SvgIcon>
+      );
+    case 'plaid':
+      return (
+        <SvgIcon size={size}>
+          <rect x="3" y="3" width="18" height="18" rx="2" fill="none" strokeWidth="1.5" />
+          <line x1="9" y1="3" x2="9" y2="21" strokeWidth="1.8" />
+          <line x1="15" y1="3" x2="15" y2="21" strokeWidth="1.8" />
+          <line x1="3" y1="9" x2="21" y2="9" strokeWidth="1.8" />
+          <line x1="3" y1="15" x2="21" y2="15" strokeWidth="1.8" />
+        </SvgIcon>
+      );
+    case 'wool':
+      return (
+        <SvgIcon size={size}>
+          <path d="M4 6c3 0 3 4 6 4s3-4 6-4 3 4 4 4" strokeWidth="2" fill="none" />
+          <path d="M4 12c3 0 3 4 6 4s3-4 6-4 3 4 4 4" strokeWidth="2" fill="none" />
+          <path d="M4 18c3 0 3 4 6 4s3-4 6-4 3 4 4 4" strokeWidth="2" fill="none" />
+        </SvgIcon>
+      );
+    case 'cotton':
+      return (
+        <SvgIcon size={size}>
+          <path d="M3 7h18M3 12h18M3 17h18M7 3v18M12 3v18M17 3v18" strokeWidth="1.5" />
+        </SvgIcon>
+      );
+    case 'denim':
+      return (
+        <SvgIcon size={size}>
+          <line x1="3" y1="7" x2="7" y2="3" strokeWidth="2" />
+          <line x1="3" y1="13" x2="13" y2="3" strokeWidth="2" />
+          <line x1="3" y1="19" x2="19" y2="3" strokeWidth="2" />
+          <line x1="7" y1="21" x2="21" y2="7" strokeWidth="2" />
+          <line x1="13" y1="21" x2="21" y2="13" strokeWidth="2" />
+        </SvgIcon>
+      );
+    default:
+      return (
+        <SvgIcon size={size}>
+          <circle cx="12" cy="12" r="8" fill="none" strokeWidth="2" />
         </SvgIcon>
       );
   }
@@ -861,7 +983,7 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
     const numCounts: Record<PlayerGender, Record<ClothesCategoryId, number>> = {
       female: {
         top: 8,
-        outer: 3,
+        outer: 2,
         bottom: 12,
         dress: 9,
         socks: 8,
@@ -896,28 +1018,26 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
     const outerThumbMap: Record<PlayerGender, Record<number, string>> = {
       female: {
         1: '/assets/player/clothes/thumbnails/female/Top3.png',
-        2: '/assets/player/clothes/thumbnails/female/Top4.png',
-        3: '/assets/player/clothes/thumbnails/female/Top6.png',
+        2: '/assets/player/clothes/thumbnails/female/Top7.png',
       },
       male: {
-        1: '/assets/player/clothes/thumbnails/male/Top2.png',
-        2: '/assets/player/clothes/thumbnails/male/Top3.png',
+        1: '/assets/player/clothes/thumbnails/male/Top3.png',
+        2: '/assets/player/clothes/thumbnails/male/Top4.png',
       },
     };
     const outerNameMap: Record<PlayerGender, Record<number, string>> = {
       female: {
-        1: 'Parka à capuche',
-        2: 'Sweat sport zippé',
-        3: "Cardigan d'uniforme",
+        1: 'Veste #1 (Haut #3)',
+        2: 'Veste #2 (Haut #7)',
       },
       male: {
-        1: 'Sweat capuche zippé',
-        2: 'Veste sport urbaine',
+        1: 'Veste #1 (Haut #3)',
+        2: 'Veste #2 (Haut #4)',
       },
     };
     const excludedIds: Record<PlayerGender, Set<string>> = {
-      female: new Set(['Dress4', 'Arm5', 'Arm6']),
-      male: new Set(['Arm7', 'Arm8']),
+      female: new Set(['Top3', 'Top7', 'Dress4', 'Arm5', 'Arm6']),
+      male: new Set(['Top3', 'Top4', 'Arm7', 'Arm8']),
     };
     const excluded = excludedIds[selectedGender];
     const count = numCounts[selectedGender][activeClothesCategory] || 0;
@@ -2107,9 +2227,14 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
                                 fontSize: 11,
                                 fontWeight: 800,
                                 cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 6,
                               }}
                             >
-                              🎨 Teintes & Zones
+                              <IconPalette size={13} />
+                              <span>Teintes & Zones</span>
                             </button>
                             <button
                               type="button"
@@ -2125,9 +2250,14 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
                                 fontSize: 11,
                                 fontWeight: 800,
                                 cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 6,
                               }}
                             >
-                              ✨ Motifs & Tissus
+                              <IconSparkles size={13} />
+                              <span>Motifs & Tissus</span>
                             </button>
                           </div>
                         )}
@@ -2142,16 +2272,16 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
 
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, padding: '2px 0' }}>
                               {[
-                                { id: 'all' as const, label: '🌐 Toute la pièce' },
-                                { id: 'main' as const, label: '👕 Corps' },
+                                { id: 'all' as const, label: 'Toute la pièce' },
+                                { id: 'main' as const, label: 'Corps' },
                                 ...((activeClothesCategory === 'top' || activeClothesCategory === 'dress' || activeClothesCategory === 'outer')
                                   ? [
-                                      { id: 'sleeves' as const, label: '🦾 Manches' },
-                                      { id: 'collar' as const, label: '👔 Col' },
+                                      { id: 'sleeves' as const, label: 'Manches' },
+                                      { id: 'collar' as const, label: 'Col' },
                                     ]
                                   : []),
                                 ...((activeClothesCategory === 'top' || activeClothesCategory === 'dress' || activeClothesCategory === 'outer' || activeClothesCategory === 'bottom')
-                                  ? [{ id: 'belt' as const, label: '🎗️ Ceinture' }]
+                                  ? [{ id: 'belt' as const, label: 'Ceinture' }]
                                   : []),
                               ].map((pz) => {
                                 const isPzActive = patternTargetZone === pz.id;
@@ -2161,6 +2291,9 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
                                     type="button"
                                     onClick={() => setPatternTargetZone(pz.id)}
                                     style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 5,
                                       padding: '3px 8px',
                                       borderRadius: 8,
                                       border: isPzActive ? '1.5px solid #e11d48' : '1px solid #fecdd3',
@@ -2171,7 +2304,8 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
                                       cursor: 'pointer',
                                     }}
                                   >
-                                    {pz.label}
+                                    {renderZoneIcon(pz.id)}
+                                    <span>{pz.label}</span>
                                   </button>
                                 );
                               })}
@@ -2199,13 +2333,13 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
                                     }}
                                   >
                                     {[
-                                      { id: 'none' as const, label: 'Uni', desc: 'Sans motif', icon: '⚪' },
-                                      { id: 'dots' as const, label: 'Pois', desc: 'Petits pois', icon: '🔴' },
-                                      { id: 'stripes' as const, label: 'Rayures', desc: 'Fines rayures', icon: '💈' },
-                                      { id: 'plaid' as const, label: 'Carreaux', desc: 'Tartan classique', icon: '🏁' },
-                                      { id: 'wool' as const, label: 'Laine', desc: 'Maille tricotée', icon: '🧶' },
-                                      { id: 'cotton' as const, label: 'Coton', desc: 'Tissage lin/coton', icon: '🧵' },
-                                      { id: 'denim' as const, label: 'Denim', desc: 'Toile de jean', icon: '👖' },
+                                      { id: 'none' as const, label: 'Uni', desc: 'Sans motif' },
+                                      { id: 'dots' as const, label: 'Pois', desc: 'Petits pois' },
+                                      { id: 'stripes' as const, label: 'Rayures', desc: 'Fines rayures' },
+                                      { id: 'plaid' as const, label: 'Carreaux', desc: 'Tartan classique' },
+                                      { id: 'wool' as const, label: 'Laine', desc: 'Maille tricotée' },
+                                      { id: 'cotton' as const, label: 'Coton', desc: 'Tissage lin/coton' },
+                                      { id: 'denim' as const, label: 'Denim', desc: 'Toile de jean' },
                                     ].map((pat) => {
                                       const isSel = currentPatType === pat.id;
                                       return (
@@ -2230,7 +2364,7 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
                                           style={{
                                             display: 'flex',
                                             alignItems: 'center',
-                                            gap: 6,
+                                            gap: 8,
                                             padding: '6px 8px',
                                             borderRadius: 10,
                                             border: isSel
@@ -2242,7 +2376,7 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
                                             cursor: 'pointer',
                                           }}
                                         >
-                                          <span style={{ fontSize: 16 }}>{pat.icon}</span>
+                                          <PatternSvgIcon type={pat.id} size={18} />
                                           <div style={{ display: 'flex', flexDirection: 'column' }}>
                                             <span style={{ fontSize: 11, fontWeight: 800 }}>
                                               {pat.label}
@@ -2320,12 +2454,12 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
                                         </span>
                                         <div style={{ display: 'flex', gap: 3 }}>
                                           {[
-                                            { label: 'Fin', val: 0.7 },
+                                            { label: 'Fin', val: 1.6 },
                                             { label: 'Moyen', val: 1.0 },
-                                            { label: 'Grand', val: 1.5 },
+                                            { label: 'Grand', val: 0.6 },
                                           ].map((sc) => {
                                             const curScale = currentPatConfig?.scale || 1.0;
-                                            const isCur = Math.abs(curScale - sc.val) < 0.1;
+                                            const isCur = Math.abs(curScale - sc.val) < 0.15;
                                             return (
                                               <button
                                                 key={sc.label}
@@ -2479,15 +2613,15 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
                                 }}
                               >
                                 {[
-                                  { id: 'main' as const, label: '👕 Corps' },
+                                  { id: 'main' as const, label: 'Corps' },
                                   ...((activeClothesCategory === 'top' || activeClothesCategory === 'dress' || activeClothesCategory === 'outer')
                                     ? [
-                                        { id: 'sleeves' as const, label: '🦾 Manches' },
-                                        { id: 'collar' as const, label: '👔 Col' },
-                                        { id: 'belt' as const, label: '🎗️ Ceinture' },
+                                        { id: 'sleeves' as const, label: 'Manches' },
+                                        { id: 'collar' as const, label: 'Col' },
+                                        { id: 'belt' as const, label: 'Ceinture' },
                                       ]
                                     : activeClothesCategory === 'bottom'
-                                      ? [{ id: 'belt' as const, label: '🎗️ Ceinture' }]
+                                      ? [{ id: 'belt' as const, label: 'Ceinture' }]
                                       : []),
                                 ].map((z) => {
                                   const isZActive = activeClothingZone === z.id;
@@ -2497,6 +2631,9 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
                                       type="button"
                                       onClick={() => setActiveClothingZone(z.id)}
                                       style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: 5,
                                         padding: '3px 8px',
                                         borderRadius: 8,
                                         border: isZActive
@@ -2509,7 +2646,8 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
                                         cursor: 'pointer',
                                       }}
                                     >
-                                      {z.label}
+                                      {renderZoneIcon(z.id)}
+                                      <span>{z.label}</span>
                                     </button>
                                   );
                                 })}

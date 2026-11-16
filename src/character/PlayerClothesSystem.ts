@@ -258,7 +258,7 @@ export const DEFAULT_CLOTHES_COLORS: Record<ClothesCategoryId, string> = {
 
 export const DEFAULT_FEMALE_CLOTHES_SELECTION: PlayerClothesSelection = {
   items: {
-    top: 'female_Top3',
+    top: 'female_Top8',
     outer: null,
     bottom: 'female_Bottom4',
     dress: null,
@@ -273,7 +273,7 @@ export const DEFAULT_FEMALE_CLOTHES_SELECTION: PlayerClothesSelection = {
 
 export const DEFAULT_MALE_CLOTHES_SELECTION: PlayerClothesSelection = {
   items: {
-    top: 'male_Top2',
+    top: 'male_Top5',
     outer: null,
     bottom: 'male_Bottom1',
     dress: null,
@@ -497,17 +497,16 @@ export function loadClothesCatalog(): Promise<ClothesCatalogData> {
       };
 
       const femOuters: (CatalogClothesItem | null)[] = [
-        synthesizeOuterItem('female_Top3', 'female_Outer1', 'Outer1', 'Parka à capuche', 'female'),
-        synthesizeOuterItem('female_Top4', 'female_Outer2', 'Outer2', 'Sweat sport zippé', 'female'),
-        synthesizeOuterItem('female_Top6', 'female_Outer3', 'Outer3', "Cardigan d'uniforme", 'female'),
+        synthesizeOuterItem('female_Top3', 'female_Outer1', 'Outer1', 'Veste #1 (Haut #3)', 'female'),
+        synthesizeOuterItem('female_Top7', 'female_Outer2', 'Outer2', 'Veste #2 (Haut #7)', 'female'),
       ];
       femOuters.forEach((it) => {
         if (it && !data.female.some((x) => x.id === it.id)) data.female.push(it);
       });
 
       const maleOuters: (CatalogClothesItem | null)[] = [
-        synthesizeOuterItem('male_Top2', 'male_Outer1', 'Outer1', 'Sweat capuche zippé', 'male'),
-        synthesizeOuterItem('male_Top3', 'male_Outer2', 'Outer2', 'Veste sport urbaine', 'male'),
+        synthesizeOuterItem('male_Top3', 'male_Outer1', 'Outer1', 'Veste #1 (Haut #3)', 'male'),
+        synthesizeOuterItem('male_Top4', 'male_Outer2', 'Outer2', 'Veste #2 (Haut #4)', 'male'),
       ];
       maleOuters.forEach((it) => {
         if (it && !data.male.some((x) => x.id === it.id)) data.male.push(it);
@@ -1274,12 +1273,13 @@ function buildTemplateSkinnedMesh(
     // Targeted female collar & neck-ribbon seating prior to surface clearance pass
     if (
       itemId === 'female_Top7' ||
+      itemId === 'female_Outer2' ||
       itemId === 'female_Top8' ||
       itemId === 'female_Dress8' ||
       itemId === 'female_Dress9'
     ) {
-      const collarBaseY = itemId === 'female_Top7' ? 1.294 : 1.288;
-      const dropStrength = itemId === 'female_Top7' ? 0.50 : 0.58;
+      const collarBaseY = (itemId === 'female_Top7' || itemId === 'female_Outer2') ? 1.294 : 1.288;
+      const dropStrength = (itemId === 'female_Top7' || itemId === 'female_Outer2') ? 0.50 : 0.58;
       for (let v = 0; v < vertCount; v++) {
         const vx = posArr[v * 3];
         const vy = posArr[v * 3 + 1];
