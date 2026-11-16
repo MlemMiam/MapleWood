@@ -12,6 +12,7 @@ export type InteractableType =
   | 'fire_alarm'
   | 'sink'
   | 'notebook'
+  | 'elevator'
   | 'npc';
 
 export interface Interactable {

@@ -8,11 +8,17 @@ import type { InteractiveDoor } from './props/Door';
 import { buildMainBuilding } from './buildings/MainBuilding';
 import { buildCourtyard } from './exterior/Courtyard';
 import { buildFencing } from './exterior/Fencing';
+import type { ElevatorSystem } from './buildings/ElevatorSystem';
+import type { Player } from '../character/Player';
+import type { CampusNPC } from '../character/NPC';
+
 export class CampusWorld {
   public readonly doors: InteractiveDoor[] = [];
   public readonly clocks: ClockUpdateRef[] = [];
   public readonly cameraColliders: THREE.Object3D[] = [];
   public readonly wingLights: Record<string, THREE.PointLight[]> = {};
+  public elevatorSystem?: ElevatorSystem;
+  private callbacks: WorldCallbacks;
   private animatedObjects: Array<(elapsed: number, dt: number) => void> = [];
   private windUniforms = {
     uWindTime: { value: 0 },
@@ -30,6 +36,7 @@ export class CampusWorld {
     interactions: InteractionSystem,
     callbacks: WorldCallbacks
   ) {
+    this.callbacks = callbacks;
     const ctx: WorldBuildContext = {
       scene,
       physics,
@@ -42,6 +49,9 @@ export class CampusWorld {
       wingLights: this.wingLights,
       windUniforms: this.windUniforms,
       callbacks,
+      setElevatorSystem: (system: ElevatorSystem) => {
+        this.elevatorSystem = system;
+      },
     };
 
     buildCourtyard(ctx);
@@ -77,7 +87,9 @@ export class CampusWorld {
     dt: number,
     focusPos?: THREE.Vector3,
     windTime?: number,
-    windStrength?: number
+    windStrength?: number,
+    player?: Player,
+    npcs?: CampusNPC[]
   ): void {
     if (windTime !== undefined) {
       this.windUniforms.uWindTime.value = windTime;
@@ -90,6 +102,9 @@ export class CampusWorld {
 
     for (const door of this.doors) {
       door.update(dt, focusPos);
+    }
+    if (this.elevatorSystem) {
+      this.elevatorSystem.update(dt, player, npcs ?? [], this.callbacks);
     }
     for (const fn of this.animatedObjects) {
       fn(elapsed, dt);

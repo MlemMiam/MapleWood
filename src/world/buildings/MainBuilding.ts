@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import type { WorldBuildContext } from '../WorldContext';
+import { ElevatorSystem } from './ElevatorSystem';
 
 interface CarpetZone {
   minX: number;
@@ -98,6 +99,7 @@ export function buildMainBuilding(ctx: WorldBuildContext): THREE.Group {
     'MW_InteriorWalls',
     'MW_InteriorStairs',
     'MW_Stone',
+    'MW_Columns',
   ]);
 
   const loader = new GLTFLoader();
@@ -180,6 +182,11 @@ export function buildMainBuilding(ctx: WorldBuildContext): THREE.Group {
 
   // Load interactive Georgian double entrance door at the front portico doorway
   loadMainEntranceDoor(ctx, group, floorY, glassMat);
+  // Load interactive stairwell doors across all 4 levels (East & West)
+  loadStairwellDoors(ctx, group, floorY, glassMat);
+  // Load interactive glass elevators across all 4 levels (East & West)
+  const elevatorSystem = new ElevatorSystem(ctx, group, floorY, glassMat);
+  ctx.setElevatorSystem?.(elevatorSystem);
   // Load Blender-modeled Hall d'accueil furniture & decor
   loadHallFurniture(ctx, group, floorY, glassMat);
 
@@ -378,6 +385,235 @@ function loadMainEntranceDoor(
       console.warn('Failed to load main_entrance_door.glb:', err);
     }
   );
+}
+
+function loadStairwellDoors(
+  ctx: WorldBuildContext,
+  parent: THREE.Group,
+  floorY: number,
+  glassMat: THREE.MeshStandardMaterial
+): void {
+  const { physics, mats, interactions, doors, callbacks } = ctx;
+
+  const doorMetalMat = new THREE.MeshStandardMaterial({
+    color: 0x545b63,
+    roughness: 0.42,
+    metalness: 0.28,
+  });
+  const kickPlateMat = new THREE.MeshStandardMaterial({
+    color: 0x8a9299,
+    roughness: 0.28,
+    metalness: 0.72,
+  });
+  const panicBarMat = new THREE.MeshStandardMaterial({
+    color: 0x202225,
+    roughness: 0.35,
+    metalness: 0.55,
+  });
+  const panicBarActiveMat = new THREE.MeshStandardMaterial({
+    color: 0x9e2424,
+    roughness: 0.35,
+    metalness: 0.3,
+  });
+  const frameMat = new THREE.MeshStandardMaterial({
+    color: 0x3d4349,
+    roughness: 0.45,
+    metalness: 0.3,
+  });
+
+  const leafW = 0.88;
+  const leafH = 2.66;
+  const leafT = 0.055;
+  const hingeOffset = 0.90;
+  const AUTO_CLOSE_DISTANCE = 5.5;
+  const MIN_OPEN_SECONDS = 0.8;
+
+  const doorConfigs = [
+    { id: 'east-f0', name: "Cage d'escalier Est - RDC", x: 39.0, y: floorY, z: -26.20 },
+    { id: 'east-f1', name: "Cage d'escalier Est - Étage 1", x: 39.0, y: floorY + 4.80, z: -26.20 },
+    { id: 'east-f2', name: "Cage d'escalier Est - Étage 2", x: 39.0, y: floorY + 9.40, z: -26.20 },
+    { id: 'east-f3', name: "Cage d'escalier Est - Étage 3", x: 39.0, y: floorY + 14.00, z: -26.20 },
+    { id: 'west-f0', name: "Cage d'escalier Ouest - RDC", x: -39.0, y: floorY, z: -26.20 },
+    { id: 'west-f1', name: "Cage d'escalier Ouest - Étage 1", x: -39.0, y: floorY + 4.80, z: -26.20 },
+    { id: 'west-f2', name: "Cage d'escalier Ouest - Étage 2", x: -39.0, y: floorY + 9.40, z: -26.20 },
+    { id: 'west-f3', name: "Cage d'escalier Ouest - Étage 3", x: -39.0, y: floorY + 14.00, z: -26.20 },
+  ];
+
+  for (const cfg of doorConfigs) {
+    const doorX = cfg.x;
+    const doorY = cfg.y;
+    const doorZ = cfg.z;
+
+    let opened = false;
+    let openElapsed = 0;
+    let angle = 0;
+
+    const colL = physics.addKinematicDoorBox(
+      doorX - hingeOffset + leafW * 0.5,
+      doorY + leafH * 0.5,
+      doorZ,
+      leafW * 0.5,
+      leafH * 0.5,
+      leafT * 0.5
+    );
+    const colR = physics.addKinematicDoorBox(
+      doorX + hingeOffset - leafW * 0.5,
+      doorY + leafH * 0.5,
+      doorZ,
+      leafW * 0.5,
+      leafH * 0.5,
+      leafT * 0.5
+    );
+
+    const syncColliders = () => {
+      const cosA = Math.cos(angle);
+      const sinA = Math.sin(angle);
+      const halfW = leafW * 0.5;
+      const isSensor = Math.abs(angle) > 0.40;
+
+      colL.body.setNextKinematicTranslation({
+        x: doorX - hingeOffset + halfW * cosA,
+        y: doorY + leafH * 0.5,
+        z: doorZ - halfW * sinA,
+      });
+      colL.body.setNextKinematicRotation({
+        x: 0,
+        y: Math.sin(angle * 0.5),
+        z: 0,
+        w: Math.cos(angle * 0.5),
+      });
+      colL.collider.setSensor(isSensor);
+
+      colR.body.setNextKinematicTranslation({
+        x: doorX + hingeOffset - halfW * cosA,
+        y: doorY + leafH * 0.5,
+        z: doorZ - halfW * sinA,
+      });
+      colR.body.setNextKinematicRotation({
+        x: 0,
+        y: Math.sin(-angle * 0.5),
+        z: 0,
+        w: Math.cos(-angle * 0.5),
+      });
+      colR.collider.setSensor(isSensor);
+    };
+
+    syncColliders();
+
+    const toggle = () => {
+      opened = !opened;
+      openElapsed = 0;
+      callbacks.onDoorToggle(opened);
+    };
+
+    const doorRoot = new THREE.Group();
+    doorRoot.name = `StairwellDoor_${cfg.id}`;
+    doorRoot.position.set(doorX, doorY, doorZ);
+    parent.add(doorRoot);
+
+    const createLeaf = (isLeft: boolean): THREE.Group => {
+      const pivot = new THREE.Group();
+      pivot.position.set(isLeft ? -hingeOffset : hingeOffset, 0, 0);
+
+      const leafGroup = new THREE.Group();
+      const centerOffsetX = isLeft ? leafW * 0.5 : -leafW * 0.5;
+
+      const panel = new THREE.Mesh(new THREE.BoxGeometry(leafW, leafH, leafT), doorMetalMat);
+      panel.position.set(centerOffsetX, leafH * 0.5, 0);
+      panel.castShadow = true;
+      panel.receiveShadow = true;
+      leafGroup.add(panel);
+
+      const kickPlate = new THREE.Mesh(new THREE.BoxGeometry(leafW * 0.98, 0.35, leafT + 0.008), kickPlateMat);
+      kickPlate.position.set(centerOffsetX, 0.175, 0);
+      kickPlate.castShadow = true;
+      leafGroup.add(kickPlate);
+
+      const winW = 0.32;
+      const winH = 0.85;
+      const winCenterY = 1.70;
+      const winTrim = new THREE.Mesh(new THREE.BoxGeometry(winW + 0.05, winH + 0.05, leafT + 0.01), frameMat);
+      winTrim.position.set(centerOffsetX, winCenterY, 0);
+      leafGroup.add(winTrim);
+
+      const winGlass = new THREE.Mesh(new THREE.BoxGeometry(winW, winH, 0.015), glassMat);
+      winGlass.position.set(centerOffsetX, winCenterY, 0);
+      leafGroup.add(winGlass);
+
+      const pushBar = new THREE.Mesh(new THREE.BoxGeometry(leafW * 0.82, 0.04, 0.035), panicBarActiveMat);
+      pushBar.position.set(centerOffsetX, 1.05, leafT * 0.5 + 0.04);
+      leafGroup.add(pushBar);
+
+      const pushBarBase = new THREE.Mesh(new THREE.BoxGeometry(leafW * 0.86, 0.08, 0.02), panicBarMat);
+      pushBarBase.position.set(centerOffsetX, 1.05, leafT * 0.5 + 0.015);
+      leafGroup.add(pushBarBase);
+
+      const pullHandle = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.28, 0.06), panicBarMat);
+      pullHandle.position.set(
+        isLeft ? centerOffsetX + leafW * 0.35 : centerOffsetX - leafW * 0.35,
+        1.05,
+        -leafT * 0.5 - 0.03
+      );
+      leafGroup.add(pullHandle);
+
+      pivot.add(leafGroup);
+      return pivot;
+    };
+
+    const pivotL = createLeaf(true);
+    const pivotR = createLeaf(false);
+    doorRoot.add(pivotL);
+    doorRoot.add(pivotR);
+
+    const hitProxy = new THREE.Mesh(new THREE.BoxGeometry(leafW * 2 + 0.4, leafH + 0.2, 0.5));
+    hitProxy.position.set(0, (leafH + 0.2) * 0.5, 0);
+    hitProxy.visible = false;
+    doorRoot.add(hitProxy);
+
+    interactions.register({
+      id: `door-stairwell-${cfg.id}`,
+      label: `ouvrir / fermer : ${cfg.name}`,
+      type: 'door',
+      targetObject: doorRoot,
+      worldPosition: new THREE.Vector3(doorX, doorY + 1.35, doorZ),
+      maxDistance: 3.5,
+      onInteract: toggle,
+    });
+
+    doors.push({
+      update(dt: number, playerPos?: THREE.Vector3) {
+        if (opened) {
+          openElapsed += dt;
+          if (playerPos && openElapsed >= MIN_OPEN_SECONDS) {
+            const dist = Math.hypot(
+              playerPos.x - doorX,
+              playerPos.y - doorY,
+              playerPos.z - doorZ
+            );
+            if (dist > AUTO_CLOSE_DISTANCE) {
+              opened = false;
+              openElapsed = 0;
+            }
+          }
+        }
+        const target = opened ? Math.PI * 0.48 : 0;
+        const diff = target - angle;
+        if (Math.abs(diff) > 0.002) {
+          angle += diff * Math.min(1, dt * 7.5);
+          pivotL.rotation.y = angle;
+          pivotR.rotation.y = -angle;
+          syncColliders();
+        } else if (angle !== target) {
+          angle = target;
+          pivotL.rotation.y = angle;
+          pivotR.rotation.y = -angle;
+          syncColliders();
+        }
+      },
+      isOpen: () => opened,
+      toggle,
+    });
+  }
 }
 
 function loadHallFurniture(

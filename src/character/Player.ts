@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type RAPIER from '@dimforge/rapier3d-compat';
+import RAPIER from '@dimforge/rapier3d-compat';
 import type { PhysicsWorld } from '../engine/Physics';
 import type { InputSnapshot } from '../engine/InputManager';
 import type { AudioManager } from '../engine/AudioManager';
@@ -44,6 +44,8 @@ export class Player {
   public stamina = 100;
   public readonly maxStamina = 100;
   public isGrounded = true;
+  public isRidingElevator = false;
+  public elevatorY = 0;
   public vrmLabel: string | null = 'Florie.vrm';
   public readonly readyPromise: Promise<void>;
 
@@ -405,6 +407,69 @@ export class Player {
 
     const speed = wantsSprint ? this.runSpeed : this.walkSpeed;
 
+    // Elevator riding mode: roots the player smoothly to the moving elevator cabin
+    if (this.isRidingElevator) {
+      this.verticalVel = 0;
+      this.isGrounded = true;
+      this.coyoteTimer = 0.1;
+      this.jumpBufferTimer = 0;
+
+      // Allow gentle horizontal turning/stepping inside cabin without vertical falling
+      const desiredDx = _desiredMove.x * speed * dt;
+      const desiredDz = _desiredMove.z * speed * dt;
+
+      physics.characterController.computeColliderMovement(
+        this.collider,
+        {
+          x: desiredDx,
+          y: 0,
+          z: desiredDz,
+        },
+        RAPIER.QueryFilterFlags.EXCLUDE_SENSORS
+      );
+
+      const corrected = physics.characterController.computedMovement();
+      const cur = this.body.translation();
+      const nx = cur.x + corrected.x;
+      const nz = cur.z + corrected.z;
+      const ny = this.elevatorY + 0.875;
+
+      const bodyPos = { x: nx, y: ny, z: nz };
+      this.body.setTranslation(bodyPos, true);
+      this.body.setNextKinematicTranslation(bodyPos);
+
+      this.position.set(nx, this.elevatorY, nz);
+      this.rig.root.position.copy(this.position);
+
+      const horizDist = Math.hypot(corrected.x, corrected.z);
+      if (moving && horizDist > 0.001) {
+        const targetYaw = Math.atan2(-_desiredMove.x, -_desiredMove.z);
+        let diff = targetYaw - this.yaw;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        this.yaw += diff * Math.min(1, dt * 12);
+      }
+      this.rig.root.rotation.y = this.yaw;
+
+      let animState: AnimState = 'idle';
+      if (moving && horizDist > 0.002) {
+        animState = wantsSprint ? 'run' : 'walk';
+        this.gaitPhase += horizDist * (wantsSprint ? 2.05 : 3.6);
+        const stepIndex = Math.floor(this.gaitPhase / Math.PI);
+        if (stepIndex !== this.lastStepIndex) {
+          this.lastStepIndex = stepIndex;
+          audio.playFootstep(footstepSurface);
+        }
+      }
+
+      if (this.vrmController) {
+        this.vrmController.update(animState, this.gaitPhase, this.interactTimer, dt);
+      } else {
+        animateHumanoid(this.rig, animState, this.gaitPhase, this.interactTimer, dt);
+      }
+      return;
+    }
+
     // Coyote time + Jump buffer
     if (this.isGrounded) {
       this.coyoteTimer = 0.1;
@@ -432,11 +497,15 @@ export class Player {
     const desiredDy = this.verticalVel * dt;
     const desiredDz = _desiredMove.z * speed * dt;
 
-    physics.characterController.computeColliderMovement(this.collider, {
-      x: desiredDx,
-      y: desiredDy,
-      z: desiredDz,
-    });
+    physics.characterController.computeColliderMovement(
+      this.collider,
+      {
+        x: desiredDx,
+        y: desiredDy,
+        z: desiredDz,
+      },
+      RAPIER.QueryFilterFlags.EXCLUDE_SENSORS
+    );
 
     const corrected = physics.characterController.computedMovement();
     this.isGrounded = physics.characterController.computedGrounded();

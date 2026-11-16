@@ -4,6 +4,7 @@ import type { MaterialLibrary } from '../utils/Materials';
 import type { InteractionSystem } from '../interaction/InteractionSystem';
 import type { InteractiveDoor } from './props/Door';
 import type { ClockUpdateRef } from '../utils/Geometry';
+import type { ElevatorSystem } from './buildings/ElevatorSystem';
 
 export interface WorldCallbacks {
   onDoorToggle: (open: boolean) => void;
@@ -21,6 +22,12 @@ export interface WorldCallbacks {
   onPickupNotebook: () => void;
   onShootBasketball: () => void;
   onSit?: (x: number, y: number, z: number, yaw: number) => void;
+  onOpenElevatorMenu?: (
+    side: 'east' | 'west',
+    currentFloor: number,
+    onSelectFloor: (floorIndex: number) => void
+  ) => void;
+  onElevatorArrive?: () => void;
 }
 
 export interface WindUniforms {
@@ -40,4 +47,5 @@ export interface WorldBuildContext {
   wingLights: Record<string, THREE.PointLight[]>;
   windUniforms: WindUniforms;
   callbacks: WorldCallbacks;
+  setElevatorSystem?: (system: ElevatorSystem) => void;
 }

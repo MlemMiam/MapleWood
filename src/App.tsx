@@ -65,6 +65,7 @@ import {
 } from './character/PlayerClothesSystem';
 
 import { CampusMapModal } from './ui/CampusMapModal';
+import { ElevatorModal } from './ui/ElevatorModal';
 
 // Heavy overlays are loaded on demand so the initial 3D bundle stays smaller.
 const PlayerCustomizationModal = lazy(() =>
@@ -138,6 +139,11 @@ export default function App() {
   const [npcMarkers, setNpcMarkers] = useState<MinimapNpcMarker[]>([]);
   const [questState, setQuestState] = useState<QuestState>(() => createInitialQuestState());
   const [activeModal, setActiveModal] = useState<ActiveModalContent | null>(null);
+  const [elevatorModal, setElevatorModal] = useState<{
+    side: 'east' | 'west';
+    currentFloor: number;
+    onSelectFloor: (floorIndex: number) => void;
+  } | null>(null);
   const [, setVrmFileName] = useState<string | null>('Florie.vrm');
   const [introTime, setIntroTime] = useState(0);
   const [cutsceneSub, setCutsceneSub] = useState<CutsceneSubtitleState | null>(null);
@@ -490,6 +496,13 @@ export default function App() {
               player.sitAt(x, y, z, yaw);
             }
           },
+          onOpenElevatorMenu: (side, currentFloor, onSelectFloor) => {
+            engineRefs.current.input?.exitPointerLock();
+            setElevatorModal({ side, currentFloor, onSelectFloor });
+          },
+          onElevatorArrive: () => {
+            audio.playInteractDing();
+          },
         }
       );
 
@@ -771,7 +784,9 @@ timer.update();
               frameDt,
               player.position,
               gameRenderer.getWindTime(),
-              gameRenderer.getWindStrength()
+              gameRenderer.getWindStrength(),
+              player,
+              npcs
             );
 
             for (const npc of npcs) {
@@ -1586,6 +1601,20 @@ timer.update();
           onPlayChoiceSfx={() => engineRefs.current.audio?.playUiClick()}
           onPlayHoverSfx={() => engineRefs.current.audio?.playUiHover()}
           onVoiceBlip={handleCharacterBlip}
+        />
+      )}
+
+      {elevatorModal && (
+        <ElevatorModal
+          side={elevatorModal.side}
+          currentFloor={elevatorModal.currentFloor}
+          onSelectFloor={(floorIndex) => {
+            const cb = elevatorModal.onSelectFloor;
+            engineRefs.current.audio?.playUiClick();
+            setElevatorModal(null);
+            cb(floorIndex);
+          }}
+          onClose={() => setElevatorModal(null)}
         />
       )}
 
