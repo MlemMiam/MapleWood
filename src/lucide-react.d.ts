@@ -12,7 +12,11 @@ declare module 'lucide-react' {
   export const BookOpen: FC<IconProps>;
   export const Compass: FC<IconProps>;
   export const Film: FC<IconProps>;
+  export const Layers: FC<IconProps>;
   export const Map: FC<IconProps>;
+  export const Maximize2: FC<IconProps>;
+  export const Minimize2: FC<IconProps>;
+  export const Navigation: FC<IconProps>;
   export const Pause: FC<IconProps>;
   export const Play: FC<IconProps>;
   export const RotateCcw: FC<IconProps>;
@@ -23,4 +27,5 @@ declare module 'lucide-react' {
   export const Users: FC<IconProps>;
   export const Volume2: FC<IconProps>;
   export const VolumeX: FC<IconProps>;
+  export const X: FC<IconProps>;
 }

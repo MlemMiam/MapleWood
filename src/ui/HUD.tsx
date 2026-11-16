@@ -11,6 +11,7 @@ interface HUDProps {
   buildingName: string;
   zoneToast: string | null;
   playerX: number;
+  playerY?: number;
   playerZ: number;
   playerYaw: number;
   stamina: number;
@@ -40,6 +41,7 @@ export const HUD: React.FC<HUDProps> = ({
   buildingName,
   zoneToast,
   playerX,
+  playerY = 0.05,
   playerZ,
   playerYaw,
   stamina,
@@ -147,9 +149,11 @@ export const HUD: React.FC<HUDProps> = ({
         <div className="flex flex-col items-end gap-2">
           <Minimap
             playerX={playerX}
+            playerY={playerY}
             playerZ={playerZ}
             playerYaw={playerYaw}
             npcs={npcs}
+            onOpenMap={onOpenMap}
           />
           <div className="flex items-center gap-1.5 pointer-events-auto">
             <button

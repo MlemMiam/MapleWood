@@ -13,7 +13,6 @@ import {
 import { createMaterialLibrary } from './utils/Materials';
 import {
   CAMPUS_DATA,
-  type RoomDefinition,
   findRoomAtPosition,
 } from './utils/CampusLayout';
 import { isOnCarpet } from './world/buildings/MainBuilding';
@@ -65,6 +64,8 @@ import {
   type PlayerDisplayOptions,
 } from './character/PlayerClothesSystem';
 
+import { CampusMapModal } from './ui/CampusMapModal';
+
 // Heavy overlays are loaded on demand so the initial 3D bundle stays smaller.
 const PlayerCustomizationModal = lazy(() =>
   import('./ui/PlayerCustomizationModal').then((module) => ({
@@ -74,11 +75,6 @@ const PlayerCustomizationModal = lazy(() =>
 const CutsceneGalleryModal = lazy(() =>
   import('./ui/CutsceneGalleryModal').then((module) => ({
     default: module.CutsceneGalleryModal,
-  }))
-);
-const CampusMapModal = lazy(() =>
-  import('./ui/CampusMapModal').then((module) => ({
-    default: module.CampusMapModal,
   }))
 );
 
@@ -113,7 +109,7 @@ const INTRO_DURATION = 11.65;
 const LOADING_TIPS = [
   'Utilisez la touche E près des portes, casiers, tableaux et ordinateurs pour interagir.',
   'Maintenez Shift pour sprinter à travers la cour centrale ou le terrain de sport.',
-  'Appuyez sur M à tout moment pour ouvrir le plan complet et vous déplacer rapidement.',
+  'Appuie sur M à tout moment pour ouvrir le plan complet du lycée.',
   'Parlez à Mme Vance dans le hall d\'entrée et à Léo près des casiers pour démarrer les missions.',
   'Le Coach Miller vous attend au gymnase pour un défi de lancers francs.',
 ];
@@ -134,7 +130,7 @@ export default function App() {
   const [buildingName, setBuildingName] = useState('Extérieur');
   const [zoneToast, setZoneToast] = useState<string | null>(null);
   const [interactPrompt, setInteractPrompt] = useState<string | null>(null);
-  const [hudPos, setHudPos] = useState({ x: 0, z: 6, yaw: 0, stamina: 100 });
+  const [hudPos, setHudPos] = useState({ x: 0, y: 0.05, z: 6, yaw: 0, stamina: 100 });
   const [npcMarkers, setNpcMarkers] = useState<MinimapNpcMarker[]>([]);
   const [questState, setQuestState] = useState<QuestState>(() => createInitialQuestState());
   const [activeModal, setActiveModal] = useState<ActiveModalContent | null>(null);
@@ -189,6 +185,8 @@ export default function App() {
   const lastWeatherRef = useRef<WeatherType>('sunny');
   const lastTimePhaseRef = useRef<TimePhase>('morning');
   const activeNpcIdRef = useRef<string | null>(null);
+  const showCutsceneGalleryRef = useRef(false);
+  showCutsceneGalleryRef.current = showCutsceneGallery;
   const introElapsedRef = useRef(0);
   const introStageFlagsRef = useRef({
     sparkle0: false,
@@ -517,10 +515,11 @@ export default function App() {
       let lastRoomId = 'courtyard';
       let lastPrompt: string | null = null;
       let lastHudX = NaN;
+      let lastHudY = NaN;
       let lastHudZ = NaN;
       let lastHudYaw = NaN;
       let lastHudStamina = NaN;
-      const lastNpcCoords = npcs.map(() => ({ x: NaN, z: NaN }));
+      const lastNpcCoords = npcs.map(() => ({ x: NaN, y: NaN, z: NaN }));
 
       const tick = () => {
         if (disposed) return;
@@ -672,7 +671,7 @@ export default function App() {
         } else if (curPhase === 'playing') {
           if (snap.pauseJustPressed) {
             updatePhase('paused');
-          } else if (snap.mapJustPressed) {
+          } else if (snap.mapJustPressed && !showCutsceneGalleryRef.current) {
             updatePhase('map');
           } else {
             cameraCtrl.applyInput(
@@ -682,7 +681,11 @@ export default function App() {
               curSettings.mouseSensitivity
             );
 
-            const currentRoom = findRoomAtPosition(player.position.x, player.position.z);
+            const currentRoom = findRoomAtPosition(
+              player.position.x,
+              player.position.z,
+              player.position.y
+            );
             const footstepSurface: 'grass' | 'carpet' | 'hard' =
               currentRoom?.type === 'exterior' && currentRoom.id === 'courtyard'
                 ? 'grass'
@@ -775,17 +778,20 @@ export default function App() {
               );
               if (
                 Math.abs(player.position.x - lastHudX) > 0.02 ||
+                Math.abs(player.position.y - lastHudY) > 0.05 ||
                 Math.abs(player.position.z - lastHudZ) > 0.02 ||
                 Math.abs(cameraCtrl.yaw - lastHudYaw) > 0.015 ||
                 Math.abs(player.stamina - lastHudStamina) > 0.25 ||
                 Number.isNaN(lastHudX)
               ) {
                 lastHudX = player.position.x;
+                lastHudY = player.position.y;
                 lastHudZ = player.position.z;
                 lastHudYaw = cameraCtrl.yaw;
                 lastHudStamina = player.stamina;
                 setHudPos({
                   x: lastHudX,
+                  y: lastHudY,
                   z: lastHudZ,
                   yaw: lastHudYaw,
                   stamina: lastHudStamina,
@@ -799,6 +805,7 @@ export default function App() {
                 if (
                   Number.isNaN(prev.x) ||
                   Math.abs(n.position.x - prev.x) > 0.08 ||
+                  Math.abs(n.position.y - prev.y) > 0.08 ||
                   Math.abs(n.position.z - prev.z) > 0.08
                 ) {
                   npcMoved = true;
@@ -808,6 +815,7 @@ export default function App() {
               if (npcMoved) {
                 for (let i = 0; i < npcs.length; i++) {
                   lastNpcCoords[i].x = npcs[i].position.x;
+                  lastNpcCoords[i].y = npcs[i].position.y;
                   lastNpcCoords[i].z = npcs[i].position.z;
                 }
                 setNpcMarkers(
@@ -815,6 +823,7 @@ export default function App() {
                     id: n.data.id,
                     name: n.data.name,
                     x: n.position.x,
+                    y: n.position.y,
                     z: n.position.z,
                   }))
                 );
@@ -822,7 +831,7 @@ export default function App() {
             }
           }
         } else if (curPhase === 'dialogue' || curPhase === 'map') {
-          if (snap.pauseJustPressed) {
+          if (snap.pauseJustPressed || (curPhase === 'map' && snap.mapJustPressed)) {
             if (npcVoiceAudioRef.current) {
               npcVoiceAudioRef.current.pause();
               npcVoiceAudioRef.current = null;
@@ -1171,7 +1180,11 @@ export default function App() {
           selection.spawn.yaw
         );
         cameraCtrl.resetToPlayer(player.position, selection.spawn.yaw);
-        const startRoom = findRoomAtPosition(selection.spawn.x, selection.spawn.z);
+        const startRoom = findRoomAtPosition(
+          selection.spawn.x,
+          selection.spawn.z,
+          selection.spawn.y
+        );
         if (startRoom) {
           setZoneName(startRoom.name);
           setBuildingName(startRoom.building);
@@ -1272,22 +1285,6 @@ export default function App() {
       );
     },
     [applyQuestUpdate, showToast]
-  );
-
-  const handleFastTravel = useCallback(
-    (room: RoomDefinition) => {
-      const { player, cameraCtrl } = engineRefs.current;
-      if (player && cameraCtrl) {
-        player.teleport(room.position.x, room.position.y, room.position.z, 0);
-        cameraCtrl.resetToPlayer(player.position, 0);
-        setZoneName(room.name);
-        setBuildingName(room.building);
-        applyQuestUpdate((q) => recordRoomVisit(q, room.id));
-        showToast(`Déplacement vers : ${room.name}`);
-      }
-      updatePhase('playing');
-    },
-    [applyQuestUpdate, showToast, updatePhase]
   );
 
   const handleRespawn = useCallback(() => {
@@ -1453,6 +1450,7 @@ export default function App() {
           buildingName={buildingName}
           zoneToast={zoneToast}
           playerX={hudPos.x}
+          playerY={hudPos.y}
           playerZ={hudPos.z}
           playerYaw={hudPos.yaw}
           stamina={hudPos.stamina}
@@ -1497,16 +1495,14 @@ export default function App() {
       )}
 
       {phase === 'map' && (
-        <Suspense fallback={<ModalLoadingOverlay />}>
-          <CampusMapModal
-            playerX={hudPos.x}
-            playerZ={hudPos.z}
-            visitedRooms={questState.visitedRooms}
-            npcs={npcMarkers}
-            onFastTravel={handleFastTravel}
-            onClose={() => updatePhase('playing')}
-          />
-        </Suspense>
+        <CampusMapModal
+          playerX={hudPos.x}
+          playerY={hudPos.y}
+          playerZ={hudPos.z}
+          visitedRooms={questState.visitedRooms}
+          npcs={npcMarkers}
+          onClose={() => updatePhase('playing')}
+        />
       )}
 
       {phase === 'paused' && (

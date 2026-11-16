@@ -87,15 +87,23 @@ export class InputManager {
     this.canvas.addEventListener('wheel', this.onWheel, { passive: true });
   }
 
+  private resolveEventCode(e: KeyboardEvent): string {
+    if (e.key && e.key.toLowerCase() === 'm' && this.bindings.map.includes('KeyM')) {
+      return 'KeyM';
+    }
+    return e.code;
+  }
+
   private onKeyDown = (e: KeyboardEvent): void => {
     const activeTag = document.activeElement?.tagName;
     if (activeTag === 'INPUT' || activeTag === 'TEXTAREA' || activeTag === 'SELECT') {
       return;
     }
-    if (!this.keysHeld.has(e.code)) {
-      this.keysJustPressed.add(e.code);
+    const code = this.resolveEventCode(e);
+    if (!this.keysHeld.has(code)) {
+      this.keysJustPressed.add(code);
     }
-    this.keysHeld.add(e.code);
+    this.keysHeld.add(code);
 
     if (e.code === 'Space' && document.body.dataset.state === 'playing') {
       e.preventDefault();
@@ -103,6 +111,8 @@ export class InputManager {
   };
 
   private onKeyUp = (e: KeyboardEvent): void => {
+    const code = this.resolveEventCode(e);
+    this.keysHeld.delete(code);
     this.keysHeld.delete(e.code);
   };
 
