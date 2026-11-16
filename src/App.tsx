@@ -972,10 +972,16 @@ export default function App() {
         CAMPUS_DATA.spawn.z,
         CAMPUS_DATA.spawn.yaw
       );
+      void player.applyCustomPlayerAvatar(
+        playerGender,
+        hairSelection,
+        clothesSelection,
+        displayOptions
+      );
       cameraCtrl.resetToPlayer(player.position, CAMPUS_DATA.spawn.yaw);
     }
     updatePhase('playing');
-  }, [updatePhase]);
+  }, [clothesSelection, displayOptions, hairSelection, playerGender, updatePhase]);
 
   const handleAdvanceToPlayerChoice = useCallback(() => {
     updatePhase('genderChoice');
@@ -985,7 +991,11 @@ export default function App() {
     (chosenGender: PlayerGender) => {
       if (chosenGender !== playerGender) {
         setPlayerGender(chosenGender);
-        setClothesSelection(getDefaultClothesSelection(chosenGender));
+        const def = getDefaultClothesSelection(chosenGender);
+        setClothesSelection((prev) => ({
+          items: { ...def.items },
+          colors: { ...prev.colors },
+        }));
       }
       updatePhase('customization');
     },

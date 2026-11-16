@@ -158,6 +158,48 @@ async function startServer() {
     }
   });
 
+  const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com/MlemMiam/MapleWood/main/public';
+  const VRM_REL_PATHS = [
+    '/assets/models/Florie.vrm',
+    '/assets/models/Helen.vrm',
+    '/assets/player/FemPlayer.vrm',
+    '/assets/player/MalePlayer.vrm',
+  ];
+
+  app.get('/assets/{*vrmPath}', async (req, res, next) => {
+    if (!req.path.toLowerCase().endsWith('.vrm')) {
+      next();
+      return;
+    }
+    const matchedRel = VRM_REL_PATHS.find(
+      (p) => p.toLowerCase() === req.path.toLowerCase()
+    );
+    const relPath = matchedRel || req.path;
+    const localFile = path.join(__dirname, 'public', relPath);
+
+    try {
+      if (fs.existsSync(localFile) && fs.statSync(localFile).size > 1024) {
+        res.setHeader('Content-Type', 'model/gltf-binary');
+        res.sendFile(localFile);
+        return;
+      }
+      if (matchedRel) {
+        const upstream = await fetch(`${GITHUB_RAW_BASE}${matchedRel}`);
+        if (upstream.ok) {
+          const buf = Buffer.from(await upstream.arrayBuffer());
+          fs.mkdirSync(path.dirname(localFile), { recursive: true });
+          fs.writeFileSync(localFile, buf);
+          res.setHeader('Content-Type', 'model/gltf-binary');
+          res.send(buf);
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn(`Error serving VRM ${relPath}:`, err);
+    }
+    next();
+  });
+
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({

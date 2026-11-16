@@ -1,8 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import {
+  EYEBROW_COLOR_PRESETS,
+  EYE_COLOR_PRESETS,
   HAIR_CATEGORIES_META as HAIR_CATEGORIES,
   HAIR_COLOR_PRESETS,
+  SKIN_COLOR_PRESETS,
   type BaseScalpMeshData,
   type HairCatalogData,
   type HairCategoryId,
@@ -34,7 +37,8 @@ import {
 } from '../character/FlorieVRM';
 
 export type CustomizationStep = 'genderChoice' | 'customization';
-export type StudioTabMode = 'hair' | 'clothes';
+export type StudioTabMode = 'hair' | 'clothes' | 'face';
+export type FaceTraitCategoryId = 'skin' | 'eyes' | 'eyebrows';
 export type CameraFramingPreset = 'head' | 'torso' | 'legs' | 'feet' | 'full';
 
 interface PlayerCustomizationModalProps {
@@ -291,7 +295,7 @@ const ClothesCategorySvgIcon: React.FC<{
           <path d="M9 4h6l-1.5 3.5L15.5 17 12 20l-3.5-3 2-9.5L9 4Z" />
         </SvgIcon>
       );
-    case 'glasses':
+      case 'glasses':
       return (
         <SvgIcon size={size}>
           <circle cx="6.5" cy="13.5" r="3.5" />
@@ -303,6 +307,70 @@ const ClothesCategorySvgIcon: React.FC<{
       );
   }
 };
+
+const IconFace: React.FC<{ size?: number }> = ({ size = 16 }) => (
+  <SvgIcon size={size}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M9 10h.01" />
+    <path d="M15 10h.01" />
+    <path d="M9.5 15a3.5 3.5 0 0 0 5 0" />
+  </SvgIcon>
+);
+
+const FaceTraitSvgIcon: React.FC<{
+  category: FaceTraitCategoryId;
+  size?: number;
+}> = ({ category, size = 15 }) => {
+  switch (category) {
+    case 'skin':
+      return (
+        <SvgIcon size={size}>
+          <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" />
+        </SvgIcon>
+      );
+    case 'eyes':
+      return (
+        <SvgIcon size={size}>
+          <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z" />
+          <circle cx="12" cy="12" r="3" />
+        </SvgIcon>
+      );
+    case 'eyebrows':
+      return (
+        <SvgIcon size={size}>
+          <path d="M4 11c2.5-3 6.5-3.5 10-1.5" />
+          <path d="M14 9.5c2 .8 4 2 6 3.5" />
+          <circle cx="11" cy="15" r="2" />
+        </SvgIcon>
+      );
+  }
+};
+
+const FACE_TRAIT_CATEGORIES: Array<{
+  id: FaceTraitCategoryId;
+  label: string;
+  shortLabel: string;
+  subtitle: string;
+}> = [
+  {
+    id: 'skin',
+    label: 'Teint de la Peau',
+    shortLabel: 'Peau',
+    subtitle: 'Personnalisez la carnation du visage et du corps',
+  },
+  {
+    id: 'eyes',
+    label: 'Couleur des Yeux',
+    shortLabel: 'Yeux',
+    subtitle: "Choisissez la teinte de l'iris du personnage",
+  },
+  {
+    id: 'eyebrows',
+    label: 'Couleur des Sourcils',
+    shortLabel: 'Sourcils',
+    subtitle: 'Harmonisez les sourcils avec la coiffure ou créez un contraste',
+  },
+];
 
 export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> = ({
   step,
@@ -339,6 +407,9 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
     ]);
     return {
       ...initialSelection,
+      skinColorHex: initialSelection.skinColorHex || '#ffffff',
+      eyebrowColorHex: initialSelection.eyebrowColorHex || '#ffffff',
+      eyeColorHex: initialSelection.eyeColorHex || '#ffffff',
       front: removedIds.has(initialSelection.front || '')
         ? 'Front2'
         : initialSelection.front,
@@ -358,6 +429,8 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
   const [activeCategory, setActiveCategory] = useState<HairCategoryId>('front');
   const [activeClothesCategory, setActiveClothesCategory] =
     useState<ClothesCategoryId>('top');
+  const [activeFaceCategory, setActiveFaceCategory] =
+    useState<FaceTraitCategoryId>('skin');
   const [cameraFraming, setCameraFraming] = useState<CameraFramingPreset>('full');
 
   // Dropdown states ("menus déroulants")
@@ -395,6 +468,12 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
   const selectionReactTimerRef = useRef<number>(0);
   const displayOptionsRef = useRef<PlayerDisplayOptions>(displayOptions);
   displayOptionsRef.current = displayOptions;
+  const hairSelectionRef = useRef<PlayerHairSelection>(selection);
+  hairSelectionRef.current = selection;
+  const clothesSelectionRef = useRef<PlayerClothesSelection>(clothesSelection);
+  clothesSelectionRef.current = clothesSelection;
+
+  const [colorAllClothes, setColorAllClothes] = useState<boolean>(false);
 
   const onStartMusicRef = useRef(onStartMusic);
   const onStopMusicRef = useRef(onStopMusic);
@@ -585,7 +664,7 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
           if (controller.vrm) {
             const hairRoot = applyHairSelectionToVrm(
               controller.vrm,
-              selection,
+              hairSelectionRef.current,
               hairCatalog,
               baseScalp
             );
@@ -595,7 +674,7 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
             applyClothesSelectionToVrm(
               controller.vrm,
               selectedGender,
-              clothesSelection,
+              clothesSelectionRef.current,
               clothesCatalog,
               clothesTemplates,
               displayOptionsRef.current
@@ -872,15 +951,36 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
     triggerSelectionReaction();
   };
 
-  const handleSelectClothesColor = (catId: ClothesCategoryId, hex: string) => {
+  const handleSelectClothesColor = (
+    catId: ClothesCategoryId,
+    hex: string,
+    applyToAll = colorAllClothes
+  ) => {
     onPlayColorSwatch ? onPlayColorSwatch() : onPlayClick?.();
-    setClothesSelection((prev) => ({
-      ...prev,
-      colors: {
-        ...prev.colors,
-        [catId]: hex,
-      },
-    }));
+    setClothesSelection((prev) => {
+      if (applyToAll) {
+        return {
+          ...prev,
+          colors: {
+            top: hex,
+            bottom: hex,
+            dress: hex,
+            socks: hex,
+            shoes: hex,
+            arm: hex,
+            neck: hex,
+            glasses: hex,
+          },
+        };
+      }
+      return {
+        ...prev,
+        colors: {
+          ...prev.colors,
+          [catId]: hex,
+        },
+      };
+    });
     triggerSelectionReaction();
   };
 
@@ -907,7 +1007,11 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
     if (newGender === selectedGender) return;
     onPlayClick?.();
     setSelectedGender(newGender);
-    setClothesSelection(getDefaultClothesSelection(newGender));
+    const defaultForGender = getDefaultClothesSelection(newGender);
+    setClothesSelection((prev) => ({
+      items: { ...defaultForGender.items },
+      colors: { ...prev.colors },
+    }));
     setOpenDropdown('none');
     applyFraming('full', newGender, 0.18, 0.04);
   };
@@ -1044,6 +1148,13 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
               onMouseEnter={() => onPlayHover?.()}
               onClick={() => {
                 onPlayClick?.();
+                if (selectedGender !== 'female') {
+                  const def = getDefaultClothesSelection('female');
+                  setClothesSelection((prev) => ({
+                    items: { ...def.items },
+                    colors: { ...prev.colors },
+                  }));
+                }
                 setSelectedGender('female');
               }}
               style={{
@@ -1134,6 +1245,13 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
               onMouseEnter={() => onPlayHover?.()}
               onClick={() => {
                 onPlayClick?.();
+                if (selectedGender !== 'male') {
+                  const def = getDefaultClothesSelection('male');
+                  setClothesSelection((prev) => ({
+                    items: { ...def.items },
+                    colors: { ...prev.colors },
+                  }));
+                }
                 setSelectedGender('male');
               }}
               style={{
@@ -1256,8 +1374,68 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
   const activeClothesEquippedId = clothesSelection.items[activeClothesCategory];
   const activeClothesColorHex =
     clothesSelection.colors[activeClothesCategory] || '#ffffff';
+
+  const activeFaceCatMeta =
+    FACE_TRAIT_CATEGORIES.find((c) => c.id === activeFaceCategory) ||
+    FACE_TRAIT_CATEGORIES[0];
+
+  const activeFaceColorHex =
+    activeFaceCategory === 'skin'
+      ? selection.skinColorHex || '#ffffff'
+      : activeFaceCategory === 'eyes'
+        ? selection.eyeColorHex || '#ffffff'
+        : selection.eyebrowColorHex || '#ffffff';
+
   const currentActiveColorHex =
-    studioMode === 'hair' ? selection.colorHex : activeClothesColorHex;
+    studioMode === 'hair'
+      ? selection.colorHex
+      : studioMode === 'face'
+        ? activeFaceColorHex
+        : activeClothesColorHex;
+
+  const activeColorPresets =
+    studioMode === 'hair'
+      ? HAIR_COLOR_PRESETS
+      : studioMode === 'face'
+        ? activeFaceCategory === 'skin'
+          ? SKIN_COLOR_PRESETS
+          : activeFaceCategory === 'eyes'
+            ? EYE_COLOR_PRESETS
+            : EYEBROW_COLOR_PRESETS
+        : CLOTHES_COLOR_SWATCHES;
+
+  const resolveSwatchPreviewBg = (
+    hex: string,
+    presets: ReadonlyArray<{ hex: string; swatch?: string }>
+  ) => {
+    const match = presets.find(
+      (p) => p.hex.toLowerCase() === hex.toLowerCase()
+    );
+    return match && 'swatch' in match && typeof match.swatch === 'string'
+      ? match.swatch
+      : hex;
+  };
+
+  const currentActiveSwatchDisplayBg = resolveSwatchPreviewBg(
+    currentActiveColorHex,
+    activeColorPresets
+  );
+
+  const handleSelectFaceTraitColor = (
+    trait: FaceTraitCategoryId,
+    hex: string
+  ) => {
+    onPlayColorSwatch ? onPlayColorSwatch() : onPlayClick?.();
+    setSelection((prev) => ({
+      ...prev,
+      ...(trait === 'skin'
+        ? { skinColorHex: hex }
+        : trait === 'eyes'
+          ? { eyeColorHex: hex }
+          : { eyebrowColorHex: hex }),
+    }));
+    triggerSelectionReaction();
+  };
 
   const equippedClothesList = visibleClothesCategories.filter(
     (cat) => Boolean(clothesSelection.items[cat.id])
@@ -1695,6 +1873,32 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
                   <IconScissors size={15} />
                   <span>Coiffure</span>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    onPlayClick?.();
+                    setStudioMode('face');
+                    setOpenDropdown('none');
+                    applyFraming('head', selectedGender, 0, 0.05);
+                  }}
+                  style={{
+                    padding: '7px 14px',
+                    borderRadius: 10,
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontSize: 12.5,
+                    fontWeight: 800,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    background: studioMode === 'face' ? '#e11d48' : 'transparent',
+                    color: studioMode === 'face' ? '#ffffff' : '#881337',
+                  }}
+                >
+                  <IconFace size={15} />
+                  <span>Visage & Peau</span>
+                </button>
               </div>
 
               {/* Right-side Dropdown Menus (Looks, Couleur, Cumul) */}
@@ -1703,12 +1907,15 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
                   style={{
                     display: 'flex',
                     alignItems: 'center',
+                    justifyContent: 'flex-end',
                     gap: 8,
                     flexWrap: 'wrap',
+                    marginLeft: 'auto',
+                    position: 'relative',
                   }}
                 >
                   {/* 1) COLOR DROPDOWN MENU */}
-                  <div style={{ position: 'relative' }}>
+                  <div>
                     <button
                       type="button"
                       onClick={() => toggleDropdown('colors')}
@@ -1734,7 +1941,9 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
                         Couleur (
                         {studioMode === 'hair'
                           ? 'Cheveux'
-                          : activeClothesCatMeta.shortLabel}
+                          : studioMode === 'face'
+                            ? activeFaceCatMeta.shortLabel
+                            : activeClothesCatMeta.shortLabel}
                         )
                       </span>
                       <span
@@ -1742,7 +1951,7 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
                           width: 14,
                           height: 14,
                           borderRadius: '50%',
-                          background: currentActiveColorHex,
+                          background: currentActiveSwatchDisplayBg,
                           border: '1.5px solid rgba(136, 19, 55, 0.35)',
                         }}
                       />
@@ -1758,15 +1967,16 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
                           position: 'absolute',
                           top: 'calc(100% + 6px)',
                           right: 0,
-                          width: 280,
+                          width: 265,
+                          maxWidth: 'calc(100vw - 48px)',
                           background: '#ffffff',
                           borderRadius: 18,
                           border: '1.5px solid #fecdd3',
                           boxShadow: '0 16px 36px rgba(136, 19, 55, 0.2)',
-                          padding: 14,
+                          padding: 12,
                           display: 'flex',
                           flexDirection: 'column',
-                          gap: 12,
+                          gap: 10,
                           zIndex: 40,
                         }}
                       >
@@ -1775,6 +1985,7 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'space-between',
+                            gap: 6,
                           }}
                         >
                           <span
@@ -1787,14 +1998,65 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
                             Teinte :{' '}
                             {studioMode === 'hair'
                               ? 'Cheveux'
-                              : activeClothesCatMeta.shortLabel}
+                              : studioMode === 'face'
+                                ? activeFaceCatMeta.shortLabel
+                                : colorAllClothes
+                                  ? 'Toute la tenue'
+                                  : activeClothesCatMeta.shortLabel}
                           </span>
                           {studioMode === 'clothes' && (
+                            <div style={{ display: 'flex', gap: 5 }}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onPlayClick?.();
+                                  setColorAllClothes((prev) => !prev);
+                                }}
+                                style={{
+                                  padding: '3px 8px',
+                                  borderRadius: 999,
+                                  border: colorAllClothes
+                                    ? '1px solid #e11d48'
+                                    : '1px solid #fecdd3',
+                                  background: colorAllClothes ? '#e11d48' : '#fff1f2',
+                                  color: colorAllClothes ? '#ffffff' : '#be123c',
+                                  fontSize: 10.5,
+                                  fontWeight: 800,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                Toute la tenue
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleSelectClothesColor(
+                                    activeClothesCategory,
+                                    '#ffffff',
+                                    colorAllClothes
+                                  )
+                                }
+                                style={{
+                                  padding: '3px 8px',
+                                  borderRadius: 999,
+                                  border: '1px solid #fecdd3',
+                                  background: '#fff1f2',
+                                  color: '#be123c',
+                                  fontSize: 10.5,
+                                  fontWeight: 800,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                Original
+                              </button>
+                            </div>
+                          )}
+                          {studioMode === 'face' && (
                             <button
                               type="button"
                               onClick={() =>
-                                handleSelectClothesColor(
-                                  activeClothesCategory,
+                                handleSelectFaceTraitColor(
+                                  activeFaceCategory,
                                   '#ffffff'
                                 )
                               }
@@ -1818,20 +2080,24 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
                           style={{
                             display: 'grid',
                             gridTemplateColumns: 'repeat(5, 1fr)',
-                            gap: 8,
+                            gap: 7,
                             justifyItems: 'center',
+                            maxHeight: 200,
+                            overflowY: 'auto',
+                            padding: '4px 2px',
                           }}
                         >
-                          {(studioMode === 'hair'
-                            ? HAIR_COLOR_PRESETS
-                            : CLOTHES_COLOR_SWATCHES
-                          ).map((swatch) => {
+                          {activeColorPresets.map((swatch) => {
                             const isSelected =
                               currentActiveColorHex.toLowerCase() ===
                               swatch.hex.toLowerCase();
+                            const previewBg =
+                              'swatch' in swatch && typeof swatch.swatch === 'string'
+                                ? swatch.swatch
+                                : swatch.hex;
                             return (
                               <button
-                                key={swatch.hex}
+                                key={`${swatch.name}_${swatch.hex}`}
                                 type="button"
                                 title={swatch.name}
                                 onClick={() => {
@@ -1844,18 +2110,24 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
                                       colorHex: swatch.hex,
                                     }));
                                     triggerSelectionReaction();
+                                  } else if (studioMode === 'face') {
+                                    handleSelectFaceTraitColor(
+                                      activeFaceCategory,
+                                      swatch.hex
+                                    );
                                   } else {
                                     handleSelectClothesColor(
                                       activeClothesCategory,
-                                      swatch.hex
+                                      swatch.hex,
+                                      colorAllClothes
                                     );
                                   }
                                 }}
                                 style={{
-                                  width: 30,
-                                  height: 30,
+                                  width: 28,
+                                  height: 28,
                                   borderRadius: '50%',
-                                  background: swatch.hex,
+                                  background: previewBg,
                                   border: isSelected
                                     ? '3px solid #e11d48'
                                     : '1.5px solid rgba(136, 19, 55, 0.25)',
@@ -1894,10 +2166,16 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
                                   ...prev,
                                   colorHex: e.target.value,
                                 }));
+                              } else if (studioMode === 'face') {
+                                handleSelectFaceTraitColor(
+                                  activeFaceCategory,
+                                  e.target.value
+                                );
                               } else {
                                 handleSelectClothesColor(
                                   activeClothesCategory,
-                                  e.target.value
+                                  e.target.value,
+                                  colorAllClothes
                                 );
                               }
                             }}
@@ -2198,6 +2476,76 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
                 })}
               </div>
             )}
+
+            {studioMode === 'face' && (
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 6,
+                  overflowX: 'auto',
+                  paddingBottom: 2,
+                }}
+              >
+                {FACE_TRAIT_CATEGORIES.map((cat) => {
+                  const isActive = activeFaceCategory === cat.id;
+                  const traitHex =
+                    cat.id === 'skin'
+                      ? selection.skinColorHex || '#ffffff'
+                      : cat.id === 'eyes'
+                        ? selection.eyeColorHex || '#ffffff'
+                        : selection.eyebrowColorHex || '#ffffff';
+                  const traitPresets =
+                    cat.id === 'skin'
+                      ? SKIN_COLOR_PRESETS
+                      : cat.id === 'eyes'
+                        ? EYE_COLOR_PRESETS
+                        : EYEBROW_COLOR_PRESETS;
+                  const dotBg = resolveSwatchPreviewBg(traitHex, traitPresets);
+                  return (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => {
+                        onPlayClick?.();
+                        setActiveFaceCategory(cat.id);
+                        setOpenDropdown('none');
+                        applyFraming('head', selectedGender, 0, 0.05);
+                      }}
+                      style={{
+                        padding: '6px 13px',
+                        borderRadius: 11,
+                        border: isActive
+                          ? '1.5px solid #e11d48'
+                          : '1.5px solid #fecdd3',
+                        background: isActive ? '#e11d48' : '#ffffff',
+                        color: isActive ? '#ffffff' : '#881337',
+                        fontSize: 12,
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 7,
+                      }}
+                    >
+                      <FaceTraitSvgIcon category={cat.id} size={14} />
+                      <span>{cat.label}</span>
+                      <span
+                        style={{
+                          width: 11,
+                          height: 11,
+                          borderRadius: '50%',
+                          background: dotBg,
+                          border: isActive
+                            ? '1.5px solid #ffffff'
+                            : '1.5px solid rgba(136, 19, 55, 0.35)',
+                        }}
+                      />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* ================================================================ */}
@@ -2484,6 +2832,234 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
             </div>
           )}
 
+          {studioMode === 'face' && (
+            <div
+              onClick={() => {
+                if (openDropdown !== 'none') setOpenDropdown('none');
+              }}
+              style={{
+                flex: 1,
+                overflowY: 'auto',
+                padding: '16px 22px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 14,
+              }}
+            >
+              {/* Action & Info Header for Active Face Trait */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: 10,
+                  padding: '12px 14px',
+                  borderRadius: 16,
+                  background: '#fff5f7',
+                  border: '1.5px solid #ffe4e6',
+                }}
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <div
+                    style={{
+                      fontSize: 13.5,
+                      fontWeight: 900,
+                      color: '#881337',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 7,
+                    }}
+                  >
+                    <FaceTraitSvgIcon category={activeFaceCategory} size={15} />
+                    <span>{activeFaceCatMeta.label}</span>
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 11.5,
+                      fontWeight: 600,
+                      color: '#9f1239',
+                    }}
+                  >
+                    {activeFaceCatMeta.subtitle}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  {activeFaceCategory === 'eyebrows' && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleSelectFaceTraitColor(
+                          'eyebrows',
+                          selection.colorHex || '#ffffff'
+                        )
+                      }
+                      style={{
+                        padding: '6px 11px',
+                        borderRadius: 999,
+                        border: '1.5px solid #fecdd3',
+                        background: '#ffffff',
+                        color: '#be123c',
+                        fontSize: 11.5,
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                      }}
+                    >
+                      <IconScissors size={13} />
+                      <span>Assortir aux cheveux</span>
+                    </button>
+                  )}
+
+                  <label
+                    style={{
+                      padding: '5px 11px',
+                      borderRadius: 999,
+                      border: '1.5px solid #fecdd3',
+                      background: '#ffffff',
+                      color: '#881337',
+                      fontSize: 11.5,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 7,
+                    }}
+                  >
+                    <span>Nuancier libre</span>
+                    <input
+                      type="color"
+                      value={activeFaceColorHex}
+                      onChange={(e) =>
+                        handleSelectFaceTraitColor(
+                          activeFaceCategory,
+                          e.target.value
+                        )
+                      }
+                      style={{
+                        width: 20,
+                        height: 20,
+                        border: 'none',
+                        padding: 0,
+                        background: 'transparent',
+                        cursor: 'pointer',
+                      }}
+                    />
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleSelectFaceTraitColor(activeFaceCategory, '#ffffff')
+                    }
+                    style={{
+                      padding: '6px 11px',
+                      borderRadius: 999,
+                      border: '1.5px solid #fecdd3',
+                      background: '#ffffff',
+                      color: '#be123c',
+                      fontSize: 11.5,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Original
+                  </button>
+                </div>
+              </div>
+
+              {/* Swatch Cards Grid */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(126px, 1fr))',
+                  gap: 10,
+                }}
+              >
+                {activeColorPresets.map((swatch) => {
+                  const isSelected =
+                    activeFaceColorHex.toLowerCase() ===
+                    swatch.hex.toLowerCase();
+                  const previewBg =
+                    'swatch' in swatch && typeof swatch.swatch === 'string'
+                      ? swatch.swatch
+                      : swatch.hex;
+                  return (
+                    <button
+                      key={`${activeFaceCategory}_${swatch.name}_${swatch.hex}`}
+                      type="button"
+                      onMouseEnter={() => onPlayHover?.()}
+                      onClick={() =>
+                        handleSelectFaceTraitColor(
+                          activeFaceCategory,
+                          swatch.hex
+                        )
+                      }
+                      style={{
+                        borderRadius: 16,
+                        padding: '12px 10px',
+                        cursor: 'pointer',
+                        border: isSelected
+                          ? '2.5px solid #e11d48'
+                          : '1.5px solid #ffe4e6',
+                        background: isSelected ? '#fff1f2' : '#ffffff',
+                        boxShadow: isSelected
+                          ? '0 8px 18px rgba(225, 29, 72, 0.14)'
+                          : 'none',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 8,
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: 46,
+                          height: 46,
+                          borderRadius: '50%',
+                          background: previewBg,
+                          border: isSelected
+                            ? '3px solid #e11d48'
+                            : '1.5px solid rgba(136, 19, 55, 0.25)',
+                          boxShadow: 'inset 0 2px 5px rgba(0, 0, 0, 0.12)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: '#ffffff',
+                        }}
+                      >
+                        {isSelected && <IconCheck size={18} />}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 11.5,
+                          fontWeight: 800,
+                          color: '#2d1219',
+                          textAlign: 'center',
+                          lineHeight: 1.25,
+                        }}
+                      >
+                        {swatch.name}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* SLIM, CLEAN FOOTER */}
           <div
             style={{
@@ -2515,9 +3091,25 @@ export const PlayerCustomizationModal: React.FC<PlayerCustomizationModalProps> =
                 onPlayConfirm?.();
                 onConfirmCustomization(
                   selectedGender,
-                  selection,
-                  clothesSelection,
-                  displayOptions
+                  { ...selection },
+                  {
+                    items: { ...clothesSelection.items },
+                    colors: { ...clothesSelection.colors },
+                  },
+                  {
+                    ...displayOptions,
+                    isolateActiveCategory: false,
+                    visibleCategories: {
+                      top: true,
+                      bottom: true,
+                      dress: true,
+                      socks: true,
+                      shoes: true,
+                      arm: true,
+                      neck: true,
+                      glasses: true,
+                    },
+                  }
                 );
               }}
               style={{

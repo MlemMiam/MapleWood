@@ -171,21 +171,45 @@ export const CLOTHES_CATEGORIES: ClothesCategoryMeta[] = [
 ];
 
 export const CLOTHES_COLOR_SWATCHES: Array<{ name: string; hex: string }> = [
+  // Neutres & Classiques
   { name: 'Original (Blanc Pur)', hex: '#ffffff' },
+  { name: 'Ivoire Soyeux', hex: '#faf3e0' },
+  { name: 'Gris Perle', hex: '#d8dee9' },
+  { name: 'Gris Urbain', hex: '#94a3b8' },
+  { name: 'Gris Ardoise', hex: '#6c757d' },
+  { name: 'Anthracite Nuit', hex: '#2b2d42' },
+  { name: 'Noir Absolu', hex: '#18181b' },
+  // Pastels & Doux
   { name: 'Rose Pétale', hex: '#ffd6e0' },
+  { name: 'Rose Bonbon', hex: '#ff9ebb' },
   { name: 'Corail Doux', hex: '#ffadad' },
   { name: 'Pêche Dorée', hex: '#ffd6a5' },
   { name: 'Crème Vanille', hex: '#fdffb6' },
   { name: 'Menthe Pastel', hex: '#caffbf' },
+  { name: 'Eau de Glace', hex: '#a8f0e8' },
   { name: 'Ciel Azur', hex: '#a0c4ff' },
   { name: 'Lavande Douce', hex: '#bdb2ff' },
   { name: 'Lilas Brillant', hex: '#ffc6ff' },
+  // Vifs & Éclatants
+  { name: 'Rouge Cerise', hex: '#e11d48' },
+  { name: 'Rouge Carmin', hex: '#c1121f' },
+  { name: 'Orange Mandarine', hex: '#f97316' },
+  { name: 'Jaune Soleil', hex: '#facc15' },
+  { name: 'Or Académie', hex: '#eab308' },
+  { name: 'Vert Émeraude', hex: '#10b981' },
+  { name: 'Turquoise Lagon', hex: '#06b6d4' },
+  { name: 'Bleu Roi', hex: '#2563eb' },
+  { name: 'Indigo Électrique', hex: '#4f46e5' },
+  { name: 'Violet Impérial', hex: '#7c3aed' },
+  { name: 'Fuchsia Pop', hex: '#d946ef' },
+  // Tons Académie & Automne
   { name: 'Bleu Marine Lycée', hex: '#3d5a80' },
   { name: 'Bordeaux Académie', hex: '#9b2226' },
+  { name: 'Prune Velours', hex: '#581c87' },
   { name: 'Vert Forêt', hex: '#40916c' },
+  { name: 'Vert Sauge', hex: '#84a98c' },
   { name: 'Caramel Chaud', hex: '#bc6c25' },
-  { name: 'Gris Ardoise', hex: '#6c757d' },
-  { name: 'Anthracite Nuit', hex: '#2b2d42' },
+  { name: 'Chocolat Cacao', hex: '#5c3a21' },
 ];
 
 export const DEFAULT_CLOTHES_COLORS: Record<ClothesCategoryId, string> = {
@@ -484,17 +508,18 @@ export interface BuiltClothSurface {
   partgroup: string;
   posArr: Float32Array;
   normArr: Float32Array;
+  activeMask: Uint8Array;
   vertCount: number;
 }
 
 const CATEGORY_CLEARANCE_METERS: Record<ClothesCategoryId, number> = {
-  socks: 0.0035,
-  arm: 0.0045,
-  bottom: 0.0090,
-  top: 0.0145,
-  dress: 0.0195,
-  shoes: 0.0110,
-  neck: 0.0240,
+  socks: 0.0040,
+  arm: 0.0052,
+  bottom: 0.0110,
+  top: 0.0165,
+  dress: 0.0210,
+  shoes: 0.0120,
+  neck: 0.0250,
   glasses: 0.0260,
 };
 
@@ -807,16 +832,34 @@ function applyBodyFootHeelMorph(
   surface.posArr.set(workBodyPos);
 }
 
+function isBodyOverlayVertAllowed(
+  category: ClothesCategoryId,
+  reg: BodyAnatomicalRegion,
+  py: number,
+  hasLowerGarment: boolean
+): boolean {
+  if (category === 'socks') {
+    if (reg === 'leg_l' || reg === 'leg_r' || reg === 'foot_l' || reg === 'foot_r') {
+      return !hasLowerGarment || py < 0.90;
+    }
+    return !hasLowerGarment && reg === 'torso' && py < 0.98;
+  }
+  if (category === 'arm') {
+    return reg === 'arm_l' || reg === 'arm_r' || reg === 'hand_l' || reg === 'hand_r';
+  }
+  return reg !== 'head';
+}
+
 function buildBodyOverlaySkinnedMesh(
   baseBodyMesh: THREE.SkinnedMesh,
-  _category: ClothesCategoryId,
+  category: ClothesCategoryId,
   layerIndex: number,
   _blendShapes: Record<string, number>,
   material: THREE.Material
 ): THREE.SkinnedMesh {
   const surface = getCachedBodySurfaceData(baseBodyMesh);
   const geom = baseBodyMesh.geometry.clone();
-  // Ensure overlay uses the full unmasked body index buffer
+  geom.clearGroups();
   if (surface.originalIndices.length > 0) {
     geom.setIndex(new THREE.Uint32BufferAttribute(surface.originalIndices, 1));
   }
@@ -824,7 +867,7 @@ function buildBodyOverlaySkinnedMesh(
   const vertCount = surface.vertCount;
   const posArr = new Float32Array(vertCount * 3);
   // Subtle skin-tight offset using welded normals so UV seams stay 100% watertight
-  const inflate = 0.0009 + layerIndex * 0.0004;
+  const inflate = 0.0018 + layerIndex * 0.0006;
 
   for (let i = 0; i < vertCount; i++) {
     const px = surface.posArr[i * 3];
@@ -843,8 +886,9 @@ function buildBodyOverlaySkinnedMesh(
   geom.setAttribute('position', new THREE.Float32BufferAttribute(posArr, 3));
 
   const skinned = new THREE.SkinnedMesh(geom, material);
+  skinned.userData.clothesCategory = category;
   skinned.castShadow = true;
-  skinned.receiveShadow = true;
+  skinned.receiveShadow = false;
   skinned.frustumCulled = false;
   skinned.bind(baseBodyMesh.skeleton, baseBodyMesh.bindMatrix);
   return skinned;
@@ -1266,10 +1310,84 @@ function buildTemplateSkinnedMesh(
     }
   }
 
-  // 3. Multi-pass anatomical surface clearance + bone-weight lock to prevent any body penetration
+  // Remove artificial interior hole-closure cap fans (waist plug, bottom-hem plug, wrist-cuff plug)
+  // where 10+ template vertices share an identical interior apex coordinate.
+  const origPosGroups = new Map<string, number[]>();
+  for (let i = 0; i < vertCount; i++) {
+    const key = `${Math.round(template.positions[i * 3] * 2000)}_${Math.round(template.positions[i * 3 + 1] * 2000)}_${Math.round(template.positions[i * 3 + 2] * 2000)}`;
+    let list = origPosGroups.get(key);
+    if (!list) {
+      list = [];
+      origPosGroups.set(key, list);
+    }
+    list.push(i);
+  }
+  const isCapApex = new Uint8Array(vertCount);
+  for (const list of origPosGroups.values()) {
+    if (list.length >= 10) {
+      for (const vi of list) {
+        isCapApex[vi] = 1;
+      }
+    }
+  }
+
+  const filteredIndices: number[] = [];
+  const activeMask = new Uint8Array(vertCount);
+  if (template.indices && template.indices.length > 0) {
+    for (let t = 0; t < template.indices.length; t += 3) {
+      const a = template.indices[t];
+      const b = template.indices[t + 1];
+      const c = template.indices[t + 2];
+      if (isCapApex[a] || isCapApex[b] || isCapApex[c]) {
+        continue;
+      }
+      filteredIndices.push(a, b, c);
+      activeMask[a] = 1;
+      activeMask[b] = 1;
+      activeMask[c] = 1;
+    }
+  } else {
+    activeMask.fill(1);
+  }
+
+  // 3. Slightly inflate clothing geometry along welded outward vertex normals + multi-pass anatomical surface clearance
   if (!partgroup.includes('Glasses') && category !== 'shoes') {
+    const normalInflate = 0.0018 + layerIndex * 0.0005;
+    const clothWeldGroups = new Map<string, number[]>();
+    for (let i = 0; i < vertCount; i++) {
+      if (!activeMask[i]) continue;
+      const key = `${Math.round(posArr[i * 3] * 2500)}_${Math.round(posArr[i * 3 + 1] * 2500)}_${Math.round(posArr[i * 3 + 2] * 2500)}`;
+      let grp = clothWeldGroups.get(key);
+      if (!grp) {
+        grp = [];
+        clothWeldGroups.set(key, grp);
+      }
+      grp.push(i);
+    }
+    for (const grp of clothWeldGroups.values()) {
+      let sx = 0;
+      let sy = 0;
+      let sz = 0;
+      for (const vi of grp) {
+        sx += normArr[vi * 3];
+        sy += normArr[vi * 3 + 1];
+        sz += normArr[vi * 3 + 2];
+      }
+      const nLen = Math.hypot(sx, sy, sz);
+      if (nLen > 1e-4) {
+        sx /= nLen;
+        sy /= nLen;
+        sz /= nLen;
+        for (const vi of grp) {
+          posArr[vi * 3] += sx * normalInflate;
+          posArr[vi * 3 + 1] += sy * normalInflate * 0.35;
+          posArr[vi * 3 + 2] += sz * normalInflate;
+        }
+      }
+    }
+
     const minClearance =
-      (CATEGORY_CLEARANCE_METERS[category] || 0.0032) + layerIndex * 0.0009;
+      (CATEGORY_CLEARANCE_METERS[category] || 0.0040) + layerIndex * 0.0010;
     const bCount = surface.vertCount;
     const bPos = surface.posArr;
     const bNorm = surface.weldedNormals;
@@ -1278,6 +1396,7 @@ function buildTemplateSkinnedMesh(
 
     for (let pass = 0; pass < 3; pass++) {
       for (let i = 0; i < vertCount; i++) {
+        if (!activeMask[i]) continue;
         const vx = posArr[i * 3];
         const vy = posArr[i * 3 + 1];
         const vz = posArr[i * 3 + 2];
@@ -1288,7 +1407,7 @@ function buildTemplateSkinnedMesh(
         let bestJ = -1;
         for (let j = 0; j < bCount; j++) {
           const dy = vy - bPos[j * 3 + 1];
-          if (dy > 0.08 || dy < -0.08) continue;
+          if (dy > 0.09 || dy < -0.09) continue;
           if (!isCompatibleBodyVert(cBone, cReg, bBones[j], bRegs[j])) continue;
           const dx = vx - bPos[j * 3];
           const dz = vz - bPos[j * 3 + 2];
@@ -1299,7 +1418,7 @@ function buildTemplateSkinnedMesh(
           }
         }
 
-        if (bestJ >= 0 && bestD2 < 0.0036) {
+        if (bestJ >= 0 && bestD2 < 0.0064) {
           const dx = vx - bPos[bestJ * 3];
           const dy = vy - bPos[bestJ * 3 + 1];
           const dz = vz - bPos[bestJ * 3 + 2];
@@ -1309,14 +1428,17 @@ function buildTemplateSkinnedMesh(
           const signedDist = dx * nx + dy * ny + dz * nz;
           const ndot =
             normArr[i * 3] * nx + normArr[i * 3 + 1] * ny + normArr[i * 3 + 2] * nz;
-          const targetClearance =
+          const baseTargetClearance =
             itemId === 'female_Arm2' && (cReg === 'hand_l' || cReg === 'hand_r')
               ? 0.0028
               : minClearance;
-          const allowPush =
-            (itemId === 'female_Arm2' && (cReg === 'hand_l' || cReg === 'hand_r')) ||
-            ndot >= -0.15;
-          if (allowPush && signedDist < targetClearance) {
+          // Keep inward-folded cuff/hem bevel lips moving outward just behind the outer wall
+          // so they never get left behind inside the wrist or waist.
+          const targetClearance =
+            ndot >= -0.15
+              ? baseTargetClearance
+              : Math.max(0.0025, baseTargetClearance - 0.0018);
+          if (signedDist < targetClearance) {
             const push = targetClearance - signedDist;
             const yClearScale =
               itemId === 'male_Neck1' || itemId === 'male_Neck2' || itemId === 'male_Neck3'
@@ -1328,7 +1450,7 @@ function buildTemplateSkinnedMesh(
           }
 
           // Lock skinning weights to the closest underlying body vertex so joints move in 100% unison
-          if (pass === 0 && bestD2 < 0.0025) {
+          if (pass === 0 && bestD2 < 0.0056) {
             skinIndexArr[i * 4] = surface.skinIndices[bestJ * 4];
             skinIndexArr[i * 4 + 1] = surface.skinIndices[bestJ * 4 + 1];
             skinIndexArr[i * 4 + 2] = surface.skinIndices[bestJ * 4 + 2];
@@ -1346,24 +1468,38 @@ function buildTemplateSkinnedMesh(
   // 3b. Multi-layer clothing clearance against underlying clothing layers
   if (priorSurfaces && priorSurfaces.length > 0 && !partgroup.includes('Glasses')) {
     for (const under of priorSurfaces) {
+      const isSameItemMultiLayer =
+        category === under.category && Boolean(itemId) && under.itemId === itemId;
       const isUnder =
-        (category === 'top' && under.category === 'bottom') ||
-        (category === 'dress' && (under.category === 'top' || under.category === 'bottom')) ||
+        isSameItemMultiLayer ||
+        (category === 'bottom' && under.category === 'socks') ||
+        (category === 'top' &&
+          (under.category === 'bottom' ||
+            under.category === 'arm' ||
+            under.category === 'socks')) ||
+        (category === 'dress' &&
+          (under.category === 'top' ||
+            under.category === 'bottom' ||
+            under.category === 'arm' ||
+            under.category === 'socks')) ||
         (category === 'shoes' && (under.category === 'socks' || under.category === 'bottom')) ||
         (category === 'neck' && (under.category === 'top' || under.category === 'dress'));
       if (!isUnder) continue;
 
       const interLayerMargin =
+        isSameItemMultiLayer ? 0.0020 :
         category === 'neck' ? 0.0100 :
         category === 'dress' ? 0.0085 :
         0.0075;
       const uCount = under.vertCount;
       const uPos = under.posArr;
       const uNorm = under.normArr;
+      const uMask = under.activeMask;
 
       // Special case: 1:1 vertex correspondence for identical partgroup templates (e.g. dress over top)
       if (under.partgroup === partgroup && uCount === vertCount) {
         for (let i = 0; i < vertCount; i++) {
+          if (!activeMask[i] || !uMask[i]) continue;
           const vx = posArr[i * 3];
           const vy = posArr[i * 3 + 1];
           const vz = posArr[i * 3 + 2];
@@ -1388,9 +1524,13 @@ function buildTemplateSkinnedMesh(
         continue;
       }
 
+      const isRadialOverBottom =
+        (category === 'top' || category === 'dress') && under.category === 'bottom';
+
       // General case: 2-iteration nearest-surface clearance with 12 cm search radius
       for (let pass = 0; pass < 2; pass++) {
         for (let i = 0; i < vertCount; i++) {
+          if (!activeMask[i]) continue;
           const vx = posArr[i * 3];
           const vy = posArr[i * 3 + 1];
           const vz = posArr[i * 3 + 2];
@@ -1398,8 +1538,11 @@ function buildTemplateSkinnedMesh(
           let bestD2 = Infinity;
           let bestU = -1;
           for (let j = 0; j < uCount; j++) {
+            if (!uMask[j]) continue;
+            // Skip vertical-normal cap/rim vertices so waistbands never yank outer tops vertically
+            if (isRadialOverBottom && Math.abs(uNorm[j * 3 + 1]) > 0.65) continue;
             const dy = vy - uPos[j * 3 + 1];
-            if (dy > 0.10 || dy < -0.10) continue;
+            if (dy > 0.09 || dy < -0.09) continue;
             const dx = vx - uPos[j * 3];
             const dz = vz - uPos[j * 3 + 2];
             const d2 = dx * dx + dy * dy + dz * dz;
@@ -1413,9 +1556,16 @@ function buildTemplateSkinnedMesh(
             const dx = vx - uPos[bestU * 3];
             const dy = vy - uPos[bestU * 3 + 1];
             const dz = vz - uPos[bestU * 3 + 2];
-            const nx = uNorm[bestU * 3];
-            const ny = uNorm[bestU * 3 + 1];
-            const nz = uNorm[bestU * 3 + 2];
+            let nx = uNorm[bestU * 3];
+            let ny = uNorm[bestU * 3 + 1];
+            let nz = uNorm[bestU * 3 + 2];
+            if (isRadialOverBottom) {
+              ny *= 0.12;
+              const nLen = Math.hypot(nx, ny, nz) || 1;
+              nx /= nLen;
+              ny /= nLen;
+              nz /= nLen;
+            }
             const signedDist = dx * nx + dy * ny + dz * nz;
             if (signedDist < interLayerMargin) {
               const push = interLayerMargin - signedDist;
@@ -1430,12 +1580,39 @@ function buildTemplateSkinnedMesh(
   }
 
   if (priorSurfaces) {
+    const surfaceMask = Uint8Array.from(activeMask);
+    if (partgroup === 'N00_010_01_OnePiece') {
+      for (let i = 0; i < vertCount; i++) {
+        if (!surfaceMask[i]) continue;
+        const cBone = template.jointNames[template.joints[i * 4]] || 'J_Bip_C_Hips';
+        const cReg = classifyBoneRegion(cBone);
+        const vy = posArr[i * 3 + 1];
+        if (category === 'top') {
+          if (!(cReg === 'torso' || cReg === 'arm_l' || cReg === 'arm_r') || vy < 0.78) {
+            surfaceMask[i] = 0;
+          }
+        } else if (category === 'bottom') {
+          if (!(cReg === 'torso' || cReg === 'leg_l' || cReg === 'leg_r') || vy > 1.15) {
+            surfaceMask[i] = 0;
+          }
+        } else if (category === 'arm') {
+          if (!(cReg === 'arm_l' || cReg === 'arm_r' || cReg === 'hand_l' || cReg === 'hand_r')) {
+            surfaceMask[i] = 0;
+          }
+        } else if (category === 'socks') {
+          if (!(cReg === 'leg_l' || cReg === 'leg_r' || cReg === 'foot_l' || cReg === 'foot_r')) {
+            surfaceMask[i] = 0;
+          }
+        }
+      }
+    }
     priorSurfaces.push({
       category,
       itemId: itemId || '',
       partgroup,
       posArr: Float32Array.from(posArr),
       normArr: Float32Array.from(normArr),
+      activeMask: surfaceMask,
       vertCount,
     });
   }
@@ -1446,12 +1623,12 @@ function buildTemplateSkinnedMesh(
   geom.setAttribute('uv', new THREE.Float32BufferAttribute(uvArr, 2));
   geom.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(skinIndexArr, 4));
   geom.setAttribute('skinWeight', new THREE.Float32BufferAttribute(skinWeightArr, 4));
-  geom.setIndex(template.indices);
+  geom.setIndex(filteredIndices);
   geom.computeBoundingSphere();
 
   const skinned = new THREE.SkinnedMesh(geom, material);
   skinned.castShadow = true;
-  skinned.receiveShadow = true;
+  skinned.receiveShadow = false;
   skinned.frustumCulled = false;
   skinned.bind(baseBodyMesh.skeleton, baseBodyMesh.bindMatrix);
   return skinned;
@@ -1474,6 +1651,16 @@ function selectTemplateForPartGroup(
   return null;
 }
 
+function syncBodyGeometryGroups(geom: THREE.BufferGeometry, indexCount: number): void {
+  if (geom.groups && geom.groups.length > 0) {
+    geom.groups[0].start = 0;
+    geom.groups[0].count = indexCount;
+    for (let g = 1; g < geom.groups.length; g++) {
+      geom.groups[g].count = 0;
+    }
+  }
+}
+
 /**
  * Hides body/overlay foot geometry enclosed inside equipped shoes so bare toes,
  * heels, and socks do not poke through shoe meshes, while keeping exposed arches
@@ -1492,6 +1679,7 @@ function updateBodyMeshCoverageMask(
   if (shoeMode === 'none') {
     const origAttr = new THREE.Uint32BufferAttribute(orig, 1);
     baseBodyMesh.geometry.setIndex(origAttr);
+    syncBodyGeometryGroups(baseBodyMesh.geometry, origAttr.count);
     return origAttr;
   }
 
@@ -1537,6 +1725,7 @@ function updateBodyMeshCoverageMask(
 
   const maskedAttr = new THREE.Uint32BufferAttribute(kept, 1);
   baseBodyMesh.geometry.setIndex(maskedAttr);
+  syncBodyGeometryGroups(baseBodyMesh.geometry, maskedAttr.count);
   return maskedAttr;
 }
 
@@ -1787,6 +1976,12 @@ export function applyClothesSelectionToVrm(
       if ('outlineWidthFactor' in m) {
         (m as unknown as { outlineWidthFactor: number }).outlineWidthFactor = 0;
       }
+    } else if (m) {
+      // Push underlying body surface slightly back in the depth buffer so grazing body silhouettes never clip through clothes
+      m.polygonOffset = true;
+      m.polygonOffsetFactor = 1.0;
+      m.polygonOffsetUnits = 2.0;
+      m.needsUpdate = true;
     }
   }
 
@@ -1840,7 +2035,6 @@ export function applyClothesSelectionToVrm(
   applyBodyFootHeelMorph(bodyMesh, templates, shoeMode);
   _soleProbeCache.delete(vrm.scene);
   const bodySurface = getCachedBodySurfaceData(bodyMesh);
-  void bodySurface;
 
   const gradientMap = getAnimeClothesGradientMap();
   const physicsRuntime = initOrGetClothesPhysicsRuntime(clothesRoot);
@@ -1848,6 +2042,7 @@ export function applyClothesSelectionToVrm(
   let globalLayerCounter = 0;
   const activePartGroups = new Set<string>();
   let hasActiveShoes = false;
+  let hasActiveLowerGarment = false;
 
   for (const catId of LAYER_ORDER) {
     if (!displayOptions.visibleCategories[catId]) continue;
@@ -1871,6 +2066,9 @@ export function applyClothesSelectionToVrm(
     if (catId === 'shoes') {
       hasActiveShoes = true;
     }
+    if (catId === 'bottom' || catId === 'dress') {
+      hasActiveLowerGarment = true;
+    }
 
     const tintColor = new THREE.Color(selection.colors[catId] || '#ffffff');
 
@@ -1880,7 +2078,14 @@ export function applyClothesSelectionToVrm(
       const map = layer.mainTextureUrl ? getClothesTexture(layer.mainTextureUrl) : null;
       const baseRenderOrder = CATEGORY_RENDER_ORDER[catId] || 20;
       const itemRenderOrder = baseRenderOrder + lIdx;
+      const template = selectTemplateForPartGroup(layer.partgroup, templates);
+      const isSkinOverlay = !template;
 
+      // Apply calibrated polygonOffset on all clothing materials (paired with welded normal inflation
+      // and positive polygonOffset on the base body mesh) so the underlying body never clips through
+      // clothes while avoiding extreme slope factors that would x-ray inner layers.
+      // Disable ACES tone-mapping compression (matching VRM MToonMaterial) and normalize fragment
+      // lighting so clothing colors look 100% identical in the Studio and In-Game.
       const mat = new THREE.MeshToonMaterial({
         map,
         color: tintColor,
@@ -1889,15 +2094,33 @@ export function applyClothesSelectionToVrm(
         alphaTest: 0.5,
         side: THREE.DoubleSide,
         depthWrite: true,
+        toneMapped: false,
         polygonOffset: true,
-        polygonOffsetFactor: -2.0 - itemRenderOrder * 0.20,
-        polygonOffsetUnits: -4.0 - itemRenderOrder * 0.40,
+        polygonOffsetFactor: isSkinOverlay ? -0.2 : -0.5 - lIdx * 0.25,
+        polygonOffsetUnits: isSkinOverlay ? -1.0 - lIdx : -2.0 - globalLayerCounter * 1.0,
       });
 
-      // Hook up physics uniforms and vertex displacement
+      const injectAnimeColorFaithfulFragment = (shader: { fragmentShader: string }) => {
+        shader.fragmentShader = shader.fragmentShader.replace(
+          '#include <lights_fragment_end>',
+          `#include <lights_fragment_end>
+{
+  vec3 totalToonLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse;
+  float baseLum = max(dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114)), 0.0005);
+  float litLum = dot(totalToonLight, vec3(0.299, 0.587, 0.114));
+  float rawRatio = litLum / baseLum;
+  float celStep = smoothstep(0.18, 0.46, rawRatio);
+  float animeShade = mix(0.82, 1.0, celStep);
+  reflectedLight.directDiffuse = diffuseColor.rgb * animeShade;
+  reflectedLight.indirectDiffuse = vec3(0.0);
+}`
+        );
+      };
+
+      // Hook up physics uniforms, vertex displacement, and color-faithful anime fragment shading
       if (catId === 'bottom' || catId === 'dress') {
         const skirtSpring = physicsRuntime.springs.skirt;
-        mat.customProgramCacheKey = () => `cloth_physics_skirt_${catId}`;
+        mat.customProgramCacheKey = () => `cloth_physics_skirt_v2_${catId}`;
         mat.onBeforeCompile = (shader) => {
           shader.uniforms.uClothSway = skirtSpring.uniform;
           shader.vertexShader = `
@@ -1927,10 +2150,11 @@ if (candCloth.y < 0.92 && candCloth.y > 0.42) {
 }
 transformed = candCloth;`
           );
+          injectAnimeColorFaithfulFragment(shader);
         };
       } else if (catId === 'top') {
         const topSpring = physicsRuntime.springs.top;
-        mat.customProgramCacheKey = () => `cloth_physics_top`;
+        mat.customProgramCacheKey = () => `cloth_physics_top_v2`;
         mat.onBeforeCompile = (shader) => {
           shader.uniforms.uTopSway = topSpring.uniform;
           shader.vertexShader = `
@@ -1942,10 +2166,11 @@ uniform vec3 uTopSway;
 float topHemFactor = clamp((1.06 - position.y) / 0.22, 0.0, 1.0);
 transformed += uTopSway * pow(topHemFactor, 1.35);`
           );
+          injectAnimeColorFaithfulFragment(shader);
         };
       } else if (catId === 'neck') {
         const neckSpring = physicsRuntime.springs.neck;
-        mat.customProgramCacheKey = () => `cloth_physics_neck`;
+        mat.customProgramCacheKey = () => `cloth_physics_neck_v2`;
         mat.onBeforeCompile = (shader) => {
           shader.uniforms.uNeckSway = neckSpring.uniform;
           shader.vertexShader = `
@@ -1962,10 +2187,15 @@ if (candNeck.y < 1.34 && candNeck.y > 1.14 && candNeck.z > -0.076) {
 }
 transformed = candNeck;`
           );
+          injectAnimeColorFaithfulFragment(shader);
+        };
+      } else {
+        mat.customProgramCacheKey = () => `cloth_anime_color_v2_${catId}`;
+        mat.onBeforeCompile = (shader) => {
+          injectAnimeColorFaithfulFragment(shader);
         };
       }
 
-      const template = selectTemplateForPartGroup(layer.partgroup, templates);
       if (template) {
         const mesh = buildTemplateSkinnedMesh(
           bodyMesh,
@@ -2035,19 +2265,50 @@ transformed = candNeck;`
     hasActiveShoes
   );
   if (maskedIndexAttr) {
+    const baseIndices = maskedIndexAttr.array as ArrayLike<number>;
     for (const child of clothesRoot.children) {
       if (
         child instanceof THREE.SkinnedMesh &&
         child.name.startsWith('ClothesOverlay_')
       ) {
-        child.geometry.setIndex(maskedIndexAttr.clone());
+        const overlayCat =
+          (child.userData.clothesCategory as ClothesCategoryId | undefined) || 'socks';
+        const overlayKept: number[] = [];
+        for (let i = 0; i < baseIndices.length; i += 3) {
+          const i0 = baseIndices[i];
+          const i1 = baseIndices[i + 1];
+          const i2 = baseIndices[i + 2];
+          if (
+            isBodyOverlayVertAllowed(
+              overlayCat,
+              bodySurface.regions[i0],
+              bodySurface.posArr[i0 * 3 + 1],
+              hasActiveLowerGarment
+            ) ||
+            isBodyOverlayVertAllowed(
+              overlayCat,
+              bodySurface.regions[i1],
+              bodySurface.posArr[i1 * 3 + 1],
+              hasActiveLowerGarment
+            ) ||
+            isBodyOverlayVertAllowed(
+              overlayCat,
+              bodySurface.regions[i2],
+              bodySurface.posArr[i2 * 3 + 1],
+              hasActiveLowerGarment
+            )
+          ) {
+            overlayKept.push(i0, i1, i2);
+          }
+        }
+        child.geometry.setIndex(new THREE.Uint32BufferAttribute(overlayKept, 1));
       }
     }
   }
 
   resolveVrmPlatformCollision(vrm, vrm.scene.parent?.parent || vrm.scene, 0);
 
-  if (import.meta.env.DEV) {
+  if (import.meta.env?.DEV) {
     (window as unknown as Record<string, unknown>).__clothesDebug = {
       gender,
       report: () => debugReportClothes(vrm, bodyMesh, clothesRoot, gender),

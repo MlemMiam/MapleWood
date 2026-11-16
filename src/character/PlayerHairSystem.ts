@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { VRM, VRMHumanBoneName, VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
+import { fetchVrmBufferWithFallback } from './FlorieVRM';
 
 export type HairCategoryId = 'base' | 'front' | 'back' | 'side' | 'ex' | 'extra';
 
@@ -44,6 +45,9 @@ export interface PlayerHairSelection {
   ex: string | null;
   extra: string | null;
   colorHex: string;
+  skinColorHex?: string;
+  eyebrowColorHex?: string;
+  eyeColorHex?: string;
 }
 
 export type PlayerGender = 'female' | 'male';
@@ -71,13 +75,78 @@ export const HAIR_COLOR_PRESETS: Array<{
   swatch: string;
 }> = [
   { id: 'natural', name: 'Châtain Original', hex: '#ffffff', swatch: '#7e5643' },
-  { id: 'raven', name: 'Noir Corbeau', hex: '#4a4656', swatch: '#23212b' },
+  { id: 'espresso', name: 'Brun Chocolat', hex: '#8b634b', swatch: '#593a28' },
+  { id: 'honey', name: 'Châtain Miel', hex: '#d4a36a', swatch: '#b58042' },
   { id: 'blonde', name: 'Blond Doré', hex: '#ffd88a', swatch: '#eab959' },
-  { id: 'sakura', name: 'Rose Sakura', hex: '#ffb5d0', swatch: '#e87ea6' },
+  { id: 'platinum', name: 'Blond Platine', hex: '#fff3d1', swatch: '#f3e1ab' },
   { id: 'auburn', name: 'Roux Cuivré', hex: '#e87a52', swatch: '#c44f29' },
-  { id: 'silver', name: 'Argent Céleste', hex: '#dce5f7', swatch: '#b4c2de' },
-  { id: 'midnight', name: 'Bleu Nuit', hex: '#5f82d9', swatch: '#3553a1' },
+  { id: 'crimson', name: 'Rouge Écarlate', hex: '#e04f5f', swatch: '#b82535' },
+  { id: 'sakura', name: 'Rose Sakura', hex: '#ffb5d0', swatch: '#e87ea6' },
+  { id: 'strawberry', name: 'Rose Fraise', hex: '#f472b6', swatch: '#db2777' },
+  { id: 'peach', name: 'Corail Pêche', hex: '#ffad99', swatch: '#e07a5f' },
   { id: 'lavender', name: 'Violet Lavande', hex: '#bfa0f5', swatch: '#8f6bc9' },
+  { id: 'amethyst', name: 'Pourpre Améthyste', hex: '#8b5cf6', swatch: '#6d28d9' },
+  { id: 'midnight', name: 'Bleu Nuit', hex: '#5f82d9', swatch: '#3553a1' },
+  { id: 'sky', name: 'Bleu Glacier', hex: '#93c5fd', swatch: '#60a5fa' },
+  { id: 'teal', name: 'Turquoise Céleste', hex: '#5eead4', swatch: '#14b8a6' },
+  { id: 'mint', name: 'Vert Menthe', hex: '#a7f3d0', swatch: '#34d399' },
+  { id: 'emerald', name: 'Vert Émeraude', hex: '#4ade80', swatch: '#16a34a' },
+  { id: 'silver', name: 'Argent Céleste', hex: '#dce5f7', swatch: '#b4c2de' },
+  { id: 'ash', name: 'Gris Cendré', hex: '#94a3b8', swatch: '#64748b' },
+  { id: 'raven', name: 'Noir Corbeau', hex: '#4a4656', swatch: '#23212b' },
+];
+
+export const EYEBROW_COLOR_PRESETS = HAIR_COLOR_PRESETS;
+
+export const SKIN_COLOR_PRESETS: Array<{
+  id: string;
+  name: string;
+  hex: string;
+  swatch: string;
+}> = [
+  { id: 'ivory_orig', name: 'Ivoire Naturel (Original)', hex: '#ffffff', swatch: '#f9e6d8' },
+  { id: 'porcelain_rose', name: 'Porcelaine Rosée', hex: '#fff0f3', swatch: '#fce4e9' },
+  { id: 'alabaster', name: 'Albâtre Clair', hex: '#fff8f4', swatch: '#fdf2eb' },
+  { id: 'fair_peach', name: 'Pêche Clair', hex: '#ffe3d1', swatch: '#f7d5c0' },
+  { id: 'warm_beige', name: 'Beige Naturel', hex: '#f7d1b0', swatch: '#ecc29f' },
+  { id: 'golden_sand', name: 'Sable Doré', hex: '#eec096', swatch: '#e2b287' },
+  { id: 'sun_kissed', name: 'Miel Halé', hex: '#e2ab79', swatch: '#d59d6b' },
+  { id: 'warm_olive', name: 'Olive Doré', hex: '#d9a477', swatch: '#cb9668' },
+  { id: 'caramel', name: 'Caramel Doux', hex: '#c88c58', swatch: '#ba7f4c' },
+  { id: 'amber_bronze', name: 'Bronze Ambré', hex: '#b37443', swatch: '#a56838' },
+  { id: 'cinnamon', name: 'Cannelle Chaude', hex: '#9b5d32', swatch: '#8d5128' },
+  { id: 'chestnut_skin', name: 'Chocolat Au Lait', hex: '#834b25', swatch: '#76411d' },
+  { id: 'cocoa', name: 'Cacao Intense', hex: '#6b3a1c', swatch: '#5e3115' },
+  { id: 'ebony_warm', name: 'Ébène Doux', hex: '#522a14', swatch: '#46220e' },
+  { id: 'ebony_deep', name: 'Ébène Profond', hex: '#3b1d0e', swatch: '#301609' },
+];
+
+export const EYE_COLOR_PRESETS: Array<{
+  id: string;
+  name: string;
+  hex: string;
+  swatch: string;
+}> = [
+  { id: 'silver_orig', name: 'Gris Argent (Original)', hex: '#ffffff', swatch: '#9ca3af' },
+  { id: 'sapphire', name: 'Bleu Saphir', hex: '#3b82f6', swatch: '#2563eb' },
+  { id: 'sky_azure', name: 'Bleu Céleste', hex: '#60a5fa', swatch: '#38bdf8' },
+  { id: 'ice_blue', name: 'Bleu Glacier', hex: '#93c5fd', swatch: '#7dd3fc' },
+  { id: 'deep_navy', name: 'Bleu Océan', hex: '#1d4ed8', swatch: '#1e40af' },
+  { id: 'turquoise', name: 'Turquoise Lagon', hex: '#2dd4bf', swatch: '#14b8a6' },
+  { id: 'emerald', name: 'Vert Émeraude', hex: '#22c55e', swatch: '#16a34a' },
+  { id: 'jade', name: 'Vert Jade', hex: '#4ade80', swatch: '#10b981' },
+  { id: 'olive_green', name: 'Vert Noisette', hex: '#84cc16', swatch: '#65a30d' },
+  { id: 'amber_gold', name: 'Ambre Doré', hex: '#f59e0b', swatch: '#d97706' },
+  { id: 'honey_gold', name: 'Or Lumineux', hex: '#fbbf24', swatch: '#eab308' },
+  { id: 'hazel', name: 'Marron Noisette', hex: '#a16207', swatch: '#854d0e' },
+  { id: 'warm_brown', name: 'Brun Chocolat', hex: '#78350f', swatch: '#5c280b' },
+  { id: 'dark_onyx', name: 'Noir Onyx', hex: '#334155', swatch: '#1e293b' },
+  { id: 'crimson_ruby', name: 'Rouge Rubis', hex: '#ef4444', swatch: '#dc2626' },
+  { id: 'rose_quartz', name: 'Rose Quartz', hex: '#f472b6', swatch: '#ec4899' },
+  { id: 'sakura_pink', name: 'Rose Sakura', hex: '#f9a8d4', swatch: '#f472b6' },
+  { id: 'amethyst', name: 'Violet Améthyste', hex: '#a855f7', swatch: '#9333ea' },
+  { id: 'lavender_eye', name: 'Lavande Mystique', hex: '#c084fc', swatch: '#a855f7' },
+  { id: 'coral_sunset', name: 'Corail Crépuscule', hex: '#fb7185', swatch: '#f43f5e' },
 ];
 
 export const DEFAULT_PLAYER_HAIR_SELECTION: PlayerHairSelection = {
@@ -88,6 +157,9 @@ export const DEFAULT_PLAYER_HAIR_SELECTION: PlayerHairSelection = {
   ex: null,
   extra: null,
   colorHex: '#ffffff',
+  skinColorHex: '#ffffff',
+  eyebrowColorHex: '#ffffff',
+  eyeColorHex: '#ffffff',
 };
 
 export const HAIR_CATEGORIES_META: HairCategoryMeta[] = [
@@ -247,9 +319,9 @@ export function loadBaseScalpMeshData(): Promise<BaseScalpMeshData> {
 
 export function loadFemPlayerVrmBuffer(): Promise<ArrayBuffer> {
   if (!_femPlayerBufferPromise) {
-    _femPlayerBufferPromise = fetch('/assets/player/FemPlayer.vrm').then(async (res) => {
-      if (!res.ok) throw new Error('Impossible de charger FemPlayer.vrm');
-      return await res.arrayBuffer();
+    _femPlayerBufferPromise = fetchVrmBufferWithFallback('/assets/player/FemPlayer.vrm').catch((err) => {
+      _femPlayerBufferPromise = null;
+      throw err;
     });
   }
   return _femPlayerBufferPromise;
@@ -257,9 +329,9 @@ export function loadFemPlayerVrmBuffer(): Promise<ArrayBuffer> {
 
 export function loadMalePlayerVrmBuffer(): Promise<ArrayBuffer> {
   if (!_malePlayerBufferPromise) {
-    _malePlayerBufferPromise = fetch('/assets/player/MalePlayer.vrm').then(async (res) => {
-      if (!res.ok) throw new Error('Impossible de charger MalePlayer.vrm');
-      return await res.arrayBuffer();
+    _malePlayerBufferPromise = fetchVrmBufferWithFallback('/assets/player/MalePlayer.vrm').catch((err) => {
+      _malePlayerBufferPromise = null;
+      throw err;
     });
   }
   return _malePlayerBufferPromise;
@@ -852,6 +924,56 @@ export function updateHairPhysics(
 }
 
 /**
+ * Converts a brown VRoid eyebrow texture into a cached, luminance-normalized neutral grayscale texture
+ * so any eyebrow color preset (including blonde, silver, pastel pink, or blue) tints with 1:1 accuracy.
+ */
+function getDesaturatedEyebrowTexture(
+  origTex: THREE.Texture | null | undefined
+): THREE.Texture | null {
+  if (!origTex || !origTex.image) return origTex || null;
+  if (origTex.userData?.desaturatedBrowTex) {
+    return origTex.userData.desaturatedBrowTex as THREE.Texture;
+  }
+  if (typeof document === 'undefined') return origTex;
+  try {
+    const img = origTex.image as { width?: number; height?: number };
+    const w = img.width || 1024;
+    const h = img.height || 256;
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return origTex;
+    ctx.drawImage(origTex.image as CanvasImageSource, 0, 0, w, h);
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const data = imgData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      const a = data[i + 3];
+      if (a > 0) {
+        const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+        const norm = Math.min(1, lum / 101);
+        const gray = Math.round(195 + norm * 57);
+        data[i] = gray;
+        data[i + 1] = gray;
+        data[i + 2] = gray;
+      }
+    }
+    ctx.putImageData(imgData, 0, 0);
+    const desatTex = new THREE.CanvasTexture(canvas);
+    desatTex.flipY = origTex.flipY;
+    desatTex.wrapS = origTex.wrapS;
+    desatTex.wrapT = origTex.wrapT;
+    desatTex.colorSpace = origTex.colorSpace;
+    desatTex.needsUpdate = true;
+    origTex.userData = origTex.userData || {};
+    origTex.userData.desaturatedBrowTex = desatTex;
+    return desatTex;
+  } catch {
+    return origTex;
+  }
+}
+
+/**
  * Applies a PlayerHairSelection (or isolated single-item demo preview) onto a target VRM's J_Bip_C_Head bone.
  */
 export function applyHairSelectionToVrm(
@@ -912,7 +1034,12 @@ export function applyHairSelectionToVrm(
   if (effective.ex) activeIds.push(effective.ex);
   if (effective.extra) activeIds.push(effective.extra);
 
-  // Ensure VRoid face & eyebrows render on the face skin beneath bangs rather than in front of hair
+  const skinHex = (effective.skinColorHex || '#ffffff').toLowerCase();
+  const browHex = (effective.eyebrowColorHex || '#ffffff').toLowerCase();
+  const eyeHex = (effective.eyeColorHex || '#ffffff').toLowerCase();
+
+  // Ensure VRoid face & eyebrows render on the face skin beneath bangs rather than in front of hair,
+  // and apply customized skin tone, eyebrow color, and eye iris color to VRM MToon materials.
   vrm.scene.traverse((obj) => {
     const mesh = obj as THREE.Mesh;
     if (mesh.isMesh) {
@@ -920,11 +1047,113 @@ export function applyHairSelectionToVrm(
         mesh.renderOrder = 0;
       }
       const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      for (const m of mats) {
-        if (/FaceBrow|FaceEyeline/i.test(m?.name ?? '')) {
+      for (const rawMat of mats) {
+        if (!rawMat) continue;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const m = rawMat as any;
+        const mName = String(m.name || '');
+
+        if (/FaceBrow|FaceEyeline/i.test(mName)) {
           mesh.renderOrder = 0;
           m.depthTest = true;
           m.depthWrite = false;
+        }
+
+        // 1) Skin tone customization (Face & Body skin)
+        if (/Face_00_SKIN|Body_00_SKIN/i.test(mName) && m.color) {
+          m.userData = m.userData || {};
+          if (!m.userData.origSkinColor) {
+            m.userData.origSkinColor = m.color.clone();
+          }
+          if (m.shadeColorFactor && !m.userData.origSkinShadeColor) {
+            m.userData.origSkinShadeColor = m.shadeColorFactor.clone();
+          }
+          if (skinHex === '#ffffff') {
+            m.color.copy(m.userData.origSkinColor);
+            if (m.shadeColorFactor && m.userData.origSkinShadeColor) {
+              m.shadeColorFactor.copy(m.userData.origSkinShadeColor);
+            }
+          } else {
+            const c = new THREE.Color(skinHex);
+            // Normalize against the base ivory texture (#f9e6d8) so chosen swatches render accurately
+            const litR = c.r / 0.97;
+            const litG = c.g / 0.91;
+            const litB = c.b / 0.86;
+            m.color.setRGB(litR, litG, litB);
+            if (m.shadeColorFactor && m.userData.origSkinShadeColor) {
+              const origShade = m.userData.origSkinShadeColor as THREE.Color;
+              m.shadeColorFactor.setRGB(
+                litR * origShade.r,
+                litG * origShade.g,
+                litB * origShade.b
+              );
+            }
+          }
+        }
+
+        // 2) Eye iris customization (EyeIris_00_EYE)
+        if (/EyeIris/i.test(mName) && m.color) {
+          m.userData = m.userData || {};
+          if (!m.userData.origEyeColor) {
+            m.userData.origEyeColor = m.color.clone();
+          }
+          if (m.shadeColorFactor && !m.userData.origEyeShadeColor) {
+            m.userData.origEyeShadeColor = m.shadeColorFactor.clone();
+          }
+          if (eyeHex === '#ffffff') {
+            m.color.copy(m.userData.origEyeColor);
+            if (m.shadeColorFactor && m.userData.origEyeShadeColor) {
+              m.shadeColorFactor.copy(m.userData.origEyeShadeColor);
+            }
+          } else {
+            const c = new THREE.Color(eyeHex);
+            // Base VRoid iris texture is neutral grayscale (~0.55 mid-iris luminance)
+            m.color.copy(c).multiplyScalar(1.45);
+            if (m.shadeColorFactor) {
+              m.shadeColorFactor.copy(c).multiplyScalar(1.05);
+            }
+          }
+        }
+
+        // 3) Eyebrow customization (FaceBrow_00_FACE)
+        if (/FaceBrow/i.test(mName) && m.color) {
+          m.userData = m.userData || {};
+          if (!m.userData.origBrowSaved) {
+            m.userData.origBrowSaved = true;
+            m.userData.origBrowMap = m.map || null;
+            m.userData.origBrowShadeMap = m.shadeMultiplyTexture || null;
+            m.userData.origBrowColor = m.color.clone();
+            m.userData.origBrowShadeColor = m.shadeColorFactor
+              ? m.shadeColorFactor.clone()
+              : null;
+          }
+          if (browHex === '#ffffff') {
+            if (m.userData.origBrowMap) {
+              m.map = m.userData.origBrowMap;
+            }
+            if ('shadeMultiplyTexture' in m && m.userData.origBrowShadeMap) {
+              m.shadeMultiplyTexture = m.userData.origBrowShadeMap;
+            }
+            m.color.copy(m.userData.origBrowColor);
+            if (m.shadeColorFactor && m.userData.origBrowShadeColor) {
+              m.shadeColorFactor.copy(m.userData.origBrowShadeColor);
+            }
+            m.needsUpdate = true;
+          } else {
+            const desatMap = getDesaturatedEyebrowTexture(m.userData.origBrowMap);
+            if (desatMap) {
+              m.map = desatMap;
+              if ('shadeMultiplyTexture' in m) {
+                m.shadeMultiplyTexture = desatMap;
+              }
+            }
+            const c = new THREE.Color(browHex);
+            m.color.copy(c);
+            if (m.shadeColorFactor) {
+              m.shadeColorFactor.copy(c).multiplyScalar(0.88);
+            }
+            m.needsUpdate = true;
+          }
         }
       }
     }
@@ -955,16 +1184,34 @@ export function applyHairSelectionToVrm(
       gradientMap,
       side: THREE.FrontSide,
       alphaTest: isBase ? 0.5 : 0.0,
-      polygonOffset: true,
-      polygonOffsetFactor: isBase ? -1.0 : -3.0,
-      polygonOffsetUnits: isBase ? -2.0 : -6.0,
+      toneMapped: false,
+      polygonOffset: isBase,
+      polygonOffsetFactor: isBase ? -0.25 : 0,
+      polygonOffsetUnits: isBase ? -1.0 : 0,
     });
+
+    const injectHairAnimeColorFragment = (shader: { fragmentShader: string }) => {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <lights_fragment_end>',
+        `#include <lights_fragment_end>
+{
+  vec3 totalToonLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse;
+  float baseLum = max(dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114)), 0.0005);
+  float litLum = dot(totalToonLight, vec3(0.299, 0.587, 0.114));
+  float rawRatio = litLum / baseLum;
+  float celStep = smoothstep(0.18, 0.46, rawRatio);
+  float animeShade = mix(0.76, 0.96, celStep);
+  reflectedLight.directDiffuse = diffuseColor.rgb * animeShade;
+  reflectedLight.indirectDiffuse = vec3(0.0);
+}`
+      );
+    };
 
     const cat = getItemHairCategory(itemId);
     // Accessories ('extra') and base skull cap ('base') have no physics sway: they remain 100% static
     if (!isBase && cat !== 'extra') {
       const catSpring = physicsRuntime.springs[cat];
-      mat.customProgramCacheKey = () => `hair_physics_${cat}`;
+      mat.customProgramCacheKey = () => `hair_physics_v2_${cat}`;
       mat.onBeforeCompile = (shader) => {
         shader.uniforms.uHairSway = catSpring.uniform;
         shader.uniforms.uHairFlexPow = catSpring.flexPowUniform;
@@ -1015,6 +1262,12 @@ if (candPos.y < -0.03) {
 
 transformed = candPos;`
         );
+        injectHairAnimeColorFragment(shader);
+      };
+    } else {
+      mat.customProgramCacheKey = () => `hair_static_v2_${isBase ? 'base' : 'extra'}`;
+      mat.onBeforeCompile = (shader) => {
+        injectHairAnimeColorFragment(shader);
       };
     }
 
@@ -1022,7 +1275,7 @@ transformed = candPos;`
     mesh.name = `HairPart_${itemId}`;
     mesh.renderOrder = isBase ? 5 : 50;
     mesh.castShadow = true;
-    mesh.receiveShadow = true;
+    mesh.receiveShadow = false;
     hairRoot.add(mesh);
   }
 

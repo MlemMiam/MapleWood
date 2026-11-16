@@ -307,6 +307,34 @@ function isBinaryGltfOrVrm(buffer: ArrayBuffer): boolean {
   return magic === 0x46546c67;
 }
 
+const GITHUB_RAW_PUBLIC_BASE = 'https://raw.githubusercontent.com/MlemMiam/MapleWood/main/public';
+
+/**
+ * Fetches a binary VRM file from a local `/assets/...` path and falls back to the
+ * canonical GitHub repository raw asset if the local file is missing or returns an HTML SPA fallback.
+ */
+export async function fetchVrmBufferWithFallback(localPath: string): Promise<ArrayBuffer> {
+  const candidates = [localPath];
+  if (localPath.startsWith('/assets/')) {
+    candidates.push(`${GITHUB_RAW_PUBLIC_BASE}${localPath}`);
+  }
+  for (const url of candidates) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('text/html')) continue;
+      const buf = await res.arrayBuffer();
+      if (isBinaryGltfOrVrm(buf)) {
+        return buf;
+      }
+    } catch {
+      // Try next candidate
+    }
+  }
+  throw new Error(`Impossible de charger le modèle VRM : ${localPath}`);
+}
+
 /**
  * Discovers Florie's VRM model by checking:
  * 1) User-imported VRM persisted in IndexedDB (if the user customized it via drag-and-drop / file picker)
@@ -338,6 +366,7 @@ export async function discoverFlorieVrmBuffer(): Promise<{ buffer: ArrayBuffer; 
   // 3) Standard static public candidate paths (with bundled /Florie.vrm & /assets/models/Florie.vrm first)
   const staticPaths = [
     '/assets/models/Florie.vrm',
+    `${GITHUB_RAW_PUBLIC_BASE}/assets/models/Florie.vrm`,
     '/assets/models/florie.vrm',
     '/assets/models/player.vrm',
     '/assets/aistudio/Florie.vrm',

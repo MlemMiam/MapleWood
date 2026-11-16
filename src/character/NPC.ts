@@ -9,6 +9,7 @@ import {
 } from './PlayerAnimations';
 import {
   type FlorieVRMController,
+  fetchVrmBufferWithFallback,
   parseFlorieVrmFromBuffer,
 } from './FlorieVRM';
 
@@ -97,9 +98,7 @@ export class CampusNPC {
 
   private async loadVrmModel(vrmUrl: string): Promise<void> {
     try {
-      const res = await fetch(vrmUrl);
-      if (!res.ok) return;
-      const buffer = await res.arrayBuffer();
+      const buffer = await fetchVrmBufferWithFallback(vrmUrl);
       const label = vrmUrl.split('/').pop() || `${this.data.id}.vrm`;
       const controller = await parseFlorieVrmFromBuffer(buffer, label);
       this.rig.bodyGroup.visible = false;
