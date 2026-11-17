@@ -106,19 +106,19 @@ export class ElevatorCabin {
       metalness: 0.88,
     });
     const darkSteelMat = new THREE.MeshStandardMaterial({
-      color: 0x22262c,
-      roughness: 0.35,
-      metalness: 0.75,
+      color: 0x3b424c,
+      roughness: 0.38,
+      metalness: 0.65,
     });
     const marbleFloorMat = new THREE.MeshStandardMaterial({
-      color: 0x16181b,
-      roughness: 0.22,
-      metalness: 0.15,
+      color: 0x262a31,
+      roughness: 0.28,
+      metalness: 0.12,
     });
     const doorPanelMat = new THREE.MeshStandardMaterial({
-      color: 0x484e55,
-      roughness: 0.32,
-      metalness: 0.65,
+      color: 0x6f7782,
+      roughness: 0.34,
+      metalness: 0.58,
     });
     const buttonOnMat = new THREE.MeshStandardMaterial({
       color: 0xffeeaa,
@@ -136,29 +136,39 @@ export class ElevatorCabin {
     const halfW = this.cabinW * 0.5;
     const halfD = this.cabinD * 0.5; // 1.72m
 
-    // Flush Marble Floor Platform inside cabin (thickness 0.008m, top at +0.008m relative to cabin floorY)
+    // Flush Marble Floor Platform inside cabin (ends cleanly before doorway sill, zero Z-fighting)
+    const floorDepth = this.cabinD - 0.16; // 3.28m: spans Z = -29.61..-26.33
+    const floorOffsetZ = -0.06;
     const floorMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(this.cabinW - 0.04, 0.008, this.cabinD - 0.04),
+      new THREE.BoxGeometry(this.cabinW - 0.04, 0.008, floorDepth),
       marbleFloorMat
     );
-    floorMesh.position.set(0, 0.004, 0);
+    floorMesh.position.set(0, 0.004, floorOffsetZ);
     floorMesh.receiveShadow = true;
     this.cabinGroup.add(floorMesh);
 
-    // Subtle brass perimeter inlay (top at +0.009m)
-    const floorInlay = new THREE.Mesh(
-      new THREE.BoxGeometry(this.cabinW - 0.20, 0.001, this.cabinD - 0.20),
-      brassMat
-    );
-    floorInlay.position.set(0, 0.0085, 0);
-    this.cabinGroup.add(floorInlay);
+    // Subtle brass perimeter border strips strictly inside marble floor (leaving center marble visible)
+    const inlayT = 0.04;
+    const inlayW = this.cabinW - 0.22;
+    const inlayD = floorDepth - 0.18;
+    const inlayY = 0.009;
+    const addInlayStrip = (w: number, d: number, x: number, z: number) => {
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(w, 0.001, d), brassMat);
+      strip.position.set(x, inlayY, z);
+      strip.receiveShadow = true;
+      this.cabinGroup.add(strip);
+    };
+    addInlayStrip(inlayW, inlayT, 0, floorOffsetZ - inlayD * 0.5);
+    addInlayStrip(inlayW, inlayT, 0, floorOffsetZ + inlayD * 0.5);
+    addInlayStrip(inlayT, inlayD, -inlayW * 0.5, floorOffsetZ);
+    addInlayStrip(inlayT, inlayD, inlayW * 0.5, floorOffsetZ);
 
-    // Polished Brass Entrance Threshold Sill (bridges corridor at Z = -26.19 to cabin floor)
+    // Polished Brass Entrance Threshold Sill (spans Z = -26.33..-26.17 between doors, distinct Y from floorMesh)
     const thresholdSill = new THREE.Mesh(
-      new THREE.BoxGeometry(1.90, 0.008, 0.16),
+      new THREE.BoxGeometry(1.90, 0.009, 0.16),
       brassMat
     );
-    thresholdSill.position.set(0, 0.004, halfD - 0.08);
+    thresholdSill.position.set(0, 0.0045, halfD - 0.06);
     thresholdSill.receiveShadow = true;
     this.cabinGroup.add(thresholdSill);
 
@@ -204,33 +214,33 @@ export class ElevatorCabin {
     createRail(0, this.cabinD - 0.3, -halfW + 0.1, 0, true);
     createRail(0, this.cabinD - 0.3, halfW - 0.1, 0, true);
 
-    // Front Wall frame & Doorway
-    const frontWallLeft = new THREE.Mesh(new THREE.BoxGeometry(0.35, this.cabinH, 0.06), darkSteelMat);
-    frontWallLeft.position.set(-halfW + 0.175, this.cabinH * 0.5, halfD - 0.03);
+    // Front Wall frame & Doorway (flush with 2.50m opening height under brass lintel)
+    const frontWallLeft = new THREE.Mesh(new THREE.BoxGeometry(0.32, 2.50, 0.06), darkSteelMat);
+    frontWallLeft.position.set(-halfW + 0.16, 1.25, halfD - 0.03);
     this.cabinGroup.add(frontWallLeft);
 
-    const frontWallRight = new THREE.Mesh(new THREE.BoxGeometry(0.35, this.cabinH, 0.06), darkSteelMat);
-    frontWallRight.position.set(halfW - 0.175, this.cabinH * 0.5, halfD - 0.03);
+    const frontWallRight = new THREE.Mesh(new THREE.BoxGeometry(0.32, 2.50, 0.06), darkSteelMat);
+    frontWallRight.position.set(halfW - 0.16, 1.25, halfD - 0.03);
     this.cabinGroup.add(frontWallRight);
 
-    const frontWallTop = new THREE.Mesh(new THREE.BoxGeometry(this.cabinW, 0.35, 0.06), darkSteelMat);
-    frontWallTop.position.set(0, this.cabinH - 0.175, halfD - 0.03);
+    const frontWallTop = new THREE.Mesh(new THREE.BoxGeometry(this.cabinW, 0.24, 0.06), darkSteelMat);
+    frontWallTop.position.set(0, this.cabinH - 0.12, halfD - 0.03);
     this.cabinGroup.add(frontWallTop);
 
-    // Cabin Sliding Doors (Bipartite, open width = 1.76m)
-    const doorLeafW = 0.88;
-    const doorLeafH = this.cabinH - 0.35;
-    const doorLeafT = 0.035;
+    // Cabin Sliding Doors (Bipartite, open width = 1.80m, telescoping cleanly inside side jamb pockets)
+    const doorLeafW = 0.90;
+    const doorLeafH = 2.48;
+    const doorLeafT = 0.03;
 
     this.cabinLeafL = new THREE.Mesh(new THREE.BoxGeometry(doorLeafW, doorLeafH, doorLeafT), doorPanelMat);
-    this.cabinLeafL.position.set(-doorLeafW * 0.5, doorLeafH * 0.5, halfD - 0.015);
+    this.cabinLeafL.position.set(-doorLeafW * 0.5, doorLeafH * 0.5, halfD - 0.035);
     this.cabinGroup.add(this.cabinLeafL);
 
     this.cabinLeafR = new THREE.Mesh(new THREE.BoxGeometry(doorLeafW, doorLeafH, doorLeafT), doorPanelMat);
-    this.cabinLeafR.position.set(doorLeafW * 0.5, doorLeafH * 0.5, halfD - 0.015);
+    this.cabinLeafR.position.set(doorLeafW * 0.5, doorLeafH * 0.5, halfD - 0.035);
     this.cabinGroup.add(this.cabinLeafR);
 
-    // Digital Floor Indicator screen above the cabin door
+    // Digital Floor Indicator screen cleanly mounted below the top brass lintel (never clipped)
     this.indicatorCanvas = document.createElement('canvas');
     this.indicatorCanvas.width = 256;
     this.indicatorCanvas.height = 64;
@@ -240,8 +250,12 @@ export class ElevatorCabin {
       map: this.indicatorTexture,
       transparent: true,
     });
-    this.indicatorMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.80, 0.22), indicatorMat);
-    this.indicatorMesh.position.set(0, this.cabinH - 0.18, halfD - 0.08);
+    const indicatorBacking = new THREE.Mesh(new THREE.BoxGeometry(0.74, 0.20, 0.02), darkSteelMat);
+    indicatorBacking.position.set(0, 2.38, halfD - 0.075);
+    this.cabinGroup.add(indicatorBacking);
+
+    this.indicatorMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.70, 0.175), indicatorMat);
+    this.indicatorMesh.position.set(0, 2.38, halfD - 0.088);
     this.indicatorMesh.rotation.y = Math.PI;
     this.cabinGroup.add(this.indicatorMesh);
     this.updateIndicatorDisplay();
@@ -264,7 +278,7 @@ export class ElevatorCabin {
     // Manual Interior Control Panel Interaction (backup in case player wants to reopen menu)
     interactions.register({
       id: `elev-panel-${side}`,
-      label: "E — Choisir l'étage de destination",
+      label: "Choisir l'étage de destination",
       type: 'elevator',
       targetObject: panelPlate,
       worldPosition: this.panelWorldPos,
@@ -331,20 +345,20 @@ export class ElevatorCabin {
       doorRoot.position.set(this.shaftX, flInfo.y, this.doorZ);
       parent.add(doorRoot);
 
-      // Shaft Outer Bipartite Sliding Doors
+      // Shaft Outer Bipartite Sliding Doors (tucked neatly inside brass frame depth at Z = -26.23)
       const flLeafL = new THREE.Mesh(new THREE.BoxGeometry(doorLeafW, doorLeafH, doorLeafT), doorPanelMat);
-      flLeafL.position.set(-doorLeafW * 0.5, doorLeafH * 0.5, 0);
+      flLeafL.position.set(-doorLeafW * 0.5, doorLeafH * 0.5, -0.04);
       flLeafL.castShadow = true;
       flLeafL.receiveShadow = true;
       doorRoot.add(flLeafL);
 
       const flLeafR = new THREE.Mesh(new THREE.BoxGeometry(doorLeafW, doorLeafH, doorLeafT), doorPanelMat);
-      flLeafR.position.set(doorLeafW * 0.5, doorLeafH * 0.5, 0);
+      flLeafR.position.set(doorLeafW * 0.5, doorLeafH * 0.5, -0.04);
       flLeafR.castShadow = true;
       flLeafR.receiveShadow = true;
       doorRoot.add(flLeafR);
 
-      // Kinematic door barrier colliders (solid when closed, disabled & subterranean when open)
+      // Kinematic door barrier colliders (solid when closed, disabled when open)
       const colL = physics.addKinematicDoorBox(
         this.shaftX - doorLeafW * 0.5,
         flInfo.y + doorLeafH * 0.5,
@@ -373,21 +387,21 @@ export class ElevatorCabin {
 
       // Exterior Call Button Box on corridor wall beside shaft entrance
       const callBox = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.30, 0.05), darkSteelMat);
-      const callBoxX = this.shaftX + (side === 'east' ? 1.45 : -1.45);
-      callBox.position.set(callBoxX, flInfo.y + 1.25, this.doorZ + 0.04);
+      const callBoxX = this.shaftX + (side === 'east' ? 1.34 : -1.34);
+      callBox.position.set(callBoxX, flInfo.y + 1.25, this.doorZ + 0.03);
       parent.add(callBox);
 
       const callPlate = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.28, 0.01), brassMat);
-      callPlate.position.set(callBoxX, flInfo.y + 1.25, this.doorZ + 0.065);
+      callPlate.position.set(callBoxX, flInfo.y + 1.25, this.doorZ + 0.055);
       parent.add(callPlate);
 
       const callBtn = new THREE.Mesh(btnGeom, buttonOnMat);
-      callBtn.position.set(callBoxX, flInfo.y + 1.25, this.doorZ + 0.08);
+      callBtn.position.set(callBoxX, flInfo.y + 1.25, this.doorZ + 0.07);
       parent.add(callBtn);
 
       interactions.register({
         id: `elev-call-${side}-${f}`,
-        label: `E — Appeler l'ascenseur (${flInfo.shortName})`,
+        label: `Appeler l'ascenseur (${flInfo.shortName})`,
         type: 'elevator',
         targetObject: callBtn,
         worldPosition: new THREE.Vector3(callBoxX, flInfo.y + 1.25, this.doorZ + 0.1),
@@ -774,20 +788,27 @@ export class ElevatorCabin {
   }
 
   private setDoorsOpen(factor: number): void {
-    const maxSlide = 0.90; // Slide open by 90cm to each side
-    const slide = factor * maxSlide;
+    // Telescope & retract each door leaf cleanly into the side jamb pocket (|dx| <= 1.17m)
+    // so open doors never stick out into the hallway or overlap the exterior call button.
+    const leafScaleX = THREE.MathUtils.lerp(1, 0.14, factor);
+    const leafCenterX = THREE.MathUtils.lerp(0.45, 1.11, factor);
+    const slide = factor * 0.90;
 
     // Cabin Doors
-    this.cabinLeafL.position.x = -0.44 - slide;
-    this.cabinLeafR.position.x = 0.44 + slide;
+    this.cabinLeafL.scale.x = leafScaleX;
+    this.cabinLeafR.scale.x = leafScaleX;
+    this.cabinLeafL.position.x = -leafCenterX;
+    this.cabinLeafR.position.x = leafCenterX;
 
-    const doorLeafH = this.cabinH - 0.35;
+    const doorLeafH = 2.48;
 
     // Floor Doors across all 4 floors
     for (const d of this.floorDoors) {
       if (d.floorIndex === this.currentFloor) {
-        d.leafL.position.x = -0.44 - slide;
-        d.leafR.position.x = 0.44 + slide;
+        d.leafL.scale.x = leafScaleX;
+        d.leafR.scale.x = leafScaleX;
+        d.leafL.position.x = -leafCenterX;
+        d.leafR.position.x = leafCenterX;
 
         const isClear = factor > 0.02 || this.state === 'opening' || this.state === 'open';
         if (isClear) {
@@ -797,12 +818,12 @@ export class ElevatorCabin {
           d.colL.collider.setEnabled(false);
           d.colR.collider.setEnabled(false);
           const posL = {
-            x: this.shaftX - 0.44 - slide,
+            x: this.shaftX - 0.45 - slide,
             y: ELEVATOR_FLOORS[this.currentFloor].y + doorLeafH * 0.5,
             z: this.doorZ,
           };
           const posR = {
-            x: this.shaftX + 0.44 + slide,
+            x: this.shaftX + 0.45 + slide,
             y: ELEVATOR_FLOORS[this.currentFloor].y + doorLeafH * 0.5,
             z: this.doorZ,
           };
@@ -815,12 +836,12 @@ export class ElevatorCabin {
           d.colL.collider.setSensor(false);
           d.colR.collider.setSensor(false);
           const posL = {
-            x: this.shaftX - 0.44,
+            x: this.shaftX - 0.45,
             y: ELEVATOR_FLOORS[this.currentFloor].y + doorLeafH * 0.5,
             z: this.doorZ,
           };
           const posR = {
-            x: this.shaftX + 0.44,
+            x: this.shaftX + 0.45,
             y: ELEVATOR_FLOORS[this.currentFloor].y + doorLeafH * 0.5,
             z: this.doorZ,
           };
@@ -829,19 +850,21 @@ export class ElevatorCabin {
         }
       } else {
         // Closed doors at other floors stay in place blocking shaft
-        d.leafL.position.x = -0.44;
-        d.leafR.position.x = 0.44;
+        d.leafL.scale.x = 1;
+        d.leafR.scale.x = 1;
+        d.leafL.position.x = -0.45;
+        d.leafR.position.x = 0.45;
         d.colL.collider.setEnabled(true);
         d.colR.collider.setEnabled(true);
         d.colL.collider.setSensor(false);
         d.colR.collider.setSensor(false);
         const posL = {
-          x: this.shaftX - 0.44,
+          x: this.shaftX - 0.45,
           y: ELEVATOR_FLOORS[d.floorIndex].y + doorLeafH * 0.5,
           z: this.doorZ,
         };
         const posR = {
-          x: this.shaftX + 0.44,
+          x: this.shaftX + 0.45,
           y: ELEVATOR_FLOORS[d.floorIndex].y + doorLeafH * 0.5,
           z: this.doorZ,
         };
