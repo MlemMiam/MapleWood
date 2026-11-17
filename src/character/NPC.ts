@@ -5,6 +5,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import type { WorldCallbacks } from '../world/WorldContext';
 import type { ElevatorSystem } from '../world/buildings/ElevatorSystem';
 import type { InteractionSystem } from '../interaction/InteractionSystem';
+import type { AudioManager } from '../engine/AudioManager';
 import {
   type AnimState,
   type HumanoidRig,
@@ -64,6 +65,8 @@ const NPC_CAPSULE_HALF_HEIGHT = 0.45;
 const NPC_CAPSULE_RADIUS = 0.25;
 const NPC_CENTER_OFFSET = NPC_CAPSULE_HALF_HEIGHT + NPC_CAPSULE_RADIUS; // 0.70m
 const NPC_SKIN_OFFSET = 0.03;
+const NPC_APPROACH_AUDIO_RADIUS = 4.2;
+const NPC_APPROACH_AUDIO_EXIT_RADIUS = 5.6;
 
 interface NavPoint {
   x: number;
@@ -185,6 +188,9 @@ export class CampusNPC {
   private characterController: RAPIER.KinematicCharacterController | null = null;
   private elevatorSystem: ElevatorSystem | null = null;
   private callbacks: WorldCallbacks | null = null;
+  private audio: Pick<AudioManager, 'playNpcApproachSnippet'> | null = null;
+  private wasPlayerNear = false;
+  private approachAudioCooldown = 0;
   private isRidingElevator = false;
   private pendingElevatorFloor: number | null = null;
   private pendingElevatorSide: 'east' | 'west' = 'east';
@@ -205,7 +211,8 @@ export class CampusNPC {
     onTalk: (npc: NPCData) => void,
     physics?: PhysicsWorld,
     elevatorSystem?: ElevatorSystem,
-    callbacks?: WorldCallbacks
+    callbacks?: WorldCallbacks,
+    audio?: Pick<AudioManager, 'playNpcApproachSnippet'>
   ) {
     this.data = data;
     this.rig = createHumanoidRig({
@@ -229,6 +236,7 @@ export class CampusNPC {
     this.physics = physics ?? null;
     this.elevatorSystem = elevatorSystem ?? null;
     this.callbacks = callbacks ?? null;
+    this.audio = audio ?? null;
     if (physics) {
       const bodyDesc = RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(
         this.position.x,
@@ -492,6 +500,40 @@ export class CampusNPC {
     this.stuckAnchor.copy(this.position);
   }
 
+  private updateApproachAudio(
+    dt: number,
+    playerPos: THREE.Vector3,
+    distToPlayer: number,
+    isTalkingToThis: boolean,
+    allowMovement: boolean
+  ): void {
+    if (this.approachAudioCooldown > 0) {
+      this.approachAudioCooldown = Math.max(0, this.approachAudioCooldown - dt);
+    }
+
+    const sameFloor = Math.abs(playerPos.y - this.position.y) < 1.8;
+    const withinTriggerRadius = distToPlayer <= NPC_APPROACH_AUDIO_RADIUS && sameFloor;
+    const outsideExitRadius =
+      distToPlayer > NPC_APPROACH_AUDIO_EXIT_RADIUS ||
+      Math.abs(playerPos.y - this.position.y) >= 2.2;
+
+    if (outsideExitRadius) {
+      this.wasPlayerNear = false;
+      return;
+    }
+
+    if (withinTriggerRadius) {
+      if (allowMovement && !isTalkingToThis && !this.wasPlayerNear && this.approachAudioCooldown <= 0) {
+        const snippet: 'hello' | 'nod' = Math.random() < 0.55 ? 'hello' : 'nod';
+        const voice: 'helen' | 'student' =
+          this.data.id === 'npc-receptionist' ? 'helen' : 'student';
+        this.audio?.playNpcApproachSnippet(snippet, voice);
+        this.approachAudioCooldown = 14 + Math.random() * 6;
+      }
+      this.wasPlayerNear = true;
+    }
+  }
+
   public update(
     dt: number,
     playerPos: THREE.Vector3,
@@ -513,6 +555,7 @@ export class CampusNPC {
       visemeHint: isTalkingToThis ? (dialogueVisuals?.visemeHint ?? null) : null,
     });
     const distToPlayer = Math.hypot(playerPos.x - this.position.x, playerPos.z - this.position.z);
+    this.updateApproachAudio(dt, playerPos, distToPlayer, isTalkingToThis, allowMovement);
 
     if (this.data.seated) {
       const targetYaw =
@@ -803,8 +846,12 @@ export function spawnCampusNPCs(
   onTalk: (npc: NPCData) => void,
   physics?: PhysicsWorld,
   elevatorSystem?: ElevatorSystem,
-  callbacks?: WorldCallbacks
+  callbacks?: WorldCallbacks,
+  audio?: Pick<AudioManager, 'playNpcApproachSnippet'>
 ): CampusNPC[] {
   const list = npcsData as NPCData[];
-  return list.map((data) => new CampusNPC(scene, data, interactions, onTalk, physics, elevatorSystem, callbacks));
+  return list.map(
+    (data) =>
+      new CampusNPC(scene, data, interactions, onTalk, physics, elevatorSystem, callbacks, audio)
+  );
 }

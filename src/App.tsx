@@ -615,7 +615,7 @@ export default function App() {
           choices: npcData.choices,
         });
         updatePhase('dialogue');
-      }, physics, world.elevatorSystem, world.callbacks);
+      }, physics, world.elevatorSystem, world.callbacks, audio);
 
       engineRefs.current = {
         renderer: gameRenderer,

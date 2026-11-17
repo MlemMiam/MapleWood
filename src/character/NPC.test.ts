@@ -175,4 +175,72 @@ describe('CampusNPC locomotion & Rapier physics', () => {
       physics.dispose();
     });
   });
+
+  it('triggers randomized hello or nod audio snippets when the player approaches within radius', async () => {
+    await withMockCanvasDocument(async () => {
+      const calls: Array<{ kind: 'hello' | 'nod'; voice: 'helen' | 'student' }> = [];
+      const mockAudio = {
+        playNpcApproachSnippet: (kind: 'hello' | 'nod', voice: 'helen' | 'student' = 'student') => {
+          calls.push({ kind, voice });
+        },
+      };
+
+      const scene = new THREE.Scene();
+      const interactions = new InteractionSystem();
+      const ellieData = (npcsData as NPCData[]).find((n) => n.id === 'npc-ellie')!;
+      const helenData = (npcsData as NPCData[]).find((n) => n.id === 'npc-receptionist')!;
+
+      const ellie = new CampusNPC(
+        scene,
+        { ...ellieData, vrmUrl: undefined },
+        interactions,
+        () => {},
+        undefined,
+        undefined,
+        undefined,
+        mockAudio
+      );
+      const helen = new CampusNPC(
+        scene,
+        { ...helenData, vrmUrl: undefined },
+        interactions,
+        () => {},
+        undefined,
+        undefined,
+        undefined,
+        mockAudio
+      );
+
+      // Far away or paused (allowMovement=false) or different floor must NOT trigger
+      ellie.update(0.05, new THREE.Vector3(0, 0.05, -2), false, undefined, 'morning', true);
+      ellie.update(0.05, new THREE.Vector3(0, 0.05, -14), false, undefined, 'morning', false);
+      ellie.update(0.05, new THREE.Vector3(0, 4.25, -14), false, undefined, 'morning', true);
+      assert.equal(calls.length, 0);
+
+      // Walk within approach radius (<= 4.2m) of Ellie during active gameplay -> fires once
+      ellie.update(0.05, new THREE.Vector3(0, 0.05, -13.0), false, undefined, 'morning', true);
+      ellie.update(0.05, new THREE.Vector3(0, 0.05, -13.2), false, undefined, 'morning', true);
+      assert.equal(calls.length, 1);
+      assert.ok(calls[0].kind === 'hello' || calls[0].kind === 'nod');
+      assert.equal(calls[0].voice, 'student');
+
+      // Seated receptionist (Mme Parker) also greets with 'helen' voice profile when approached
+      helen.update(0.05, new THREE.Vector3(-5.0, 0.05, -18.5), false, undefined, 'morning', true);
+      assert.equal(calls.length, 2);
+      assert.ok(calls[1].kind === 'hello' || calls[1].kind === 'nod');
+      assert.equal(calls[1].voice, 'helen');
+
+      // Stepping slightly away inside hysteresis band (5.0m < 5.6m) then stepping back does NOT retrigger
+      helen.update(0.05, new THREE.Vector3(-5.43, 0.05, -15.74), false, undefined, 'morning', true);
+      helen.update(0.05, new THREE.Vector3(-5.43, 0.05, -18.5), false, undefined, 'morning', true);
+      assert.equal(calls.length, 2);
+
+      // Stepping past exit radius (> 5.6m) and letting cooldown expire allows re-triggering
+      for (let i = 0; i < 25; i++) {
+        helen.update(1.0, new THREE.Vector3(-5.43, 0.05, -12.0), false, undefined, 'morning', true);
+      }
+      helen.update(0.05, new THREE.Vector3(-5.43, 0.05, -18.5), false, undefined, 'morning', true);
+      assert.equal(calls.length, 3);
+    });
+  });
 });

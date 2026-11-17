@@ -757,6 +757,92 @@ function synthColorSwatchSfx(): string {
   return encodeWavDataUri(data, sr);
 }
 
+/**
+ * Friendly 2-syllable vocalized greeting snippet ("Oh, hi!" / "Hey!") for campus NPC approach cues.
+ */
+function synthNpcHelloSnippet(variant: 0 | 1): string {
+  const sr = 22050;
+  const dur = variant === 0 ? 0.34 : 0.31;
+  const len = Math.floor(sr * dur);
+  const data = new Float32Array(len);
+  let phase = 0;
+
+  for (let i = 0; i < len; i++) {
+    const t = i / sr;
+    const f0 =
+      variant === 0
+        ? t < 0.13
+          ? 355 + t * 420
+          : 410 + (t - 0.13) * 280
+        : t < 0.12
+          ? 395 + t * 320
+          : 445 - (t - 0.12) * 140;
+
+    phase += (2 * Math.PI * f0) / sr;
+
+    const s1End = 0.12;
+    const s2Start = 0.135;
+    let env = 0;
+    if (t < s1End) {
+      env = Math.sin((t / s1End) * Math.PI) * 0.72;
+    } else if (t >= s2Start) {
+      const st = (t - s2Start) / (dur - s2Start);
+      env = Math.sin(Math.min(1, st) * Math.PI) * Math.exp(-(t - s2Start) * 2.8);
+    }
+
+    const voiceTone =
+      Math.sin(phase) * 0.56 +
+      Math.sin(phase * 2) * 0.28 +
+      Math.sin(phase * 3) * 0.1;
+
+    data[i] = voiceTone * env * 0.26;
+  }
+  return encodeWavDataUri(data, sr);
+}
+
+/**
+ * Soft conversational nod / assent hum ("mm-hm" / "hm!") for casual NPC acknowledgment on approach.
+ */
+function synthNpcNodSnippet(variant: 0 | 1): string {
+  const sr = 22050;
+  const dur = variant === 0 ? 0.22 : 0.17;
+  const len = Math.floor(sr * dur);
+  const data = new Float32Array(len);
+  let phase = 0;
+
+  for (let i = 0; i < len; i++) {
+    const t = i / sr;
+    const f0 =
+      variant === 0
+        ? t < 0.09
+          ? 275 + t * 180
+          : 295 + (t - 0.09) * 380
+        : 310 + Math.sin((t / dur) * Math.PI) * 55;
+
+    phase += (2 * Math.PI * f0) / sr;
+
+    let env = 0;
+    if (variant === 0) {
+      if (t < 0.085) {
+        env = Math.sin((t / 0.085) * Math.PI) * 0.55;
+      } else if (t >= 0.095) {
+        const st = (t - 0.095) / (dur - 0.095);
+        env = Math.sin(Math.min(1, st) * Math.PI) * 0.85;
+      }
+    } else {
+      env = Math.sin((t / dur) * Math.PI) * Math.exp(-t * 4.0);
+    }
+
+    const warmHum =
+      Math.sin(phase) * 0.68 +
+      Math.sin(phase * 2) * 0.22 +
+      Math.sin(phase * 3) * 0.05;
+
+    data[i] = warmHum * env * 0.24;
+  }
+  return encodeWavDataUri(data, sr);
+}
+
 export class AudioManager {
   private footstepHard: Howl;
   private footstepGrass: Howl;
@@ -783,6 +869,10 @@ export class AudioManager {
   private animeBeckonSfx: Howl;
   private florieVoiceCue0: Howl;
   private florieVoiceCue1: Howl;
+  private npcHelloSfx0: Howl;
+  private npcHelloSfx1: Howl;
+  private npcNodSfx0: Howl;
+  private npcNodSfx1: Howl;
   private startedAmbient = false;
   private lastFountainVol = 0;
   private lastBreezeVol = 0;
@@ -873,6 +963,10 @@ export class AudioManager {
       src: ['/assets/audio/florie_intro_2.mp3', synthAnimeFemaleVoiceCue(1)],
       volume: 1.0,
     });
+    this.npcHelloSfx0 = new Howl({ src: [synthNpcHelloSnippet(0)], volume: 0.42 });
+    this.npcHelloSfx1 = new Howl({ src: [synthNpcHelloSnippet(1)], volume: 0.42 });
+    this.npcNodSfx0 = new Howl({ src: [synthNpcNodSnippet(0)], volume: 0.36 });
+    this.npcNodSfx1 = new Howl({ src: [synthNpcNodSnippet(1)], volume: 0.36 });
   }
 
   public setVolume(v: number): void {
@@ -1332,6 +1426,24 @@ export class AudioManager {
     this.colorSwatchSfx.play();
   }
 
+  public playNpcApproachSnippet(
+    kind: 'hello' | 'nod',
+    voice: 'helen' | 'student' = 'student'
+  ): void {
+    try {
+      const pool =
+        kind === 'hello'
+          ? [this.npcHelloSfx0, this.npcHelloSfx1]
+          : [this.npcNodSfx0, this.npcNodSfx1];
+      const howl = pool[Math.floor(Math.random() * pool.length)];
+      const baseRate = voice === 'helen' ? 0.84 : 1.02;
+      howl.rate(baseRate + (Math.random() * 0.12 - 0.06));
+      howl.play();
+    } catch {
+      // Ignore if audio context is not unlocked yet
+    }
+  }
+
   public dispose(): void {
     this.stopTitleMusic();
     this.stopAnimeIntroMusic();
@@ -1360,5 +1472,9 @@ export class AudioManager {
     this.animeBeckonSfx.unload();
     this.florieVoiceCue0.unload();
     this.florieVoiceCue1.unload();
+    this.npcHelloSfx0.unload();
+    this.npcHelloSfx1.unload();
+    this.npcNodSfx0.unload();
+    this.npcNodSfx1.unload();
   }
 }
