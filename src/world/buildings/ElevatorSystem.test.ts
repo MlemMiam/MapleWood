@@ -322,8 +322,8 @@ describe('ElevatorCabin walkability & door state machine', () => {
       }
     });
 
-    assert.equal(steelRemoved, 4, 'Should remove 192 inactive static door tris + 24 dummy slab tris from MW_Elevators_Steel');
+    assert.equal(steelRemoved, 216, 'Should remove 192 inactive static door tris + 24 dummy slab tris from MW_Elevators_Steel');
     assert.equal(steelRemainingTris, 96, 'Should keep all 96 shaft corner steel column tris intact');
-    assert.equal(brassRemoved, 8, 'Should remove 24 dummy cabin ceiling tris from MW_Elevators_Brass');
+    assert.equal(brassRemoved, 24, 'Should remove 24 dummy cabin ceiling tris from MW_Elevators_Brass');
   });
 });

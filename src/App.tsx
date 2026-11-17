@@ -629,6 +629,9 @@ export default function App() {
         debug,
       };
 
+      // Prime Rapier broadphase/BVH for static floor colliders before frame 0 queries
+      physics.step(1 / 60);
+
       // Precompile shaders on real GPU
       gameRenderer.precompile();
       setLoadProgress(100);
@@ -679,6 +682,7 @@ timer.update();
 
         if (phaseRef.current === 'playing') {
           gameTimeRef.current.accum += dt;
+          let timeChanged = false;
           while (gameTimeRef.current.accum >= 1) {
             gameTimeRef.current.accum -= 1;
             gameTimeRef.current.minute += 1;
@@ -686,11 +690,18 @@ timer.update();
               gameTimeRef.current.minute = 0;
               gameTimeRef.current.hour = (gameTimeRef.current.hour + 1) % 24;
             }
+            timeChanged = true;
           }
-          setGameTime({ hour: gameTimeRef.current.hour, minute: gameTimeRef.current.minute });
-          const h = gameTimeRef.current.hour;
-          const tp: TimePhase = h >= 20 || h < 6 ? 'night' : h >= 17 ? 'sunset' : h >= 14 ? 'afternoon' : h >= 11 ? 'midday' : 'morning';
-          if (tp !== timePhase) setTimePhase(tp);
+          if (timeChanged) {
+            setGameTime({ hour: gameTimeRef.current.hour, minute: gameTimeRef.current.minute });
+            const h = gameTimeRef.current.hour;
+            const tp: TimePhase =
+              h >= 20 || h < 6 ? 'night' : h >= 17 ? 'sunset' : h >= 14 ? 'afternoon' : h >= 11 ? 'midday' : 'morning';
+            if (tp !== lastTimePhaseRef.current) {
+              lastTimePhaseRef.current = tp;
+              setTimePhase(tp);
+            }
+          }
         }
 
         const curPhase = phaseRef.current;
@@ -727,7 +738,7 @@ timer.update();
               gameRenderer.getWindStrength()
             );
             for (const npc of npcs) {
-              npc.update(dt * 3, gameRenderer.camera.position, false);
+              npc.update(dt * 3, gameRenderer.camera.position, false, undefined, undefined, false);
             }
           }
         } else if (curPhase === 'intro') {
@@ -758,7 +769,7 @@ timer.update();
             gameRenderer.getWindStrength()
           );
           for (const npc of npcs) {
-            npc.update(dt, player.position, false, undefined, timePhase);
+            npc.update(dt, player.position, false, undefined, lastTimePhaseRef.current, false);
           }
 
           hudAccum += dt;
@@ -786,7 +797,7 @@ timer.update();
           world.update(elapsed, dt, t >= 18.8 ? player.position : undefined);
           for (const npc of npcs) {
             if (npc.data.id !== 'npc-receptionist') {
-              npc.update(dt, player.position, false, undefined, timePhase);
+              npc.update(dt, player.position, false, undefined, lastTimePhaseRef.current, false);
             }
           }
           if (director) {
@@ -865,7 +876,7 @@ timer.update();
                   ? 'carpet'
                   : 'hard';
 
-            // Update world (elevators, doors) BEFORE player so riding state is fresh
+            // Update world (elevators, doors) BEFORE player & NPCs so riding state is fresh
             world.update(
               elapsed,
               frameDt,
@@ -875,6 +886,10 @@ timer.update();
               player,
               npcs
             );
+
+            for (const npc of npcs) {
+              npc.update(frameDt, player.position, false, undefined, lastTimePhaseRef.current, true);
+            }
 
             // Sub-step physics & player locomotion in <= 40ms increments for stability at any framerate
             let remaining = frameDt;
@@ -886,10 +901,6 @@ timer.update();
               physics.step(stepDt);
               firstStep = false;
               remaining -= stepDt;
-            }
-
-            for (const npc of npcs) {
-              npc.update(frameDt, player.position, false, undefined, timePhase);
             }
 
             cameraCtrl.updateThirdPerson(
@@ -917,11 +928,6 @@ timer.update();
             if (curWeather !== lastWeatherRef.current) {
               lastWeatherRef.current = curWeather;
               setWeather(curWeather);
-            }
-            const curTimePhase = gameRenderer.getTimePhase();
-            if (curTimePhase !== lastTimePhaseRef.current) {
-              lastTimePhaseRef.current = curTimePhase;
-              setTimePhase(curTimePhase);
             }
 
             const target = interactions.update(
@@ -1091,7 +1097,9 @@ timer.update();
                       speechTime,
                       visemeHint,
                     }
-                  : undefined
+                  : undefined,
+                lastTimePhaseRef.current,
+                false
               );
             }
           }

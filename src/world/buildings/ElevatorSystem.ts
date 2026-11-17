@@ -778,6 +778,7 @@ export class ElevatorCabin {
         if (inNpcCabin) {
           npc.position.y = this.currentY;
           npc.rig.root.position.copy(npc.position);
+          npc.syncPhysicsBody();
         }
       }
     }
@@ -915,8 +916,9 @@ export class ElevatorCabin {
       }
       case 'entering': {
         const targetCabinPos = new THREE.Vector3(this.shaftX, this.currentY, this.shaftZ);
-        npc.position.lerp(targetCabinPos, dt * 2.0);
+        npc.position.lerp(targetCabinPos, Math.min(1, dt * 3.0));
         npc.rig.root.position.copy(npc.position);
+        npc.syncPhysicsBody();
 
         if (this.activeNpcPassenger.timer > 1.2) {
           this.activeNpcPassenger.phase = 'riding';
@@ -934,10 +936,13 @@ export class ElevatorCabin {
       }
       case 'exiting': {
         const exitPos = new THREE.Vector3(this.shaftX, this.currentY, this.doorZ + 1.8);
-        npc.position.lerp(exitPos, dt * 2.0);
+        npc.position.lerp(exitPos, Math.min(1, dt * 3.0));
         npc.rig.root.position.copy(npc.position);
+        npc.syncPhysicsBody();
 
         if (this.activeNpcPassenger.timer > 1.4) {
+          npc.position.copy(exitPos);
+          npc.finishElevatorRide();
           this.activeNpcPassenger = null;
         }
         break;

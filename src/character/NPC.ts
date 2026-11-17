@@ -18,6 +18,8 @@ import {
   parseFlorieVrmFromBuffer,
 } from './FlorieVRM';
 
+import { CAMPUS_DATA, findRoomAtPosition, getFloorFromY, getRoomById } from '../utils/CampusLayout';
+
 export interface NPCChoiceData {
   label: string;
   reply: string;
@@ -58,6 +60,115 @@ export interface NPCData {
   choices: NPCChoiceData[];
 }
 
+const NPC_CAPSULE_HALF_HEIGHT = 0.45;
+const NPC_CAPSULE_RADIUS = 0.25;
+const NPC_CENTER_OFFSET = NPC_CAPSULE_HALF_HEIGHT + NPC_CAPSULE_RADIUS; // 0.70m
+const NPC_SKIN_OFFSET = 0.03;
+
+interface NavPoint {
+  x: number;
+  z: number;
+  y: number;
+  run?: boolean;
+}
+
+function buildDoorwayPath(
+  fromX: number,
+  fromY: number,
+  fromZ: number,
+  target: NPCWaypoint
+): NavPoint[] {
+  const destY = target.y ?? fromY;
+  const fromRoom = findRoomAtPosition(fromX, fromZ, fromY);
+  const toRoom = findRoomAtPosition(target.x, target.z, destY);
+
+  if (
+    !fromRoom ||
+    !toRoom ||
+    fromRoom.id === toRoom.id ||
+    fromRoom.floor !== toRoom.floor
+  ) {
+    return [{ x: target.x, z: target.z, y: destY, run: target.run }];
+  }
+
+  // Build undirected adjacency graph from rooms.json on this floor
+  const adj = new Map<string, Array<{ to: string; x: number; z: number }>>();
+  const pushEdge = (a: string, b: string, x: number, z: number) => {
+    let list = adj.get(a);
+    if (!list) {
+      list = [];
+      adj.set(a, list);
+    }
+    if (!list.some((e) => e.to === b)) {
+      list.push({ to: b, x, z });
+    }
+  };
+  for (const r of CAMPUS_DATA.rooms) {
+    if (r.floor !== fromRoom.floor) continue;
+    for (const d of r.doors) {
+      const nb = getRoomById(d.to);
+      if (!nb || nb.floor !== fromRoom.floor) continue;
+      pushEdge(r.id, d.to, d.x, d.z);
+      pushEdge(d.to, r.id, d.x, d.z);
+    }
+  }
+
+  // BFS from fromRoom.id -> toRoom.id
+  const queue: string[] = [fromRoom.id];
+  const parent = new Map<string, { prevId: string; x: number; z: number } | null>();
+  parent.set(fromRoom.id, null);
+
+  let found = false;
+  while (queue.length > 0) {
+    const cur = queue.shift()!;
+    if (cur === toRoom.id) {
+      found = true;
+      break;
+    }
+    for (const edge of adj.get(cur) ?? []) {
+      if (!parent.has(edge.to)) {
+        parent.set(edge.to, { prevId: cur, x: edge.x, z: edge.z });
+        queue.push(edge.to);
+      }
+    }
+  }
+
+  if (!found) {
+    return [{ x: target.x, z: target.z, y: destY, run: target.run }];
+  }
+
+  const doors: Array<{ roomA: string; roomB: string; x: number; z: number }> = [];
+  let cursor = toRoom.id;
+  while (cursor !== fromRoom.id) {
+    const step = parent.get(cursor);
+    if (!step) break;
+    doors.unshift({ roomA: step.prevId, roomB: cursor, x: step.x, z: step.z });
+    cursor = step.prevId;
+  }
+
+  const path: NavPoint[] = [];
+  for (let i = 0; i < doors.length; i++) {
+    const curDoor = doors[i];
+    path.push({ x: curDoor.x, z: curDoor.z, y: destY, run: target.run });
+    // If traversing a corridor between two doorways, walk down the corridor centerline first
+    if (i + 1 < doors.length) {
+      const nextDoor = doors[i + 1];
+      const midRoom = getRoomById(curDoor.roomB);
+      if (midRoom && midRoom.type === 'corridor') {
+        path.push({
+          x: nextDoor.x,
+          z: midRoom.position.z,
+          y: destY,
+          run: target.run,
+        });
+      }
+    }
+  }
+
+  path.push({ x: target.x, z: target.z, y: destY, run: target.run });
+  return path;
+}
+
 export class CampusNPC {
   public readonly data: NPCData;
   public readonly rig: HumanoidRig;
@@ -75,8 +186,17 @@ export class CampusNPC {
   private elevatorSystem: ElevatorSystem | null = null;
   private callbacks: WorldCallbacks | null = null;
   private isRidingElevator = false;
-  private currentSchedule: NPCWaypoint[] = [];
+  private pendingElevatorFloor: number | null = null;
+  private pendingElevatorSide: 'east' | 'west' = 'east';
   private lastTimePhase: string | null = null;
+  private navQueue: NavPoint[] = [];
+  private navTargetKey = '';
+  private arrivedSingleTargetKey = '';
+  private blockedTimer = 0;
+  private steerSign = 1;
+  private stuckTimer = 0;
+  private nudgeCount = 0;
+  private readonly stuckAnchor = new THREE.Vector3();
 
   constructor(
     scene: THREE.Scene,
@@ -98,23 +218,32 @@ export class CampusNPC {
 
     const start = data.waypoints[0] || { x: 0, z: 0, y: 0.05 };
     this.position.set(start.x, start.y ?? 0.05, start.z);
+    this.stuckAnchor.copy(this.position);
     if (data.seatYaw !== undefined) {
       this.yaw = data.seatYaw;
       this.rig.root.rotation.y = this.yaw;
     }
     this.rig.root.position.copy(this.position);
-      if (this.vrmController) this.vrmController.container.position.copy(this.position);
     scene.add(this.rig.root);
 
     this.physics = physics ?? null;
     this.elevatorSystem = elevatorSystem ?? null;
     this.callbacks = callbacks ?? null;
     if (physics) {
-      const bodyDesc = RAPIER.RigidBodyDesc.fixed().setTranslation(this.position.x, this.position.y + 0.65, this.position.z);
+      const bodyDesc = RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(
+        this.position.x,
+        this.position.y + NPC_CENTER_OFFSET + NPC_SKIN_OFFSET,
+        this.position.z
+      );
       this.body = physics.world.createRigidBody(bodyDesc);
-      const colliderDesc = RAPIER.ColliderDesc.capsule(0.4, 0.25);
+      const colliderDesc = RAPIER.ColliderDesc.capsule(
+        NPC_CAPSULE_HALF_HEIGHT,
+        NPC_CAPSULE_RADIUS
+      );
       this.collider = physics.world.createCollider(colliderDesc, this.body);
-      this.characterController = physics.world.createCharacterController(0.01);
+      this.characterController = physics.world.createCharacterController(NPC_SKIN_OFFSET);
+      this.characterController.enableAutostep(0.28, 0.18, true);
+      this.characterController.enableSnapToGround(0.25);
       this.characterController.setApplyImpulsesToDynamicBodies(true);
     }
 
@@ -146,6 +275,39 @@ export class CampusNPC {
     }
   }
 
+  public syncPhysicsBody(
+    x = this.position.x,
+    y = this.position.y,
+    z = this.position.z
+  ): void {
+    if (!this.body) return;
+    const bodyPos = { x, y: y + NPC_CENTER_OFFSET + NPC_SKIN_OFFSET, z };
+    this.body.setTranslation(bodyPos, true);
+    this.body.setNextKinematicTranslation(bodyPos);
+  }
+
+  private resetNavigationState(resetWaypoints = false): void {
+    this.navQueue = [];
+    this.navTargetKey = '';
+    this.blockedTimer = 0;
+    this.stuckTimer = 0;
+    this.nudgeCount = 0;
+    this.stuckAnchor.copy(this.position);
+    this.pendingElevatorFloor = null;
+    if (resetWaypoints) {
+      this.wpIndex = 0;
+      this.waitTimer = 0;
+      this.arrivedSingleTargetKey = '';
+    }
+  }
+
+  public finishElevatorRide(): void {
+    this.isRidingElevator = false;
+    this.resetNavigationState(false);
+    this.syncPhysicsBody();
+    this.rig.root.position.copy(this.position);
+  }
+
   private updateRigAnimation(animState: AnimState, dt: number): void {
     if (this.vrmController) {
       this.vrmController.update(animState, this.phase, 0, dt);
@@ -162,6 +324,174 @@ export class CampusNPC {
     return this.vrmController;
   }
 
+  private moveWithCollision(
+    dirX: number,
+    dirZ: number,
+    step: number,
+    fallbackY: number,
+    dt: number
+  ): number {
+    if (this.physics && this.characterController && this.body && this.collider) {
+      const cur = this.body.translation();
+      // Gentle downward snap velocity matching Player locomotion so capsules never tunnel thin floor slabs
+      const desiredY = Math.max(-0.025, -0.5 * dt);
+
+      const tryMove = (vx: number, vz: number) => {
+        this.characterController!.computeColliderMovement(
+          this.collider!,
+          { x: vx * step, y: desiredY, z: vz * step },
+          RAPIER.QueryFilterFlags.EXCLUDE_SENSORS
+        );
+        return this.characterController!.computedMovement();
+      };
+
+      let bestM = tryMove(dirX, dirZ);
+      let bestHoriz = Math.hypot(bestM.x, bestM.z);
+
+      // If blocked (e.g. corner of furniture, doorway frame, or player), test lateral steering angles
+      if (step > 0.002 && bestHoriz < step * 0.25) {
+        const angles = [
+          this.steerSign * 0.65,
+          this.steerSign * 1.25,
+          -this.steerSign * 0.65,
+          -this.steerSign * 1.25,
+        ];
+        for (const a of angles) {
+          const cosA = Math.cos(a);
+          const sinA = Math.sin(a);
+          const rx = dirX * cosA - dirZ * sinA;
+          const rz = dirX * sinA + dirZ * cosA;
+          const cand = tryMove(rx, rz);
+          const candHoriz = Math.hypot(cand.x, cand.z);
+          if (candHoriz > bestHoriz) {
+            bestM = cand;
+            bestHoriz = candHoriz;
+            if (candHoriz > step * 0.55) break;
+          }
+        }
+        if (bestHoriz < step * 0.35) {
+          this.blockedTimer += dt;
+          if (this.blockedTimer > 0.6) {
+            this.steerSign *= -1;
+            this.blockedTimer = 0;
+          }
+        } else {
+          this.blockedTimer = 0;
+        }
+      } else {
+        this.blockedTimer = Math.max(0, this.blockedTimer - dt * 2);
+      }
+
+      const nx = cur.x + bestM.x;
+      let ny = cur.y + bestM.y;
+      const nz = cur.z + bestM.z;
+      // Compute feet height matching Player (ny - capsuleHalfTotalHeight)
+      let feetY = Number.isFinite(ny) ? ny - NPC_CENTER_OFFSET : fallbackY;
+      // Guard against falling/tunneling below the expected floor slab on startup or async trimesh load
+      if (feetY < fallbackY - 0.12) {
+        feetY = fallbackY + NPC_SKIN_OFFSET;
+        ny = feetY + NPC_CENTER_OFFSET;
+        this.body.setTranslation({ x: nx, y: ny, z: nz }, true);
+      }
+      this.body.setNextKinematicTranslation({ x: nx, y: ny, z: nz });
+      this.position.set(nx, feetY, nz);
+      return bestHoriz;
+    }
+
+    this.position.x += dirX * step;
+    this.position.z += dirZ * step;
+    this.position.y = fallbackY;
+    return step;
+  }
+
+  private nudgeOutOfStuck(dirX: number, dirZ: number, fallbackY: number, isRunning = false): void {
+    const perpX = -dirZ * this.steerSign;
+    const perpZ = dirX * this.steerSign;
+    const nudgeStep = 0.75;
+    let chosenCx = perpX;
+    let chosenCz = perpZ;
+    let nx = this.position.x;
+    let nz = this.position.z;
+
+    if (this.physics && this.characterController && this.body && this.collider) {
+      const cur = this.body.translation();
+      const rawCandidates: Array<[number, number]> = [
+        [perpX, perpZ],
+        [-perpX, -perpZ],
+        [perpX - dirX * 0.55, perpZ - dirZ * 0.55],
+        [-perpX - dirX * 0.55, -perpZ - dirZ * 0.55],
+        [-dirX, -dirZ],
+      ];
+      let bestM: { x: number; y: number; z: number } | null = null;
+      let bestDist = 0;
+      for (const [rx, rz] of rawCandidates) {
+        const len = Math.hypot(rx, rz) || 1;
+        const cx = rx / len;
+        const cz = rz / len;
+        this.characterController.computeColliderMovement(
+          this.collider,
+          { x: cx * nudgeStep, y: 0.02, z: cz * nudgeStep },
+          RAPIER.QueryFilterFlags.EXCLUDE_SENSORS
+        );
+        const m = this.characterController.computedMovement();
+        const d = Math.hypot(m.x, m.z);
+        if (d > bestDist) {
+          bestDist = d;
+          bestM = m;
+          chosenCx = cx;
+          chosenCz = cz;
+        }
+      }
+      if (bestM && bestDist > 0.05) {
+        nx = cur.x + bestM.x;
+        const ny = Math.max(cur.y + bestM.y, fallbackY + NPC_CENTER_OFFSET + NPC_SKIN_OFFSET);
+        nz = cur.z + bestM.z;
+        this.body.setTranslation({ x: nx, y: ny, z: nz }, true);
+        this.body.setNextKinematicTranslation({ x: nx, y: ny, z: nz });
+        this.position.set(nx, ny - NPC_CENTER_OFFSET, nz);
+      }
+    } else {
+      nx = this.position.x + perpX * nudgeStep;
+      nz = this.position.z + perpZ * nudgeStep;
+      this.position.x = nx;
+      this.position.z = nz;
+    }
+
+    // Align steerSign with chosen lateral side, or reverse for next attempt if backing out
+    const perpDot = chosenCx * perpX + chosenCz * perpZ;
+    if (perpDot < -0.25) {
+      this.steerSign *= -1;
+    } else if (Math.abs(perpDot) < 0.15) {
+      this.steerSign *= -1;
+    }
+
+    const activePerpX = -dirZ * this.steerSign;
+    const activePerpZ = dirX * this.steerSign;
+    const forwardDot = chosenCx * dirX + chosenCz * dirZ;
+
+    // Insert temporary detour sub-waypoint(s) at the head of navQueue so NPC sidesteps around obstacle
+    const detourPoint: NavPoint =
+      forwardDot < -0.35
+        ? {
+            x: nx + chosenCx * 0.65 + activePerpX * 1.6,
+            z: nz + chosenCz * 0.65 + activePerpZ * 1.6,
+            y: fallbackY,
+            run: isRunning,
+          }
+        : {
+            x: nx + chosenCx * 1.15,
+            z: nz + chosenCz * 1.15,
+            y: fallbackY,
+            run: isRunning,
+          };
+    this.navQueue.unshift(detourPoint);
+
+    this.stuckTimer = 0;
+    this.blockedTimer = 0;
+    this.nudgeCount += 1;
+    this.stuckAnchor.copy(this.position);
+  }
+
   public update(
     dt: number,
     playerPos: THREE.Vector3,
@@ -172,7 +502,8 @@ export class CampusNPC {
       speechTime: number;
       visemeHint?: VisemeKey | null;
     },
-    timePhase?: string
+    timePhase?: string,
+    allowMovement = true
   ): void {
     this.vrmController?.setNpcDialogueVisuals?.({
       lookAtPos: isTalkingToThis ? (dialogueVisuals?.lookAtPos ?? null) : null,
@@ -201,8 +532,6 @@ export class CampusNPC {
       return;
     }
 
-    // (idle pause removed - NPC keeps walking)
-
     const isFar = distToPlayer > 32;
     if (this.vrmController) {
       const showVrm = !isFar;
@@ -216,92 +545,228 @@ export class CampusNPC {
       (!isFar && (!this.vrmController || distToPlayer <= 22 || this.lodCounter === 0)) ||
       (isFar && this.lodCounter === 0);
 
-    // Reset waypoint index when schedule changes
-    if (timePhase && timePhase !== this.lastTimePhase) {
-      this.lastTimePhase = timePhase;
-      this.wpIndex = 0;
-      this.waitTimer = 0;
-    }
-
-    // Floor transition via elevator
-    if (this.data.schedule && timePhase && this.physics && this.elevatorSystem && this.callbacks && !this.isRidingElevator) {
-      const _entry = this.data.schedule.find((s) => s.timePhase === timePhase);
-      const _wps = (_entry && _entry.waypoints && _entry.waypoints.length > 0) ? _entry.waypoints : this.data.waypoints;
-      const _target = _wps[this.wpIndex % _wps.length];
-      const _targetY = _target.y ?? this.position.y;
-      const _floorDiff = Math.abs(_targetY - this.position.y);
-      if (_floorDiff > 2.0) {
-        const _targetFloor = Math.round(_targetY / 4.6);
-        this.elevatorSystem.sendNpcToFloor(this as any, _targetFloor, 'east', this.callbacks);
-        this.isRidingElevator = true;
+    // During dialogue with this NPC, pause walking and face player cleanly
+    if (isTalkingToThis) {
+      const talkYaw = Math.atan2(
+        -(playerPos.x - this.position.x),
+        -(playerPos.z - this.position.z)
+      );
+      let diff = talkYaw - this.yaw;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      this.yaw += diff * Math.min(1, dt * 8);
+      this.rig.root.rotation.y = this.yaw;
+      this.rig.root.position.copy(this.position);
+      this.phase += dt * 1.4;
+      this.updateRigAnimation('idle', dt);
+      if (!this.vrmController) {
+        this.updateHeadTrack(playerPos, distToPlayer, dt);
       }
+      return;
     }
 
     if (this.isRidingElevator) {
       this.rig.root.position.copy(this.position);
-      if (this.vrmController) this.vrmController.container.position.copy(this.position);
+      this.syncPhysicsBody();
       this.phase += dt * 1.4;
       this.updateRigAnimation('idle', dt);
       if (!this.vrmController) this.updateHeadTrack(playerPos, distToPlayer, dt);
       return;
     }
 
-let wps = this.data.waypoints;
+    if (!allowMovement) {
+      this.rig.root.position.copy(this.position);
+      this.phase += dt * 1.4;
+      if (shouldAnimateRig) {
+        this.updateRigAnimation('idle', isFar ? dt * 4 : dt);
+        if (!isFar && !this.vrmController) {
+          this.updateHeadTrack(playerPos, distToPlayer, dt);
+        }
+      }
+      return;
+    }
+
+    // Reset navigation state machine cleanly when schedule timePhase changes
+    if (timePhase && timePhase !== this.lastTimePhase) {
+      this.lastTimePhase = timePhase;
+      this.resetNavigationState(true);
+    }
+
+    let wps = this.data.waypoints;
     if (this.data.schedule && timePhase) {
       const entry = this.data.schedule.find((s) => s.timePhase === timePhase);
       if (entry && entry.waypoints && entry.waypoints.length > 0) {
         wps = entry.waypoints;
       }
     }
+
     let animState: AnimState = 'idle';
-    if (wps.length > 1) {
+    if (wps.length >= 1) {
       if (this.waitTimer > 0) {
         this.waitTimer -= dt;
         this.phase += dt * 1.4;
       } else {
-        const target = wps[this.wpIndex];
-        const dx = target.x - this.position.x;
-        const dz = target.z - this.position.z;
-        const dist = Math.hypot(dx, dz);
+        const target = wps[this.wpIndex % wps.length];
+        const tKey = `${timePhase ?? 'default'}:${this.wpIndex % wps.length}`;
+        const curFloor = getFloorFromY(this.position.y);
+        const targetFloor = getFloorFromY(target.y ?? this.position.y);
 
-        if (dist < 0.2) {
-          this.wpIndex = (this.wpIndex + 1) % wps.length;
-          this.waitTimer = 0;
+        if (wps.length === 1 && this.arrivedSingleTargetKey === tKey) {
+          this.phase += dt * 1.4;
+        } else if (
+          curFloor !== targetFloor &&
+          this.physics &&
+          this.elevatorSystem &&
+          this.callbacks
+        ) {
+          // If target is on a different floor, route to the nearest elevator lobby first before boarding
+          if (this.pendingElevatorFloor !== targetFloor) {
+            this.pendingElevatorFloor = targetFloor;
+            this.pendingElevatorSide = this.position.x >= 0 ? 'east' : 'west';
+            const lobbyX = this.pendingElevatorSide === 'east' ? 14.25 : -14.25;
+            const lobbyZ = -24.5;
+            this.navTargetKey = `elev-${targetFloor}-${this.pendingElevatorSide}`;
+            this.navQueue = buildDoorwayPath(this.position.x, this.position.y, this.position.z, {
+              x: lobbyX,
+              z: lobbyZ,
+              y: this.position.y,
+            });
+            this.stuckTimer = 0;
+            this.stuckAnchor.copy(this.position);
+          }
+          const lobbyGoal = this.navQueue[0];
+          if (lobbyGoal) {
+            const dx = lobbyGoal.x - this.position.x;
+            const dz = lobbyGoal.z - this.position.z;
+            const dist = Math.hypot(dx, dz);
+            if (dist < 0.45) {
+              this.navQueue.shift();
+              this.stuckTimer = 0;
+              this.stuckAnchor.copy(this.position);
+              if (this.navQueue.length === 0) {
+                this.elevatorSystem.sendNpcToFloor(
+                  this,
+                  targetFloor,
+                  this.pendingElevatorSide,
+                  this.callbacks
+                );
+                this.isRidingElevator = true;
+                return;
+              }
+            } else {
+              animState = 'walk';
+              const step = Math.min(dist, 1.65 * dt);
+              const moved = this.moveWithCollision(dx / dist, dz / dist, step, lobbyGoal.y, dt);
+              const targetYaw = Math.atan2(-dx, -dz);
+              let diff = targetYaw - this.yaw;
+              while (diff > Math.PI) diff -= Math.PI * 2;
+              while (diff < -Math.PI) diff += Math.PI * 2;
+              this.yaw += diff * Math.min(1, dt * 8);
+              this.rig.root.rotation.y = this.yaw;
+              this.phase += moved * 3.6;
+
+              const progress = Math.hypot(
+                this.position.x - this.stuckAnchor.x,
+                this.position.z - this.stuckAnchor.z
+              );
+              if (progress >= 0.45) {
+                this.stuckTimer = 0;
+                this.stuckAnchor.copy(this.position);
+              } else {
+                this.stuckTimer += dt;
+                if (this.stuckTimer >= 5.0) {
+                  this.nudgeOutOfStuck(dx / dist, dz / dist, lobbyGoal.y, false);
+                }
+              }
+            }
+          }
         } else {
-          const isRunning = Boolean(target.run);
-          animState = isRunning ? 'run' : 'walk';
-          const speed = isRunning ? 4.2 : 1.65;
-          const step = Math.min(dist, speed * dt);
-
-          // Physics-based movement (collision with floors/walls/stairs)
-          if (this.physics && this.characterController && this.body && this.collider) {
-            const desired = { x: (dx / dist) * step, y: -0.02, z: (dz / dist) * step };
-            this.physics.characterController.computeColliderMovement(this.collider, desired, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS);
-            const m = this.physics.characterController.computedMovement();
-            const cur = this.body.translation();
-            const nx = cur.x + m.x;
-            const nz = cur.z + m.z;
-            const feetY = target.y ?? this.position.y;
-            const ny = feetY + 0.65;
-            this.body.setNextKinematicTranslation({ x: nx, y: ny, z: nz });
-            this.position.set(nx, feetY, nz);
-          } else {
-            this.position.x += (dx / dist) * step;
-            this.position.z += (dz / dist) * step;
-            if (target.y !== undefined) this.position.y = target.y;
+          this.pendingElevatorFloor = null;
+          if (this.navTargetKey !== tKey || this.navQueue.length === 0) {
+            const directDist = Math.hypot(target.x - this.position.x, target.z - this.position.z);
+            if (directDist >= 0.25) {
+              this.navTargetKey = tKey;
+              this.navQueue = buildDoorwayPath(
+                this.position.x,
+                this.position.y,
+                this.position.z,
+                target
+              );
+            }
           }
 
-          const targetYaw = Math.atan2(-dx, -dz);
-          let diff = targetYaw - this.yaw;
-          while (diff > Math.PI) diff -= Math.PI * 2;
-          while (diff < -Math.PI) diff += Math.PI * 2;
-          this.yaw += diff * Math.min(1, dt * 8);
-          this.rig.root.rotation.y = this.yaw;
-          this.rig.root.position.copy(this.position);
-      if (this.vrmController) this.vrmController.container.position.copy(this.position);
+          const navNext = this.navQueue[0] ?? {
+            x: target.x,
+            z: target.z,
+            y: target.y ?? this.position.y,
+            run: target.run,
+          };
+          const dx = navNext.x - this.position.x;
+          const dz = navNext.z - this.position.z;
+          const dist = Math.hypot(dx, dz);
 
-          // Match player gait phase scaling for walk and run animations
-          this.phase += step * (isRunning ? 2.05 : 3.6);
+          const isFinalSubGoal = this.navQueue.length <= 1;
+          const arrivalRadius = isFinalSubGoal ? 0.25 : 0.45;
+
+          if (dist < arrivalRadius) {
+            if (this.navQueue.length > 1) {
+              this.navQueue.shift();
+              this.blockedTimer = 0;
+              this.stuckTimer = 0;
+              this.nudgeCount = 0;
+              this.stuckAnchor.copy(this.position);
+            } else {
+              // Destination reached -> cleanly reset navigation state machine
+              this.resetNavigationState(false);
+              if (wps.length > 1) {
+                this.wpIndex = (this.wpIndex + 1) % wps.length;
+                this.waitTimer = 0;
+              } else {
+                this.arrivedSingleTargetKey = tKey;
+                this.phase += dt * 1.4;
+              }
+            }
+          } else {
+            const isRunning = Boolean(navNext.run);
+            animState = isRunning ? 'run' : 'walk';
+            const speed = isRunning ? 4.2 : 1.65;
+            const step = Math.min(dist, speed * dt);
+            const moved = this.moveWithCollision(dx / dist, dz / dist, step, navNext.y, dt);
+
+            const targetYaw = Math.atan2(-dx, -dz);
+            let diff = targetYaw - this.yaw;
+            while (diff > Math.PI) diff -= Math.PI * 2;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+            this.yaw += diff * Math.min(1, dt * 8);
+            this.rig.root.rotation.y = this.yaw;
+
+            this.phase += (moved > 0.0005 ? moved : step * 0.35) * (isRunning ? 2.05 : 3.6);
+
+            // Check if NPC remained at roughly the same position for more than 5 seconds
+            const progressFromAnchor = Math.hypot(
+              this.position.x - this.stuckAnchor.x,
+              this.position.z - this.stuckAnchor.z
+            );
+            if (progressFromAnchor >= 0.45) {
+              this.stuckTimer = 0;
+              this.stuckAnchor.copy(this.position);
+            } else {
+              this.stuckTimer += dt;
+              if (this.stuckTimer >= 5.0) {
+                if (this.nudgeCount >= 2) {
+                  // Obstacle permanently blocks current waypoint (e.g. waypoint inside staircase); advance cleanly
+                  this.resetNavigationState(false);
+                  if (wps.length > 1) {
+                    this.wpIndex = (this.wpIndex + 1) % wps.length;
+                  } else {
+                    this.arrivedSingleTargetKey = tKey;
+                  }
+                } else {
+                  this.nudgeOutOfStuck(dx / dist, dz / dist, navNext.y, isRunning);
+                }
+              }
+            }
+          }
         }
       }
     } else {
@@ -309,7 +774,6 @@ let wps = this.data.waypoints;
     }
 
     this.rig.root.position.copy(this.position);
-      if (this.vrmController) this.vrmController.container.position.copy(this.position);
     if (shouldAnimateRig) {
       this.updateRigAnimation(animState, isFar ? dt * 4 : dt);
       if (!isFar && !this.vrmController) {
