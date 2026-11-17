@@ -103,13 +103,14 @@ export class CampusNPC {
       this.rig.root.rotation.y = this.yaw;
     }
     this.rig.root.position.copy(this.position);
+      if (this.vrmController) this.vrmController.container.position.copy(this.position);
     scene.add(this.rig.root);
 
     this.physics = physics ?? null;
     this.elevatorSystem = elevatorSystem ?? null;
     this.callbacks = callbacks ?? null;
     if (physics) {
-      const bodyDesc = RAPIER.RigidBodyDesc.fixed().setTranslation(this.position.x, this.position.y, this.position.z);
+      const bodyDesc = RAPIER.RigidBodyDesc.fixed().setTranslation(this.position.x, this.position.y + 0.65, this.position.z);
       this.body = physics.world.createRigidBody(bodyDesc);
       const colliderDesc = RAPIER.ColliderDesc.capsule(0.4, 0.25);
       this.collider = physics.world.createCollider(colliderDesc, this.body);
@@ -238,6 +239,7 @@ export class CampusNPC {
 
     if (this.isRidingElevator) {
       this.rig.root.position.copy(this.position);
+      if (this.vrmController) this.vrmController.container.position.copy(this.position);
       this.phase += dt * 1.4;
       this.updateRigAnimation('idle', dt);
       if (!this.vrmController) this.updateHeadTrack(playerPos, distToPlayer, dt);
@@ -278,10 +280,11 @@ let wps = this.data.waypoints;
             const m = this.physics.characterController.computedMovement();
             const cur = this.body.translation();
             const nx = cur.x + m.x;
-            const ny = cur.y + m.y;
             const nz = cur.z + m.z;
+            const feetY = target.y ?? this.position.y;
+            const ny = feetY + 0.65;
             this.body.setNextKinematicTranslation({ x: nx, y: ny, z: nz });
-            this.position.set(nx, (target.y ?? this.position.y), nz);
+            this.position.set(nx, feetY, nz);
           } else {
             this.position.x += (dx / dist) * step;
             this.position.z += (dz / dist) * step;
@@ -295,6 +298,7 @@ let wps = this.data.waypoints;
           this.yaw += diff * Math.min(1, dt * 8);
           this.rig.root.rotation.y = this.yaw;
           this.rig.root.position.copy(this.position);
+      if (this.vrmController) this.vrmController.container.position.copy(this.position);
 
           // Match player gait phase scaling for walk and run animations
           this.phase += step * (isRunning ? 2.05 : 3.6);
@@ -305,6 +309,7 @@ let wps = this.data.waypoints;
     }
 
     this.rig.root.position.copy(this.position);
+      if (this.vrmController) this.vrmController.container.position.copy(this.position);
     if (shouldAnimateRig) {
       this.updateRigAnimation(animState, isFar ? dt * 4 : dt);
       if (!isFar && !this.vrmController) {
