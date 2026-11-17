@@ -77,6 +77,8 @@ export class ElevatorCabin {
   private playerInsideCabin = false;
   private menuTriggeredThisRide = false;
   private justArrived = false;
+  private controllingPlayerRide = false;
+  private prevPlayerZ: number | null = null;
 
   // NPC autonomous ride queue
   private activeNpcPassenger: {
@@ -444,6 +446,7 @@ export class ElevatorCabin {
       },
       () => {
         // Player closed/cancelled menu without travelling: reopen doors so they can walk back out freely
+        this.targetFloor = this.currentFloor;
         if (this.state === 'idle' || this.state === 'closing') {
           this.justArrived = true;
           this.state = 'opening';
@@ -458,6 +461,8 @@ export class ElevatorCabin {
       if (this.state === 'idle' || this.state === 'closing') {
         this.state = 'opening';
         callbacks?.onDoorToggle(true);
+      } else if (this.state === 'open') {
+        this.waitOpenTimer = Math.max(this.waitOpenTimer, 6.0);
       }
       return;
     }
@@ -547,10 +552,10 @@ export class ElevatorCabin {
       const dy = Math.abs(player.position.y - this.currentY);
 
       // Player near exterior doorway on current elevator floor (outside the doorway)
-      const isNearOutside = Math.abs(dx) < 1.7 && dz > 0.02 && dz < 2.6 && dy < 1.2;
+      const isNearOutside = Math.abs(dx) < 1.75 && dz > 0.02 && dz < 2.8 && dy < 2.2;
 
       // Player crossing the doorway threshold (keep doors safely open so they aren't clipped!)
-      const inDoorwayZone = Math.abs(dx) < 1.1 && dz >= -0.45 && dz <= 0.45 && dy < 1.2;
+      const inDoorwayZone = Math.abs(dx) < 1.2 && dz >= -0.55 && dz <= 0.55 && dy < 2.2;
 
       // Player cleanly inside cabin (past threshold radius to back glass)
       const inCabin =
@@ -559,9 +564,21 @@ export class ElevatorCabin {
         player.position.z >= this.shaftZ - this.cabinD * 0.5 - 0.1 &&
         dy < 2.5;
 
-      // Player standing right inside a closed door wanting to walk out
+      // Player actively walking toward exit (+Z) or standing right at closed door wanting out
+      const walkingTowardExit =
+        inCabin &&
+        this.prevPlayerZ !== null &&
+        player.position.z > this.prevPlayerZ + 0.004 &&
+        dz > -1.85 &&
+        this.targetFloor === this.currentFloor;
+
       const approachingExitFromInside =
-        inCabin && dz > -1.10 && dy < 1.2 && (this.menuTriggeredThisRide || this.justArrived);
+        inCabin &&
+        dy < 2.2 &&
+        this.targetFloor === this.currentFloor &&
+        (walkingTowardExit || (dz > -1.05 && (this.menuTriggeredThisRide || this.justArrived)));
+
+      this.prevPlayerZ = player.position.z;
 
       // Automatic Door Opening when approaching doorway from outside, crossing doorway, or exiting from inside
       if (
@@ -591,17 +608,24 @@ export class ElevatorCabin {
           this.playerInsideCabin = false;
           this.menuTriggeredThisRide = false;
           this.justArrived = false;
-          player.isRidingElevator = false;
+          if (this.controllingPlayerRide) {
+            this.controllingPlayerRide = false;
+            player.isRidingElevator = false;
+          }
         }
       }
 
-      // Root player vertically to cabin strictly while cabin is moving
+      // Root player vertically to cabin strictly while THIS cabin is moving with player inside
       if (this.playerInsideCabin && this.state === 'moving') {
+        this.controllingPlayerRide = true;
         player.isRidingElevator = true;
         player.elevatorY = this.currentY;
-      } else if (player.isRidingElevator) {
+      } else if (this.controllingPlayerRide) {
+        this.controllingPlayerRide = false;
         player.isRidingElevator = false;
       }
+    } else {
+      this.prevPlayerZ = null;
     }
 
     // 2. State Machine
@@ -649,6 +673,7 @@ export class ElevatorCabin {
         this.syncCabinPhysics(this.currentY);
 
         if (player && this.playerInsideCabin) {
+          this.controllingPlayerRide = true;
           player.isRidingElevator = true;
           player.elevatorY = this.currentY;
         }
@@ -662,7 +687,8 @@ export class ElevatorCabin {
           this.justArrived = true;
           this.updateIndicatorDisplay();
           this.menuTriggeredThisRide = false; // Reset for next ride
-          if (player) {
+          if (player && this.controllingPlayerRide) {
+            this.controllingPlayerRide = false;
             player.isRidingElevator = false;
           }
           callbacks?.onElevatorArrive?.(); // Play arrival Ding!
@@ -751,10 +777,13 @@ export class ElevatorCabin {
         d.leafL.position.x = -0.44 - slide;
         d.leafR.position.x = 0.44 + slide;
 
-        if (factor > 0.05) {
-          // Open: set to sensors and slide open with the leaves so doorway is completely clear
+        const isClear = factor > 0.02 || this.state === 'opening' || this.state === 'open';
+        if (isClear) {
+          // Open / opening: disable doorway barriers completely and slide out of threshold
           d.colL.collider.setSensor(true);
           d.colR.collider.setSensor(true);
+          d.colL.collider.setEnabled(false);
+          d.colR.collider.setEnabled(false);
           const posL = {
             x: this.shaftX - 0.44 - slide,
             y: ELEVATOR_FLOORS[this.currentFloor].y + doorLeafH * 0.5,
@@ -769,6 +798,8 @@ export class ElevatorCabin {
           d.colR.body.setNextKinematicTranslation(posR);
         } else {
           // Closed: solid colliders blocking the doorway
+          d.colL.collider.setEnabled(true);
+          d.colR.collider.setEnabled(true);
           d.colL.collider.setSensor(false);
           d.colR.collider.setSensor(false);
           const posL = {
@@ -788,6 +819,8 @@ export class ElevatorCabin {
         // Closed doors at other floors stay in place blocking shaft
         d.leafL.position.x = -0.44;
         d.leafR.position.x = 0.44;
+        d.colL.collider.setEnabled(true);
+        d.colR.collider.setEnabled(true);
         d.colL.collider.setSensor(false);
         d.colR.collider.setSensor(false);
         const posL = {

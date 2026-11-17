@@ -432,13 +432,13 @@ export class Player {
       const cur = this.body.translation();
       const nx = cur.x + corrected.x;
       const nz = cur.z + corrected.z;
-      const ny = this.elevatorY + 0.875;
+      const ny = this.elevatorY + 0.875 + 0.03;
 
       const bodyPos = { x: nx, y: ny, z: nz };
       this.body.setTranslation(bodyPos, true);
       this.body.setNextKinematicTranslation(bodyPos);
 
-      this.position.set(nx, this.elevatorY, nz);
+      this.position.set(nx, ny - 0.875, nz);
       this.rig.root.position.copy(this.position);
 
       const horizDist = Math.hypot(corrected.x, corrected.z);

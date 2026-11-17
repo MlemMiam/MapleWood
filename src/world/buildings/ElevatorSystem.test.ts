@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { PhysicsWorld } from '../../engine/Physics';
 import { InteractionSystem } from '../../interaction/InteractionSystem';
-import { ElevatorCabin, ELEVATOR_FLOORS } from './ElevatorSystem';
+import { ElevatorCabin, ElevatorSystem, ELEVATOR_FLOORS } from './ElevatorSystem';
 import type { WorldBuildContext } from '../WorldContext';
 import type { Player } from '../../character/Player';
 
@@ -68,7 +68,7 @@ function createMockContext(physics: PhysicsWorld): {
 
 function stepPlayerWalk(
   physics: PhysicsWorld,
-  cabin: ElevatorCabin,
+  updater: { update: (dt: number, player: Player | undefined, npcs: [], callbacks?: WorldBuildContext['callbacks']) => void },
   playerBody: RAPIER.RigidBody,
   playerCol: RAPIER.Collider,
   fakePlayer: { position: THREE.Vector3; isRidingElevator: boolean; elevatorY: number },
@@ -92,7 +92,7 @@ function stepPlayerWalk(
     playerBody.setNextKinematicTranslation({ x: nx, y: ny, z: nz });
     physics.step(dt);
     fakePlayer.position.set(nx, ny - 0.875, nz);
-    cabin.update(dt, fakePlayer as unknown as Player, [], callbacks);
+    updater.update(dt, fakePlayer as unknown as Player, [], callbacks);
   }
 }
 
@@ -162,10 +162,10 @@ describe('ElevatorCabin walkability & door state machine', () => {
         cabin.update(0.016, fakePlayer as unknown as Player, [], ctx.callbacks);
         if (fakePlayer.isRidingElevator) {
           p.body.setTranslation(
-            { x: fakePlayer.position.x, y: fakePlayer.elevatorY + 0.875, z: fakePlayer.position.z },
+            { x: fakePlayer.position.x, y: fakePlayer.elevatorY + 0.875 + 0.03, z: fakePlayer.position.z },
             true
           );
-          fakePlayer.position.y = fakePlayer.elevatorY;
+          fakePlayer.position.y = fakePlayer.elevatorY + 0.03;
         }
       }
 
@@ -197,6 +197,78 @@ describe('ElevatorCabin walkability & door state machine', () => {
         fakePlayer.position.z < -27.4,
         `Expected player to re-enter cabin on Floor 1 (z < -27.4), got z=${fakePlayer.position.z.toFixed(3)}`
       );
+    } finally {
+      physics.dispose();
+      if (prevDoc === undefined) {
+        delete (globalThis as { document?: unknown }).document;
+      } else {
+        (globalThis as { document?: unknown }).document = prevDoc;
+      }
+    }
+  });
+
+  it('preserves East elevator riding state alongside West elevator and lets player walk out mid-close', async () => {
+    const prevDoc = (globalThis as { document?: unknown }).document;
+    (globalThis as { document?: unknown }).document = {
+      createElement: () => ({ width: 0, height: 0, getContext: () => null }),
+    };
+
+    const physics = new PhysicsWorld();
+    try {
+      await physics.init();
+      const { ctx, menuCalls } = createMockContext(physics);
+      physics.addStaticBox(0, 0.0, -24.0, 66, 0.05, 13);
+
+      const parent = new THREE.Group();
+      const glassMat = new THREE.MeshStandardMaterial();
+      const system = new ElevatorSystem(ctx, parent, ELEVATOR_FLOORS[0].y, glassMat);
+
+      const p = physics.createPlayerBody(system.eastElevator.shaftX, ELEVATOR_FLOORS[0].y, -24.6);
+      const fakePlayer = {
+        position: new THREE.Vector3(system.eastElevator.shaftX, ELEVATOR_FLOORS[0].y, -24.6),
+        isRidingElevator: false,
+        elevatorY: ELEVATOR_FLOORS[0].y,
+      };
+
+      physics.step(0.016);
+      system.update(0.016, fakePlayer as unknown as Player, [], ctx.callbacks);
+
+      // Walk into East elevator
+      stepPlayerWalk(physics, system, p.body, p.collider, fakePlayer, 0, -0.06, 65, ctx.callbacks);
+      assert.ok(fakePlayer.position.z < -27.4);
+
+      // Wait ~1.45s so doors are mid-closing BEFORE menu opens, then walk back out
+      for (let i = 0; i < 90; i++) {
+        physics.step(0.016);
+        system.update(0.016, fakePlayer as unknown as Player, [], ctx.callbacks);
+      }
+      assert.equal(menuCalls.length, 0);
+      stepPlayerWalk(physics, system, p.body, p.collider, fakePlayer, 0, 0.06, 65, ctx.callbacks);
+      assert.ok(
+        fakePlayer.position.z > -25.2,
+        `Expected player to exit freely when walking out mid-close, got z=${fakePlayer.position.z.toFixed(3)}`
+      );
+
+      // Re-enter East elevator and ride up to Floor 2 while West elevator updates in the same system tick
+      stepPlayerWalk(physics, system, p.body, p.collider, fakePlayer, 0, -0.06, 65, ctx.callbacks);
+      system.eastElevator.requestFloor(2, ctx.callbacks);
+
+      let observedActiveRideFlag = false;
+      for (let i = 0; i < 240; i++) {
+        physics.step(0.016);
+        system.update(0.016, fakePlayer as unknown as Player, [], ctx.callbacks);
+        if (fakePlayer.isRidingElevator) {
+          observedActiveRideFlag = true;
+          p.body.setTranslation(
+            { x: fakePlayer.position.x, y: fakePlayer.elevatorY + 0.875 + 0.03, z: fakePlayer.position.z },
+            true
+          );
+          fakePlayer.position.y = fakePlayer.elevatorY + 0.03;
+        }
+      }
+      assert.ok(observedActiveRideFlag, 'West elevator update must not clear East elevator riding state');
+      assert.equal(system.eastElevator.currentFloor, 2);
+      assert.equal(fakePlayer.isRidingElevator, false);
     } finally {
       physics.dispose();
       if (prevDoc === undefined) {
