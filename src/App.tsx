@@ -846,6 +846,17 @@ timer.update();
                   ? 'carpet'
                   : 'hard';
 
+            // Update world (elevators, doors) BEFORE player so riding state is fresh
+            world.update(
+              elapsed,
+              frameDt,
+              player.position,
+              gameRenderer.getWindTime(),
+              gameRenderer.getWindStrength(),
+              player,
+              npcs
+            );
+
             // Sub-step physics & player locomotion in <= 40ms increments for stability at any framerate
             let remaining = frameDt;
             let firstStep = true;
@@ -857,16 +868,6 @@ timer.update();
               firstStep = false;
               remaining -= stepDt;
             }
-
-            world.update(
-              elapsed,
-              frameDt,
-              player.position,
-              gameRenderer.getWindTime(),
-              gameRenderer.getWindStrength(),
-              player,
-              npcs
-            );
 
             for (const npc of npcs) {
               npc.update(frameDt, player.position, false);
