@@ -13,6 +13,11 @@ import {
   createHumanoidRig,
 } from './PlayerAnimations';
 import {
+  createStairLocomotionTracker,
+  resetStairLocomotionTracker,
+  updateStairLocomotion,
+} from './StylizedWalk';
+import {
   type FlorieVRMController,
   type VisemeKey,
   fetchVrmBufferWithFallback,
@@ -203,6 +208,8 @@ export class CampusNPC {
   private stuckTimer = 0;
   private nudgeCount = 0;
   private readonly stuckAnchor = new THREE.Vector3();
+  private currentAnimState: AnimState = 'idle';
+  private readonly stairTracker = createStairLocomotionTracker();
 
   constructor(
     scene: THREE.Scene,
@@ -302,6 +309,7 @@ export class CampusNPC {
     this.nudgeCount = 0;
     this.stuckAnchor.copy(this.position);
     this.pendingElevatorFloor = null;
+    resetStairLocomotionTracker(this.stairTracker);
     if (resetWaypoints) {
       this.wpIndex = 0;
       this.waitTimer = 0;
@@ -312,16 +320,22 @@ export class CampusNPC {
   public finishElevatorRide(): void {
     this.isRidingElevator = false;
     this.resetNavigationState(false);
+    this.currentAnimState = 'idle';
     this.syncPhysicsBody();
     this.rig.root.position.copy(this.position);
   }
 
   private updateRigAnimation(animState: AnimState, dt: number): void {
+    this.currentAnimState = animState;
     if (this.vrmController) {
       this.vrmController.update(animState, this.phase, 0, dt);
     } else {
       animateHumanoid(this.rig, animState, this.phase, 0, dt);
     }
+  }
+
+  public getAnimState(): AnimState {
+    return this.currentAnimState;
   }
 
   public getYaw(): number {
@@ -338,7 +352,7 @@ export class CampusNPC {
     step: number,
     fallbackY: number,
     dt: number
-  ): number {
+  ): { horiz: number; dy: number } {
     if (this.physics && this.characterController && this.body && this.collider) {
       const cur = this.body.translation();
       // Gentle downward snap velocity matching Player locomotion so capsules never tunnel thin floor slabs
@@ -390,26 +404,31 @@ export class CampusNPC {
         this.blockedTimer = Math.max(0, this.blockedTimer - dt * 2);
       }
 
+      const prevFeetY = this.position.y;
       const nx = cur.x + bestM.x;
       let ny = cur.y + bestM.y;
       const nz = cur.z + bestM.z;
       // Compute feet height matching Player (ny - capsuleHalfTotalHeight)
       let feetY = Number.isFinite(ny) ? ny - NPC_CENTER_OFFSET : fallbackY;
-      // Guard against falling/tunneling below the expected floor slab on startup or async trimesh load
-      if (feetY < fallbackY - 0.12) {
-        feetY = fallbackY + NPC_SKIN_OFFSET;
+      // Guard against falling/tunneling below the lower of current/target floor slabs without breaking stair climbs
+      const minFloorY = Math.min(prevFeetY, fallbackY);
+      let clampedFloor = false;
+      if (feetY < minFloorY - 0.12) {
+        feetY = minFloorY + NPC_SKIN_OFFSET;
         ny = feetY + NPC_CENTER_OFFSET;
         this.body.setTranslation({ x: nx, y: ny, z: nz }, true);
+        clampedFloor = true;
       }
       this.body.setNextKinematicTranslation({ x: nx, y: ny, z: nz });
       this.position.set(nx, feetY, nz);
-      return bestHoriz;
+      return { horiz: bestHoriz, dy: clampedFloor ? 0 : feetY - prevFeetY };
     }
 
+    const prevY = this.position.y;
     this.position.x += dirX * step;
     this.position.z += dirZ * step;
     this.position.y = fallbackY;
-    return step;
+    return { horiz: step, dy: fallbackY - prevY };
   }
 
   private nudgeOutOfStuck(dirX: number, dirZ: number, fallbackY: number, isRunning = false): void {
@@ -648,6 +667,7 @@ export class CampusNPC {
       if (this.waitTimer > 0) {
         this.waitTimer -= dt;
         this.phase += dt * 1.4;
+        updateStairLocomotion(this.stairTracker, 0, 0, true, false, dt);
       } else {
         const target = wps[this.wpIndex % wps.length];
         const tKey = `${timePhase ?? 'default'}:${this.wpIndex % wps.length}`;
@@ -656,6 +676,7 @@ export class CampusNPC {
 
         if (wps.length === 1 && this.arrivedSingleTargetKey === tKey) {
           this.phase += dt * 1.4;
+          updateStairLocomotion(this.stairTracker, 0, 0, true, false, dt);
         } else if (
           curFloor !== targetFloor &&
           this.physics &&
@@ -694,19 +715,39 @@ export class CampusNPC {
                   this.callbacks
                 );
                 this.isRidingElevator = true;
+                this.currentAnimState = 'idle';
+                resetStairLocomotionTracker(this.stairTracker);
                 return;
               }
             } else {
-              animState = 'walk';
               const step = Math.min(dist, 1.65 * dt);
               const moved = this.moveWithCollision(dx / dist, dz / dist, step, lobbyGoal.y, dt);
+              const isMovingHoriz = moved.horiz > 0.0005;
+              const stairMode = updateStairLocomotion(
+                this.stairTracker,
+                moved.horiz,
+                moved.dy,
+                true,
+                isMovingHoriz,
+                dt
+              );
+              animState =
+                stairMode === 'climb'
+                  ? 'climb_stairs'
+                  : stairMode === 'descend'
+                    ? 'descend_stairs'
+                    : 'walk';
               const targetYaw = Math.atan2(-dx, -dz);
               let diff = targetYaw - this.yaw;
               while (diff > Math.PI) diff -= Math.PI * 2;
               while (diff < -Math.PI) diff += Math.PI * 2;
               this.yaw += diff * Math.min(1, dt * 8);
               this.rig.root.rotation.y = this.yaw;
-              this.phase += moved * 3.6;
+              const strideDist =
+                stairMode !== 'flat'
+                  ? Math.hypot(moved.horiz, moved.dy * 0.85)
+                  : moved.horiz;
+              this.phase += strideDist * (stairMode !== 'flat' ? 3.95 : 3.6);
 
               const progress = Math.hypot(
                 this.position.x - this.stuckAnchor.x,
@@ -771,10 +812,25 @@ export class CampusNPC {
             }
           } else {
             const isRunning = Boolean(navNext.run);
-            animState = isRunning ? 'run' : 'walk';
             const speed = isRunning ? 4.2 : 1.65;
             const step = Math.min(dist, speed * dt);
             const moved = this.moveWithCollision(dx / dist, dz / dist, step, navNext.y, dt);
+            const isMovingHoriz = moved.horiz > 0.0005;
+            const stairMode = updateStairLocomotion(
+              this.stairTracker,
+              moved.horiz,
+              moved.dy,
+              true,
+              isMovingHoriz,
+              dt
+            );
+            if (stairMode === 'climb') {
+              animState = 'climb_stairs';
+            } else if (stairMode === 'descend') {
+              animState = 'descend_stairs';
+            } else {
+              animState = isRunning ? 'run' : 'walk';
+            }
 
             const targetYaw = Math.atan2(-dx, -dz);
             let diff = targetYaw - this.yaw;
@@ -783,7 +839,14 @@ export class CampusNPC {
             this.yaw += diff * Math.min(1, dt * 8);
             this.rig.root.rotation.y = this.yaw;
 
-            this.phase += (moved > 0.0005 ? moved : step * 0.35) * (isRunning ? 2.05 : 3.6);
+            const stride = isMovingHoriz
+              ? stairMode !== 'flat'
+                ? Math.hypot(moved.horiz, moved.dy * 0.85)
+                : moved.horiz
+              : step * 0.35;
+            const phaseRate =
+              stairMode !== 'flat' ? (isRunning ? 2.3 : 3.95) : isRunning ? 2.05 : 3.6;
+            this.phase += stride * phaseRate;
 
             // Check if NPC remained at roughly the same position for more than 5 seconds
             const progressFromAnchor = Math.hypot(
@@ -814,8 +877,10 @@ export class CampusNPC {
       }
     } else {
       this.phase += dt * 1.4;
+      updateStairLocomotion(this.stairTracker, 0, 0, true, false, dt);
     }
 
+    this.currentAnimState = animState;
     this.rig.root.position.copy(this.position);
     if (shouldAnimateRig) {
       this.updateRigAnimation(animState, isFar ? dt * 4 : dt);

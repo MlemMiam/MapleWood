@@ -9,18 +9,24 @@ declare module 'lucide-react' {
   };
 
   export const Award: FC<IconProps>;
+  export const BellRing: FC<IconProps>;
   export const BookOpen: FC<IconProps>;
+  export const Clock: FC<IconProps>;
+  export const CloudRain: FC<IconProps>;
   export const Compass: FC<IconProps>;
   export const Film: FC<IconProps>;
   export const Layers: FC<IconProps>;
   export const Map: FC<IconProps>;
   export const Maximize2: FC<IconProps>;
   export const Minimize2: FC<IconProps>;
+  export const Moon: FC<IconProps>;
   export const Navigation: FC<IconProps>;
   export const Pause: FC<IconProps>;
   export const Play: FC<IconProps>;
   export const RotateCcw: FC<IconProps>;
   export const Sparkles: FC<IconProps>;
+  export const Sun: FC<IconProps>;
+  export const Sunset: FC<IconProps>;
   export const Trophy: FC<IconProps>;
   export const Upload: FC<IconProps>;
   export const UserCheck: FC<IconProps>;

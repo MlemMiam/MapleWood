@@ -15,6 +15,7 @@ import {
   CAMPUS_DATA,
   findRoomAtPosition,
 } from './utils/CampusLayout';
+import { advanceGameClock, getTimePhaseForHour } from './utils/GameClock';
 import { isOnCarpet } from './world/buildings/MainBuilding';
 import { DebugOverlay } from './utils/Debug';
 import { InteractionSystem } from './interaction/InteractionSystem';
@@ -200,7 +201,9 @@ export default function App() {
   const [weather, setWeather] = useState<WeatherType>('sunny');
   const [timePhase, setTimePhase] = useState<TimePhase>('morning');
   const [gameTime, setGameTime] = useState({ hour: 8, minute: 0 });
+  const [bellRinging, setBellRinging] = useState(false);
   const gameTimeRef = useRef({ hour: 8, minute: 0, accum: 0 });
+  const bellTimerRef = useRef<number | null>(null);
   const vrmInputRef = useRef<HTMLInputElement | null>(null);
 
   // Refs synced for the 60Hz loop so HUD state updates never recreate the WebGL canvas
@@ -681,26 +684,25 @@ timer.update();
         const elapsed = timer.getElapsed();
 
         if (phaseRef.current === 'playing') {
-          gameTimeRef.current.accum += dt;
-          let timeChanged = false;
-          while (gameTimeRef.current.accum >= 1) {
-            gameTimeRef.current.accum -= 1;
-            gameTimeRef.current.minute += 1;
-            if (gameTimeRef.current.minute >= 60) {
-              gameTimeRef.current.minute = 0;
-              gameTimeRef.current.hour = (gameTimeRef.current.hour + 1) % 24;
-            }
-            timeChanged = true;
-          }
-          if (timeChanged) {
+          const clockResult = advanceGameClock(gameTimeRef.current, dt);
+          if (clockResult.minuteChanged) {
             setGameTime({ hour: gameTimeRef.current.hour, minute: gameTimeRef.current.minute });
-            const h = gameTimeRef.current.hour;
-            const tp: TimePhase =
-              h >= 20 || h < 6 ? 'night' : h >= 17 ? 'sunset' : h >= 14 ? 'afternoon' : h >= 11 ? 'midday' : 'morning';
+            const tp = getTimePhaseForHour(gameTimeRef.current.hour);
             if (tp !== lastTimePhaseRef.current) {
               lastTimePhaseRef.current = tp;
               setTimePhase(tp);
             }
+          }
+          if (clockResult.hourChanged) {
+            audio.playSchoolBell();
+            setBellRinging(true);
+            if (bellTimerRef.current !== null) {
+              window.clearTimeout(bellTimerRef.current);
+            }
+            bellTimerRef.current = window.setTimeout(() => {
+              setBellRinging(false);
+              bellTimerRef.current = null;
+            }, 3200);
           }
         }
 
@@ -1191,6 +1193,10 @@ timer.update();
       );
       cancelAnimationFrame(frameId);
       clearTimeout(frameId);
+      if (bellTimerRef.current !== null) {
+        window.clearTimeout(bellTimerRef.current);
+        bellTimerRef.current = null;
+      }
       cleanupInner?.();
     };
   }, [applyQuestUpdate, showToast, updatePhase]);
@@ -1672,6 +1678,7 @@ timer.update();
           weather={weather}
           timePhase={timePhase}
           gameTime={gameTime}
+          bellRinging={bellRinging}
           onToggleMute={handleToggleMute}
           onOpenMap={() => updatePhase('map')}
           onOpenPause={() => updatePhase('paused')}

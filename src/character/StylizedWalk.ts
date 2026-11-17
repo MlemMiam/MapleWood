@@ -5,6 +5,8 @@ export interface StylizedGaitBlendState {
   elapsedAccum: number;
   moveWeight: number;
   runWeight: number;
+  climbWeight: number;
+  descendWeight: number;
   airWeight: number;
   idleRestTimer: number;
   idleRestTarget: number;
@@ -18,6 +20,8 @@ export function createStylizedGaitBlendState(): StylizedGaitBlendState {
     elapsedAccum: 0,
     moveWeight: 0,
     runWeight: 0,
+    climbWeight: 0,
+    descendWeight: 0,
     airWeight: 0,
     idleRestTimer: 0,
     idleRestTarget: 1.5,
@@ -25,6 +29,80 @@ export function createStylizedGaitBlendState(): StylizedGaitBlendState {
     idleEmoteTimer: -1,
     idleEmoteDuration: 4.5,
   };
+}
+
+export type StairLocomotionMode = 'flat' | 'climb' | 'descend';
+
+export interface StairLocomotionTracker {
+  smoothedSlope: number;
+  netClimbY: number;
+  holdTimer: number;
+  mode: StairLocomotionMode;
+}
+
+export function createStairLocomotionTracker(): StairLocomotionTracker {
+  return {
+    smoothedSlope: 0,
+    netClimbY: 0,
+    holdTimer: 0,
+    mode: 'flat',
+  };
+}
+
+export function resetStairLocomotionTracker(tracker: StairLocomotionTracker): void {
+  tracker.smoothedSlope = 0;
+  tracker.netClimbY = 0;
+  tracker.holdTimer = 0;
+  tracker.mode = 'flat';
+}
+
+/**
+ * Tracks smoothed elevation gain/slope across discrete stair steps so neither single small bumps
+ * (0.03m carpets) nor flat treads between risers flicker the climb/descend stair animation.
+ */
+export function updateStairLocomotion(
+  tracker: StairLocomotionTracker,
+  horizDist: number,
+  dy: number,
+  isGrounded: boolean,
+  isMoving: boolean,
+  dt: number
+): StairLocomotionMode {
+  const safeDt = Math.min(Math.max(dt, 0.001), 0.1);
+  if (!isGrounded || !isMoving || horizDist <= 0.0008) {
+    tracker.smoothedSlope = THREE.MathUtils.damp(tracker.smoothedSlope, 0, 8, safeDt);
+    tracker.netClimbY *= Math.exp(-4.0 * safeDt);
+    tracker.holdTimer = Math.max(0, tracker.holdTimer - safeDt * 1.6);
+    if (tracker.holdTimer <= 0) {
+      tracker.mode = 'flat';
+    }
+    return 'flat';
+  }
+
+  // Ignore extreme teleportation/respawn vertical discontinuities
+  const clampedDy = Math.abs(dy) < 0.35 ? dy : 0;
+  const instSlope = THREE.MathUtils.clamp(clampedDy / Math.max(horizDist, 0.003), -1.6, 1.6);
+  tracker.smoothedSlope = THREE.MathUtils.damp(tracker.smoothedSlope, instSlope, 9.0, safeDt);
+  tracker.netClimbY = tracker.netClimbY * Math.exp(-2.6 * safeDt) + clampedDy;
+
+  if (tracker.netClimbY >= 0.14 && tracker.smoothedSlope >= 0.22) {
+    tracker.mode = 'climb';
+    tracker.holdTimer = 0.34;
+  } else if (tracker.netClimbY <= -0.14 && tracker.smoothedSlope <= -0.22) {
+    tracker.mode = 'descend';
+    tracker.holdTimer = 0.34;
+  } else if (tracker.mode === 'climb' && clampedDy > 0.025) {
+    tracker.holdTimer = 0.34;
+  } else if (tracker.mode === 'descend' && clampedDy < -0.025) {
+    tracker.holdTimer = 0.34;
+  } else {
+    tracker.holdTimer = Math.max(0, tracker.holdTimer - safeDt);
+    if (tracker.holdTimer <= 0) {
+      tracker.mode = 'flat';
+    }
+  }
+
+  return tracker.mode;
 }
 
 /** Normalized target joint angles/offsets for the anime stylized walk, run, idle & jump cycles. */
@@ -235,6 +313,20 @@ const RUN_ANKLE_KEYS = [-0.04, -0.14, 0.16, 0.42, 0.22, 0.04, -0.04, -0.06];
 const RUN_TOE_KEYS = [0.0, 0.0, 0.22, 0.18, 0.04, 0.0, 0.0, 0.0];
 // Elastic running bounce: lowest on midstance absorption (u=0.125/0.625), highest at airborne flight apex (u=0.375/0.875)
 const RUN_HIPS_BOB_KEYS = [-0.015, -0.046, -0.004, 0.036, -0.015, -0.046, -0.004, 0.036];
+
+// Stair climbing gait: high knee lift onto each riser, firm push-up extension & pronounced step-up bob
+const CLIMB_THIGH_KEYS = [0.94, 0.56, 0.16, -0.16, -0.18, 0.28, 0.86, 1.02];
+const CLIMB_KNEE_KEYS = [0.74, 0.36, 0.14, 0.24, 0.86, 1.48, 1.38, 0.98];
+const CLIMB_ANKLE_KEYS = [-0.20, -0.02, 0.04, 0.20, 0.16, -0.18, -0.24, -0.22];
+const CLIMB_TOE_KEYS = [0.0, 0.0, 0.0, 0.14, 0.20, 0.06, 0.0, 0.0];
+const CLIMB_HIPS_BOB_KEYS = [-0.018, 0.014, 0.028, 0.008, -0.018, 0.014, 0.028, 0.008];
+
+// Stair descending gait: cushioned knee absorption & controlled toe-first step-down
+const DESCEND_THIGH_KEYS = [0.42, 0.26, 0.08, -0.14, -0.20, 0.04, 0.30, 0.44];
+const DESCEND_KNEE_KEYS = [0.42, 0.62, 0.48, 0.38, 0.72, 1.06, 0.92, 0.54];
+const DESCEND_ANKLE_KEYS = [0.24, 0.08, -0.02, 0.08, 0.22, 0.24, 0.22, 0.26];
+const DESCEND_TOE_KEYS = [0.10, 0.0, 0.0, 0.06, 0.12, 0.08, 0.08, 0.12];
+const DESCEND_HIPS_BOB_KEYS = [-0.026, -0.012, 0.006, -0.006, -0.026, -0.012, 0.006, -0.006];
 
 // 6 Expressive Anime Idle Vignettes (durations in seconds):
 // 0: Lumine-style high overhead stretch   1: Hair tuck & warm smile   2: Curious gaze & hand near chin
@@ -567,17 +659,33 @@ export function computeStylizedAnimeGait(
   const safeDt = Math.min(Math.max(dt, 0.001), 0.05);
   blend.elapsedAccum += safeDt;
 
-  const targetMove = state === 'walk' || state === 'run' ? 1 : 0;
+  const targetMove =
+    state === 'walk' ||
+    state === 'run' ||
+    state === 'climb_stairs' ||
+    state === 'descend_stairs'
+      ? 1
+      : 0;
   const targetRun = state === 'run' ? 1 : 0;
+  const targetClimb = state === 'climb_stairs' ? 1 : 0;
+  const targetDescend = state === 'descend_stairs' ? 1 : 0;
   const targetAir = state === 'jump' ? 1 : 0;
 
   blend.moveWeight = THREE.MathUtils.damp(blend.moveWeight, targetMove, 10, safeDt);
   blend.runWeight = THREE.MathUtils.damp(blend.runWeight, targetRun, 8.5, safeDt);
+  blend.climbWeight = THREE.MathUtils.damp(blend.climbWeight, targetClimb, 10.5, safeDt);
+  blend.descendWeight = THREE.MathUtils.damp(blend.descendWeight, targetDescend, 10.5, safeDt);
   blend.airWeight = THREE.MathUtils.damp(blend.airWeight, targetAir, 13, safeDt);
 
   const mw = blend.moveWeight;
   const rw = blend.runWeight;
+  const cw = blend.climbWeight;
+  const dw = blend.descendWeight;
   const aw = blend.airWeight;
+  const stairSum = cw + dw;
+  const flatBlend = stairSum > 1 ? 0 : 1 - stairSum;
+  const cNorm = stairSum > 1 ? cw / stairSum : cw;
+  const dNorm = stairSum > 1 ? dw / stairSum : dw;
   const tIdle = blend.elapsedAccum;
   const idleWeight = disableIdle ? 0 : 1 - mw;
 
@@ -670,23 +778,31 @@ export function computeStylizedAnimeGait(
   // 1) PELVIS / HIPS: keep feet anchored to ground in idle; float/bounce only during locomotion
   const walkBobY = sampleCyclic(HIPS_BOB_KEYS, uL);
   const runBobY = sampleCyclic(RUN_HIPS_BOB_KEYS, uL);
-  const gaitBobY = THREE.MathUtils.lerp(walkBobY, runBobY, rw) * mw;
+  const flatBobY = THREE.MathUtils.lerp(walkBobY, runBobY, rw);
+  const climbBobY = sampleCyclic(CLIMB_HIPS_BOB_KEYS, uL);
+  const descendBobY = sampleCyclic(DESCEND_HIPS_BOB_KEYS, uL);
+  const gaitBobY = (flatBobY * flatBlend + climbBobY * cNorm + descendBobY * dNorm) * mw;
   const lateralShiftX = -sinU * THREE.MathUtils.lerp(0.007, 0.006, rw) * mw;
 
   out.hipsOffsetX = lateralShiftX;
   out.hipsOffsetY = gaitBobY;
-  out.hipsOffsetZ = mw * THREE.MathUtils.lerp(0.006, 0.018, rw);
+  out.hipsOffsetZ =
+    mw * (THREE.MathUtils.lerp(0.006, 0.018, rw) * flatBlend + 0.022 * cNorm - 0.006 * dNorm);
 
   // Smooth axial counter-rotation during gait without swaying/oscillating planted feet in idle
-  out.hipsRotY = -cosU * THREE.MathUtils.lerp(0.095, 0.145, rw) * mw;
-  out.hipsRotZ = sinU * THREE.MathUtils.lerp(0.018, 0.022, rw) * mw;
+  out.hipsRotY =
+    -cosU * (THREE.MathUtils.lerp(0.095, 0.145, rw) * flatBlend + 0.125 * cNorm + 0.075 * dNorm) * mw;
+  out.hipsRotZ = sinU * (THREE.MathUtils.lerp(0.018, 0.022, rw) * flatBlend + 0.028 * cNorm + 0.016 * dNorm) * mw;
 
-  // 2) S-CURVE SPINE CASCADE: supple counter-rotation & dynamic running lean
+  // 2) S-CURVE SPINE CASCADE: supple counter-rotation, running lean & stair climb/descend pitch
   const absorbPulse =
     (-Math.sin(uL * Math.PI * 4 - 0.5) * 0.016 * rw +
       Math.sin(uL * Math.PI * 4) * 0.008 * (1 - rw)) *
     mw;
-  const forwardLean = THREE.MathUtils.lerp(0.042, 0.155, rw) * mw + absorbPulse - 0.035 * aw;
+  const forwardLean =
+    (THREE.MathUtils.lerp(0.042, 0.155, rw) * flatBlend + 0.18 * cNorm - 0.035 * dNorm) * mw +
+    absorbPulse -
+    0.035 * aw;
   const breathPitch = idleBreath * 0.014;
   const spineTwistY = sSpineLag * THREE.MathUtils.lerp(0.075, 0.115, rw) * mw;
   const chestTwistY = sChestLag * THREE.MathUtils.lerp(0.085, 0.145, rw) * mw;
@@ -703,22 +819,31 @@ export function computeStylizedAnimeGait(
 
   out.upperChestRotY = chestTwistY * 0.35;
 
-  // 3) NECK & HEAD: steady gaze stabilization, zero head wobble
+  // 3) NECK & HEAD: steady gaze stabilization (looks forward up stairs / glances slightly down descending)
   out.neckRotY = -chestTwistY * 0.38;
   out.neckRotZ = -counterSwayZ * 0.45;
 
   out.headRotX =
     -forwardLean * THREE.MathUtils.lerp(0.52, 0.65, rw) +
+    0.11 * dNorm * mw +
     gaitBobY * 0.38 +
     idleBreath * 0.010 * idleWeight;
   out.headRotY = -chestTwistY * 0.45;
   out.headRotZ = sinU * 0.006 * mw;
 
-  // 4) BIOMECHANICAL WALK & RUN LEGS (Conventions: +thigh = forward, +knee = backward, +ankle/+toe = down)
+  // 4) BIOMECHANICAL WALK, RUN & STAIR LEGS (Conventions: +thigh = forward, +knee = backward, +ankle/+toe = down)
+  const flatThighL = THREE.MathUtils.lerp(sampleCyclic(WALK_THIGH_KEYS, uL), sampleCyclic(RUN_THIGH_KEYS, uL), rw);
+  const flatThighR = THREE.MathUtils.lerp(sampleCyclic(WALK_THIGH_KEYS, uR), sampleCyclic(RUN_THIGH_KEYS, uR), rw);
   const gaitThighL =
-    THREE.MathUtils.lerp(sampleCyclic(WALK_THIGH_KEYS, uL), sampleCyclic(RUN_THIGH_KEYS, uL), rw) * mw;
+    (flatThighL * flatBlend +
+      sampleCyclic(CLIMB_THIGH_KEYS, uL) * cNorm +
+      sampleCyclic(DESCEND_THIGH_KEYS, uL) * dNorm) *
+    mw;
   const gaitThighR =
-    THREE.MathUtils.lerp(sampleCyclic(WALK_THIGH_KEYS, uR), sampleCyclic(RUN_THIGH_KEYS, uR), rw) * mw;
+    (flatThighR * flatBlend +
+      sampleCyclic(CLIMB_THIGH_KEYS, uR) * cNorm +
+      sampleCyclic(DESCEND_THIGH_KEYS, uR) * dNorm) *
+    mw;
 
   out.leftThighX = THREE.MathUtils.lerp(gaitThighL, 0.44, aw);
   out.rightThighX = THREE.MathUtils.lerp(gaitThighR, -0.24, aw);
@@ -727,46 +852,73 @@ export function computeStylizedAnimeGait(
   out.leftThighZ = THREE.MathUtils.lerp(0.022, 0.030, rw) * mw + 0.012 * idleWeight;
   out.rightThighZ = THREE.MathUtils.lerp(0.022, 0.030, rw) * mw + 0.012 * idleWeight;
 
+  const flatKneeL = THREE.MathUtils.lerp(sampleCyclic(WALK_KNEE_KEYS, uL), sampleCyclic(RUN_KNEE_KEYS, uL), rw);
+  const flatKneeR = THREE.MathUtils.lerp(sampleCyclic(WALK_KNEE_KEYS, uR), sampleCyclic(RUN_KNEE_KEYS, uR), rw);
   const gaitKneeL =
     Math.max(
       0.06 * mw,
-      THREE.MathUtils.lerp(sampleCyclic(WALK_KNEE_KEYS, uL), sampleCyclic(RUN_KNEE_KEYS, uL), rw) * mw
+      (flatKneeL * flatBlend +
+        sampleCyclic(CLIMB_KNEE_KEYS, uL) * cNorm +
+        sampleCyclic(DESCEND_KNEE_KEYS, uL) * dNorm) *
+        mw
     ) +
     0.015 * idleWeight;
   const gaitKneeR =
     Math.max(
       0.06 * mw,
-      THREE.MathUtils.lerp(sampleCyclic(WALK_KNEE_KEYS, uR), sampleCyclic(RUN_KNEE_KEYS, uR), rw) * mw
+      (flatKneeR * flatBlend +
+        sampleCyclic(CLIMB_KNEE_KEYS, uR) * cNorm +
+        sampleCyclic(DESCEND_KNEE_KEYS, uR) * dNorm) *
+        mw
     ) +
     0.015 * idleWeight;
 
   out.leftKneeX = Math.max(0, THREE.MathUtils.lerp(gaitKneeL, 0.82, aw));
   out.rightKneeX = Math.max(0, THREE.MathUtils.lerp(gaitKneeR, 0.60, aw));
 
-  // Smooth heel-to-toe roll in walk, cushioned midfoot-to-ball push-off in run
+  // Smooth heel-to-toe roll in walk, stair step clearance, and cushioned midfoot-to-ball push-off in run
+  const flatAnkleL = THREE.MathUtils.lerp(sampleCyclic(WALK_ANKLE_KEYS, uL), sampleCyclic(RUN_ANKLE_KEYS, uL), rw);
+  const flatAnkleR = THREE.MathUtils.lerp(sampleCyclic(WALK_ANKLE_KEYS, uR), sampleCyclic(RUN_ANKLE_KEYS, uR), rw);
   out.leftAnkleX = THREE.MathUtils.lerp(
-    THREE.MathUtils.lerp(sampleCyclic(WALK_ANKLE_KEYS, uL), sampleCyclic(RUN_ANKLE_KEYS, uL), rw) * mw,
+    (flatAnkleL * flatBlend +
+      sampleCyclic(CLIMB_ANKLE_KEYS, uL) * cNorm +
+      sampleCyclic(DESCEND_ANKLE_KEYS, uL) * dNorm) *
+      mw,
     0.20,
     aw
   );
   out.rightAnkleX = THREE.MathUtils.lerp(
-    THREE.MathUtils.lerp(sampleCyclic(WALK_ANKLE_KEYS, uR), sampleCyclic(RUN_ANKLE_KEYS, uR), rw) * mw,
+    (flatAnkleR * flatBlend +
+      sampleCyclic(CLIMB_ANKLE_KEYS, uR) * cNorm +
+      sampleCyclic(DESCEND_ANKLE_KEYS, uR) * dNorm) *
+      mw,
     0.16,
     aw
   );
 
+  const flatToeL = THREE.MathUtils.lerp(sampleCyclic(WALK_TOE_KEYS, uL), sampleCyclic(RUN_TOE_KEYS, uL), rw);
+  const flatToeR = THREE.MathUtils.lerp(sampleCyclic(WALK_TOE_KEYS, uR), sampleCyclic(RUN_TOE_KEYS, uR), rw);
   out.leftToeX = Math.max(
     0,
-    THREE.MathUtils.lerp(sampleCyclic(WALK_TOE_KEYS, uL), sampleCyclic(RUN_TOE_KEYS, uL), rw) * mw
+    (flatToeL * flatBlend +
+      sampleCyclic(CLIMB_TOE_KEYS, uL) * cNorm +
+      sampleCyclic(DESCEND_TOE_KEYS, uL) * dNorm) *
+      mw
   );
   out.rightToeX = Math.max(
     0,
-    THREE.MathUtils.lerp(sampleCyclic(WALK_TOE_KEYS, uR), sampleCyclic(RUN_TOE_KEYS, uR), rw) * mw
+    (flatToeR * flatBlend +
+      sampleCyclic(CLIMB_TOE_KEYS, uR) * cNorm +
+      sampleCyclic(DESCEND_TOE_KEYS, uR) * dNorm) *
+      mw
   );
 
-  // 5) SHOULDERS, ARMS, FOREARMS & WRISTS (Relaxed walk drape -> supple athletic anime run swing)
-  const armSwingAmp = THREE.MathUtils.lerp(0.26, 0.56, rw) * mw;
-  const armForwardBias = THREE.MathUtils.lerp(0.035, 0.08, rw) * mw + 0.03 * idleWeight;
+  // 5) SHOULDERS, ARMS, FOREARMS & WRISTS (Relaxed walk drape -> stair pump -> supple athletic run swing)
+  const armSwingAmp =
+    (THREE.MathUtils.lerp(0.26, 0.56, rw) * flatBlend + 0.44 * cNorm + 0.24 * dNorm) * mw;
+  const armForwardBias =
+    (THREE.MathUtils.lerp(0.035, 0.08, rw) * flatBlend + 0.14 * cNorm + 0.06 * dNorm) * mw +
+    0.03 * idleWeight;
   const shoulderRoll = sinU * THREE.MathUtils.lerp(0.022, 0.034, rw) * mw;
   out.leftShoulderY = sArmLag * THREE.MathUtils.lerp(0.045, 0.085, rw) * mw;
   out.rightShoulderY = sArmLag * THREE.MathUtils.lerp(0.045, 0.085, rw) * mw;
@@ -782,6 +934,7 @@ export function computeStylizedAnimeGait(
 
   const baseAdduction =
     THREE.MathUtils.lerp(0.045, 0.062, rw) +
+    0.035 * dNorm * mw +
     idleBreath * 0.014 +
     Math.abs(sArmLag) * THREE.MathUtils.lerp(0.010, 0.018, rw) * mw;
   out.leftArmAdduction = baseAdduction;
@@ -791,8 +944,10 @@ export function computeStylizedAnimeGait(
 
   // Smooth, un-clamped elbow flex lagging behind shoulder for organic whip/follow-through
   const restElbow = 0.20;
-  const swingElbow = THREE.MathUtils.lerp(0.24, 1.06, rw);
-  const dynamicElbowAmp = THREE.MathUtils.lerp(0.11, 0.24, rw) * mw;
+  const swingElbow =
+    THREE.MathUtils.lerp(0.24, 1.06, rw) * flatBlend + 0.68 * cNorm + 0.46 * dNorm;
+  const dynamicElbowAmp =
+    (THREE.MathUtils.lerp(0.11, 0.24, rw) * flatBlend + 0.19 * cNorm + 0.12 * dNorm) * mw;
   const baseElbow = THREE.MathUtils.lerp(restElbow, swingElbow, mw);
 
   out.leftElbowBend = Math.max(0.10, baseElbow - sElbowLag * dynamicElbowAmp);

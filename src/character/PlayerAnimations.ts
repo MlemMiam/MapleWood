@@ -21,6 +21,8 @@ export type AnimState =
   | 'idle'
   | 'walk'
   | 'run'
+  | 'climb_stairs'
+  | 'descend_stairs'
   | 'jump'
   | 'interact'
   | 'sit'

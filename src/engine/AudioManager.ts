@@ -843,6 +843,45 @@ function synthNpcNodSnippet(variant: 0 | 1): string {
   return encodeWavDataUri(data, sr);
 }
 
+/**
+ * Gentle 4-note Westminster-inspired school bell carillon (E5 -> G#5 -> F#5 -> B4)
+ * played at the top of each in-game hour.
+ */
+function synthSchoolBell(): string {
+  const sr = 22050;
+  const dur = 2.4;
+  const len = Math.floor(sr * dur);
+  const data = new Float32Array(len);
+  const notes = [659.25, 830.61, 739.99, 493.88];
+  const stepSec = 0.42;
+
+  for (let n = 0; n < notes.length; n++) {
+    const onset = n * stepSec;
+    const startIdx = Math.floor(onset * sr);
+    const freq = notes[n];
+    for (let i = startIdx; i < len; i++) {
+      const t = (i - startIdx) / sr;
+      const attack = Math.min(1, t / 0.014);
+      const decay = Math.exp(-t * (n === notes.length - 1 ? 2.4 : 3.2));
+      const chime =
+        Math.sin(2 * Math.PI * freq * t) * 0.68 +
+        Math.sin(2 * Math.PI * freq * 2.0 * t) * 0.22 * Math.exp(-t * 4.5) +
+        Math.sin(2 * Math.PI * freq * 3.0 * t) * 0.08 * Math.exp(-t * 9.0);
+      data[i] += chime * attack * decay * 0.26;
+    }
+  }
+
+  const tailSamples = Math.floor(sr * 0.16);
+  for (let i = 0; i < tailSamples; i++) {
+    const idx = len - tailSamples + i;
+    if (idx >= 0) {
+      data[idx] *= 1 - i / tailSamples;
+    }
+  }
+
+  return encodeWavDataUri(data, sr);
+}
+
 export class AudioManager {
   private footstepHard: Howl;
   private footstepGrass: Howl;
@@ -873,6 +912,7 @@ export class AudioManager {
   private npcHelloSfx1: Howl;
   private npcNodSfx0: Howl;
   private npcNodSfx1: Howl;
+  private schoolBellSfx: Howl;
   private startedAmbient = false;
   private lastFountainVol = 0;
   private lastBreezeVol = 0;
@@ -967,6 +1007,7 @@ export class AudioManager {
     this.npcHelloSfx1 = new Howl({ src: [synthNpcHelloSnippet(1)], volume: 0.42 });
     this.npcNodSfx0 = new Howl({ src: [synthNpcNodSnippet(0)], volume: 0.36 });
     this.npcNodSfx1 = new Howl({ src: [synthNpcNodSnippet(1)], volume: 0.36 });
+    this.schoolBellSfx = new Howl({ src: [synthSchoolBell()], volume: 0.38 });
   }
 
   public setVolume(v: number): void {
@@ -1444,6 +1485,17 @@ export class AudioManager {
     }
   }
 
+  public playSchoolBell(): void {
+    try {
+      if (this.schoolBellSfx.playing()) {
+        this.schoolBellSfx.stop();
+      }
+      this.schoolBellSfx.play();
+    } catch {
+      // Ignore if audio context is not unlocked yet
+    }
+  }
+
   public dispose(): void {
     this.stopTitleMusic();
     this.stopAnimeIntroMusic();
@@ -1476,5 +1528,6 @@ export class AudioManager {
     this.npcHelloSfx1.unload();
     this.npcNodSfx0.unload();
     this.npcNodSfx1.unload();
+    this.schoolBellSfx.unload();
   }
 }

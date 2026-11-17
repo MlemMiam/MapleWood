@@ -1,5 +1,18 @@
 import React from 'react';
-import { Map, Pause, Sparkles, UserCheck, Volume2, VolumeX } from 'lucide-react';
+import {
+  BellRing,
+  Clock,
+  CloudRain,
+  Map,
+  Moon,
+  Pause,
+  Sparkles,
+  Sun,
+  Sunset,
+  UserCheck,
+  Volume2,
+  VolumeX,
+} from 'lucide-react';
 import { Minimap, type MinimapNpcMarker } from './Minimap';
 import type { Language } from '../engine/InputBindings';
 import type { TimePhase, WeatherType } from '../engine/Renderer';
@@ -21,6 +34,7 @@ interface HUDProps {
   weather?: WeatherType;
   timePhase?: TimePhase;
   gameTime?: { hour: number; minute: number };
+  bellRinging?: boolean;
   onToggleMute: () => void;
   onOpenMap: () => void;
   onOpenPause: () => void;
@@ -51,6 +65,7 @@ export const HUD: React.FC<HUDProps> = ({
   weather = 'sunny',
   timePhase = 'morning',
   gameTime,
+  bellRinging = false,
   onToggleMute,
   onOpenMap,
   onOpenPause,
@@ -59,61 +74,97 @@ export const HUD: React.FC<HUDProps> = ({
 }) => {
   const compass = getCompassLabel(playerYaw);
 
+  const periodLabel =
+    weather === 'rainy'
+      ? language === 'en'
+        ? 'Rain'
+        : 'Pluie'
+      : timePhase === 'night'
+        ? language === 'en'
+          ? 'Night'
+          : 'Nuit'
+        : timePhase === 'sunset'
+          ? language === 'en'
+            ? 'Sunset'
+            : 'Crépuscule'
+          : timePhase === 'afternoon'
+            ? language === 'en'
+              ? 'Afternoon'
+              : 'Après-midi'
+            : timePhase === 'midday'
+              ? language === 'en'
+                ? 'Midday'
+                : 'Midi'
+              : language === 'en'
+                ? 'Morning'
+                : 'Matin';
+
+  const PeriodIcon =
+    weather === 'rainy'
+      ? CloudRain
+      : timePhase === 'night'
+        ? Moon
+        : timePhase === 'sunset'
+          ? Sunset
+          : Sun;
+
+  const periodIconColor =
+    weather === 'rainy'
+      ? 'text-sky-600'
+      : timePhase === 'night'
+        ? 'text-indigo-600'
+        : timePhase === 'sunset'
+          ? 'text-orange-600'
+          : 'text-amber-500';
+
   return (
     <div className="fixed inset-0 z-20 pointer-events-none flex flex-col justify-between p-4">
-      {/* Top Row: Left Zone/Compass + Right Minimap/Utility Buttons */}
+      {/* Top Row: Left Zone/Compass + Clock Card & Right Minimap/Utility Buttons */}
       <div className="flex items-start justify-between gap-4">
-        <div className="flex flex-col gap-2 max-w-xs">
+        <div className="flex flex-col gap-2 min-w-[236px] max-w-xs">
           <div
-            className="px-4 py-2.5 rounded-2xl border border-rose-200/90 backdrop-blur-md shadow-sm"
-            style={{ backgroundColor: 'rgba(255, 249, 251, 0.88)' }}
+            className="px-4 py-3 rounded-2xl border border-rose-200/90 backdrop-blur-md shadow-sm"
+            style={{ backgroundColor: 'rgba(255, 249, 251, 0.90)' }}
           >
-            <div className="flex items-center justify-between gap-2 text-xs text-rose-600 font-semibold">
-              <div className="flex items-center gap-1.5">
-                <span className="font-mono-tabular">{compass}</span>
-                <span aria-hidden="true">·</span>
-                <span>{buildingName}</span>
-              </div>
-              <span
-                className="px-2 py-0.5 rounded-full bg-rose-50/95 border border-rose-200/80 text-[10px] text-[#3b334a] font-medium"
-                data-testid="hud-weather-badge"
-              >
-                {weather === 'rainy'
-                  ? language === 'en'
-                    ? '🌧️ Rain'
-                    : '🌧️ Pluie'
-                  : timePhase === 'night'
-                    ? language === 'en'
-                      ? '🌙 Night'
-                      : '🌙 Nuit'
-                    : timePhase === 'sunset'
-                      ? language === 'en'
-                        ? '🌅 Sunset'
-                        : '🌅 Crépuscule'
-                      : timePhase === 'afternoon'
-                        ? language === 'en'
-                          ? '☀️ Afternoon'
-                          : '☀️ Après-midi'
-                        : timePhase === 'midday'
-                          ? language === 'en'
-                            ? '☀️ Midday'
-                            : '☀️ Midi'
-                          : language === 'en'
-                            ? '☀️ Morning'
-                            : '☀️ Matin'}
-              </span>
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-rose-700">
+              <span className="font-mono-tabular shrink-0">{compass}</span>
+              <span aria-hidden="true">·</span>
+              <span className="text-[#5c516b] truncate">{buildingName}</span>
             </div>
-            {gameTime && (
-              <div className="px-2 py-0.5 rounded-full bg-slate-50/95 border border-slate-200/80 text-[10px] text-[#3b334a] font-mono-tabular font-bold">
-                {String(gameTime.hour).padStart(2, '0')}:{String(gameTime.minute).padStart(2, '0')}
-              </div>
-            )}
+
             <div
-              className="font-display text-xl font-bold text-[#1e1b2e] leading-tight mt-0.5"
+              className="font-display text-lg font-bold text-[#1e1b2e] leading-snug mt-0.5"
               data-testid="hud-zone-name"
             >
               {zoneName}
             </div>
+
+            {gameTime && (
+              <div
+                className="mt-2.5 pt-2 border-t border-rose-200/75 flex items-center justify-between gap-4"
+                data-testid="hud-clock"
+              >
+                <div className="flex items-center gap-2">
+                  {bellRinging ? (
+                    <BellRing size={16} className="text-rose-600 shrink-0" aria-hidden="true" />
+                  ) : (
+                    <Clock size={15} className="text-rose-600 shrink-0" aria-hidden="true" />
+                  )}
+                  <span className="font-mono-tabular text-xl font-bold tracking-tight text-[#1e1b2e] leading-none">
+                    {String(gameTime.hour).padStart(2, '0')}:
+                    {String(gameTime.minute).padStart(2, '0')}
+                  </span>
+                </div>
+
+                <div
+                  className="flex items-center gap-1.5 text-xs font-semibold text-[#3b334a] whitespace-nowrap shrink-0"
+                  data-testid="hud-weather-badge"
+                >
+                  <PeriodIcon size={14} className={`${periodIconColor} shrink-0`} aria-hidden="true" />
+                  <span>{bellRinging ? (language === 'en' ? 'School bell' : 'Sonnerie') : periodLabel}</span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

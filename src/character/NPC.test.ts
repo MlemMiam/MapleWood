@@ -243,4 +243,92 @@ describe('CampusNPC locomotion & Rapier physics', () => {
       assert.equal(calls.length, 3);
     });
   });
+
+  it('switches CampusNPC animation between climb_stairs and descend_stairs when traversing 0.20m steps', async () => {
+    await withMockCanvasDocument(async () => {
+      const physics = new PhysicsWorld();
+      await physics.init();
+
+      // Build lower floor, 8-step staircase (0.20m risers, 0.45m treads along -Z), and upper landing
+      physics.addStaticBox(0, -0.05, 0.0, 4, 0.1, 4); // top at y = 0.05
+      for (let s = 0; s < 8; s++) {
+        const topY = 0.05 + (s + 1) * 0.2;
+        const centerZ = -2.0 - s * 0.45 - 0.225;
+        physics.addStaticBox(0, topY / 2 - 0.05, centerZ, 3.0, topY / 2 + 0.05, 0.25);
+      }
+      // Upper landing top at y = 1.65 (same floor band < 4.2m so NPC walks directly via waypoints)
+      physics.addStaticBox(0, 1.65 / 2 - 0.05, -7.2, 4, 1.65 / 2 + 0.05, 2.0);
+
+      const scene = new THREE.Scene();
+      const interactions = new InteractionSystem();
+      const ellieData = (npcsData as NPCData[]).find((n) => n.id === 'npc-ellie')!;
+
+      const npc = new CampusNPC(
+        scene,
+        {
+          ...ellieData,
+          vrmUrl: undefined,
+          waypoints: [{ x: 0, z: -0.5, y: 0.05 }],
+          schedule: [
+            {
+              timePhase: 'morning',
+              waypoints: [
+                { x: 0, z: -6.4, y: 1.65 },
+                { x: 0, z: -0.5, y: 0.05 },
+              ],
+            },
+          ],
+        },
+        interactions,
+        () => {},
+        physics
+      );
+      physics.step(1 / 60);
+
+      const playerPos = new THREE.Vector3(20, 0.05, 20);
+      const climbStates: string[] = [];
+      let reachedTop = false;
+      for (let i = 0; i < 60 * 10; i++) {
+        npc.update(1 / 60, playerPos, false, undefined, 'morning', true);
+        physics.step(1 / 60);
+        climbStates.push(npc.getAnimState());
+        if (npc.position.z <= -6.1 && npc.position.y >= 1.55) {
+          reachedTop = true;
+          break;
+        }
+      }
+
+      assert.ok(
+        reachedTop,
+        `Expected NPC to climb stairs to top landing (y>=1.55), ended at y=${npc.position.y.toFixed(2)}, z=${npc.position.z.toFixed(2)}`
+      );
+      assert.ok(
+        climbStates.includes('climb_stairs'),
+        `Expected NPC to enter climb_stairs while ascending, saw: ${Array.from(new Set(climbStates)).join(', ')}`
+      );
+
+      const descendStates: string[] = [];
+      let reachedBottom = false;
+      for (let i = 0; i < 60 * 10; i++) {
+        npc.update(1 / 60, playerPos, false, undefined, 'morning', true);
+        physics.step(1 / 60);
+        descendStates.push(npc.getAnimState());
+        if (npc.position.z >= -1.0 && npc.position.y <= 0.15) {
+          reachedBottom = true;
+          break;
+        }
+      }
+
+      assert.ok(
+        reachedBottom,
+        `Expected NPC to descend stairs back to bottom floor, ended at y=${npc.position.y.toFixed(2)}, z=${npc.position.z.toFixed(2)}`
+      );
+      assert.ok(
+        descendStates.includes('descend_stairs'),
+        `Expected NPC to enter descend_stairs while descending, saw: ${Array.from(new Set(descendStates)).join(', ')}`
+      );
+
+      physics.dispose();
+    });
+  });
 });
