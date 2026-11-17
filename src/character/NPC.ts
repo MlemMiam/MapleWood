@@ -1,5 +1,9 @@
 import * as THREE from 'three';
 import npcsData from '../data/npcs.json';
+import type { PhysicsWorld } from '../engine/Physics';
+import RAPIER from '@dimforge/rapier3d-compat';
+import type { WorldCallbacks } from '../world/WorldContext';
+import type { ElevatorSystem } from '../world/buildings/ElevatorSystem';
 import type { InteractionSystem } from '../interaction/InteractionSystem';
 import {
   type AnimState,
@@ -64,12 +68,24 @@ export class CampusNPC {
   private yaw = 0;
   private phase = 0;
   private lodCounter = 0;
+  private physics: PhysicsWorld | null = null;
+  private body: RAPIER.RigidBody | null = null;
+  private collider: RAPIER.Collider | null = null;
+  private characterController: RAPIER.KinematicCharacterController | null = null;
+  private elevatorSystem: ElevatorSystem | null = null;
+  private callbacks: WorldCallbacks | null = null;
+  private isRidingElevator = false;
+  private currentSchedule: NPCWaypoint[] = [];
+  private lastTimePhase: string | null = null;
 
   constructor(
     scene: THREE.Scene,
     data: NPCData,
     interactions: InteractionSystem,
-    onTalk: (npc: NPCData) => void
+    onTalk: (npc: NPCData) => void,
+    physics?: PhysicsWorld,
+    elevatorSystem?: ElevatorSystem,
+    callbacks?: WorldCallbacks
   ) {
     this.data = data;
     this.rig = createHumanoidRig({
@@ -88,6 +104,18 @@ export class CampusNPC {
     }
     this.rig.root.position.copy(this.position);
     scene.add(this.rig.root);
+
+    this.physics = physics ?? null;
+    this.elevatorSystem = elevatorSystem ?? null;
+    this.callbacks = callbacks ?? null;
+    if (physics) {
+      const bodyDesc = RAPIER.RigidBodyDesc.fixed().setTranslation(this.position.x, this.position.y, this.position.z);
+      this.body = physics.world.createRigidBody(bodyDesc);
+      const colliderDesc = RAPIER.ColliderDesc.capsule(0.4, 0.25);
+      this.collider = physics.world.createCollider(colliderDesc, this.body);
+      this.characterController = physics.world.createCharacterController(0.01);
+      this.characterController.setApplyImpulsesToDynamicBodies(true);
+    }
 
     interactions.register({
       id: `npc-${data.id}`,
@@ -201,6 +229,35 @@ export class CampusNPC {
       (!isFar && (!this.vrmController || distToPlayer <= 22 || this.lodCounter === 0)) ||
       (isFar && this.lodCounter === 0);
 
+    // Reset waypoint index when schedule changes
+    if (timePhase && timePhase !== this.lastTimePhase) {
+      this.lastTimePhase = timePhase;
+      this.wpIndex = 0;
+      this.waitTimer = 0;
+    }
+
+    // Floor transition via elevator
+    if (this.data.schedule && timePhase && this.physics && this.elevatorSystem && this.callbacks && !this.isRidingElevator) {
+      const _entry = this.data.schedule.find((s) => s.timePhase === timePhase);
+      const _wps = (_entry && _entry.waypoints && _entry.waypoints.length > 0) ? _entry.waypoints : this.data.waypoints;
+      const _target = _wps[this.wpIndex % _wps.length];
+      const _targetY = _target.y ?? this.position.y;
+      const _floorDiff = Math.abs(_targetY - this.position.y);
+      if (_floorDiff > 2.0) {
+        const _targetFloor = Math.round(_targetY / 4.6);
+        this.elevatorSystem.sendNpcToFloor(this as any, _targetFloor, 'east', this.callbacks);
+        this.isRidingElevator = true;
+      }
+    }
+
+    if (this.isRidingElevator) {
+      this.rig.root.position.copy(this.position);
+      this.phase += dt * 1.4;
+      this.updateRigAnimation('idle', dt);
+      if (!this.vrmController) this.updateHeadTrack(playerPos, distToPlayer, dt);
+      return;
+    }
+
 let wps = this.data.waypoints;
     if (this.data.schedule && timePhase) {
       const entry = this.data.schedule.find((s) => s.timePhase === timePhase);
@@ -227,9 +284,23 @@ let wps = this.data.waypoints;
           animState = isRunning ? 'run' : 'walk';
           const speed = isRunning ? 4.2 : 1.65;
           const step = Math.min(dist, speed * dt);
-          this.position.x += (dx / dist) * step;
-          this.position.z += (dz / dist) * step;
-          if (target.y !== undefined) this.position.y = target.y;
+
+          // Physics-based movement (collision with floors/walls/stairs)
+          if (this.physics && this.characterController && this.body && this.collider) {
+            const desired = { x: (dx / dist) * step, y: -0.02, z: (dz / dist) * step };
+            this.physics.characterController.computeColliderMovement(this.collider, desired, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS);
+            const m = this.physics.characterController.computedMovement();
+            const cur = this.body.translation();
+            const nx = cur.x + m.x;
+            const ny = cur.y + m.y;
+            const nz = cur.z + m.z;
+            this.body.setNextKinematicTranslation({ x: nx, y: ny, z: nz });
+            this.position.set(nx, (target.y ?? this.position.y), nz);
+          } else {
+            this.position.x += (dx / dist) * step;
+            this.position.z += (dz / dist) * step;
+            if (target.y !== undefined) this.position.y = target.y;
+          }
 
           const targetYaw = Math.atan2(-dx, -dz);
           let diff = targetYaw - this.yaw;
@@ -273,8 +344,11 @@ let wps = this.data.waypoints;
 export function spawnCampusNPCs(
   scene: THREE.Scene,
   interactions: InteractionSystem,
-  onTalk: (npc: NPCData) => void
+  onTalk: (npc: NPCData) => void,
+  physics?: PhysicsWorld,
+  elevatorSystem?: ElevatorSystem,
+  callbacks?: WorldCallbacks
 ): CampusNPC[] {
   const list = npcsData as NPCData[];
-  return list.map((data) => new CampusNPC(scene, data, interactions, onTalk));
+  return list.map((data) => new CampusNPC(scene, data, interactions, onTalk, physics, elevatorSystem, callbacks));
 }

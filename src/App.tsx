@@ -613,7 +613,7 @@ export default function App() {
           choices: npcData.choices,
         });
         updatePhase('dialogue');
-      });
+      }, physics, world.elevatorSystem, world.callbacks);
 
       engineRefs.current = {
         renderer: gameRenderer,

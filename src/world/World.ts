@@ -18,7 +18,7 @@ export class CampusWorld {
   public readonly cameraColliders: THREE.Object3D[] = [];
   public readonly wingLights: Record<string, THREE.PointLight[]> = {};
   public elevatorSystem?: ElevatorSystem;
-  private callbacks: WorldCallbacks;
+  public callbacks: WorldCallbacks;
   private animatedObjects: Array<(elapsed: number, dt: number) => void> = [];
   private windUniforms = {
     uWindTime: { value: 0 },
