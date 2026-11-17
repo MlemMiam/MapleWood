@@ -164,7 +164,7 @@ export function buildMainBuilding(ctx: WorldBuildContext): THREE.Group {
 
   const loader = new GLTFLoader();
   loader.load(
-    '/assets/models/main_building.glb',
+    '/assets/models/main_building.glb?v=20261117_stairs',
     (gltf) => {
       const building = gltf.scene;
       building.name = 'MainBuilding_Blender';
