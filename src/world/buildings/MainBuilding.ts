@@ -22,6 +22,64 @@ export function isOnCarpet(x: number, z: number): boolean {
   return false;
 }
 
+export function stripBakedStaticElevatorParts(
+  mesh: THREE.Mesh,
+  baseName: 'MW_Elevators_Steel' | 'MW_Elevators_Brass'
+): number {
+  const geom = mesh.geometry;
+  const posAttr = geom.getAttribute('position');
+  if (!posAttr) return 0;
+
+  const idxAttr = geom.index;
+  const triCount = idxAttr ? Math.floor(idxAttr.count / 3) : Math.floor(posAttr.count / 3);
+  const keptIndices: number[] = [];
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  let removedTris = 0;
+
+  for (let t = 0; t < triCount; t++) {
+    const i0 = idxAttr ? idxAttr.getX(t * 3) : t * 3;
+    const i1 = idxAttr ? idxAttr.getX(t * 3 + 1) : t * 3 + 1;
+    const i2 = idxAttr ? idxAttr.getX(t * 3 + 2) : t * 3 + 2;
+
+    a.fromBufferAttribute(posAttr, i0).applyMatrix4(mesh.matrixWorld);
+    b.fromBufferAttribute(posAttr, i1).applyMatrix4(mesh.matrixWorld);
+    c.fromBufferAttribute(posAttr, i2).applyMatrix4(mesh.matrixWorld);
+
+    const minAbsX = Math.min(Math.abs(a.x), Math.abs(b.x), Math.abs(c.x));
+    const maxAbsX = Math.max(Math.abs(a.x), Math.abs(b.x), Math.abs(c.x));
+    const minZ = Math.min(a.z, b.z, c.z);
+    const maxZ = Math.max(a.z, b.z, c.z);
+
+    // 1. Baked static closed door leaves inside the doorway opening (|x| in [13.15, 15.35], z in [-26.32, -26.22])
+    const isInactiveStaticDoor =
+      baseName === 'MW_Elevators_Steel' &&
+      minAbsX >= 13.15 &&
+      maxAbsX <= 15.35 &&
+      minZ >= -26.32 &&
+      maxZ <= -26.22;
+
+    // 2. Baked static dummy cabin floor/ceiling slabs inside the shaft (|x| in [12.84, 15.66], z in [-29.68, -26.33])
+    const isDummyStaticCabinSlab =
+      minAbsX >= 12.84 && maxAbsX <= 15.66 && minZ >= -29.68 && maxZ <= -26.33;
+
+    if (isInactiveStaticDoor || isDummyStaticCabinSlab) {
+      removedTris++;
+      continue;
+    }
+
+    keptIndices.push(i0, i1, i2);
+  }
+
+  if (removedTris > 0) {
+    geom.setIndex(keptIndices);
+    geom.computeBoundingBox();
+    geom.computeBoundingSphere();
+  }
+  return removedTris;
+}
+
 /**
  * Builds the new Grand American Campus MainBuilding exported from Blender (`main_building.glb`),
  * with shared materials, static matrix optimization, selective shadow casting, walkable Rapier
@@ -145,6 +203,15 @@ export function buildMainBuilding(ctx: WorldBuildContext): THREE.Group {
         mesh.frustumCulled = true;
         mesh.matrixAutoUpdate = false;
         mesh.updateMatrix();
+
+        // Remove baked inactive static elevator doors & dummy cabin slabs from main_building.glb
+        // so only the animated interactive ElevatorSystem doors and cabins appear.
+        if (
+          (baseName === 'MW_Elevators_Steel' || baseName === 'MW_Elevators_Brass') &&
+          mesh.geometry
+        ) {
+          stripBakedStaticElevatorParts(mesh, baseName);
+        }
 
         // Register walkable & wall trimesh colliders in Rapier
         if (COLLIDER_MESHES.has(baseName) && mesh.geometry) {

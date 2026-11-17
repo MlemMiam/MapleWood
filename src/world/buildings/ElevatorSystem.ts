@@ -136,29 +136,29 @@ export class ElevatorCabin {
     const halfW = this.cabinW * 0.5;
     const halfD = this.cabinD * 0.5; // 1.72m
 
-    // Flush Marble Floor Platform inside cabin (thickness 0.01m, top at +0.005m relative to cabin floorY)
+    // Flush Marble Floor Platform inside cabin (thickness 0.008m, top at +0.008m relative to cabin floorY)
     const floorMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(this.cabinW - 0.04, 0.01, this.cabinD - 0.04),
+      new THREE.BoxGeometry(this.cabinW - 0.04, 0.008, this.cabinD - 0.04),
       marbleFloorMat
     );
-    floorMesh.position.set(0, 0.005, 0);
+    floorMesh.position.set(0, 0.004, 0);
     floorMesh.receiveShadow = true;
     this.cabinGroup.add(floorMesh);
 
-    // Subtle brass perimeter inlay
+    // Subtle brass perimeter inlay (top at +0.009m)
     const floorInlay = new THREE.Mesh(
-      new THREE.BoxGeometry(this.cabinW - 0.20, 0.002, this.cabinD - 0.20),
+      new THREE.BoxGeometry(this.cabinW - 0.20, 0.001, this.cabinD - 0.20),
       brassMat
     );
-    floorInlay.position.set(0, 0.011, 0);
+    floorInlay.position.set(0, 0.0085, 0);
     this.cabinGroup.add(floorInlay);
 
     // Polished Brass Entrance Threshold Sill (bridges corridor at Z = -26.19 to cabin floor)
     const thresholdSill = new THREE.Mesh(
-      new THREE.BoxGeometry(1.90, 0.01, 0.16),
+      new THREE.BoxGeometry(1.90, 0.008, 0.16),
       brassMat
     );
-    thresholdSill.position.set(0, 0.008, halfD - 0.08);
+    thresholdSill.position.set(0, 0.004, halfD - 0.08);
     thresholdSill.receiveShadow = true;
     this.cabinGroup.add(thresholdSill);
 
@@ -283,10 +283,10 @@ export class ElevatorCabin {
       this.cabinGroup.add(btnMesh);
     }
 
-    // Fixed Rapier Floor Collider (KinematicCharacterController requires a fixed body for seamless walking across floor thresholds)
+    // Fixed Rapier Floor Collider (top at currentY + 0.008, flush with cabin marble floor)
     this.floorCollider = physics.addStaticBodyBox(
       this.shaftX,
-      this.currentY - 0.05,
+      this.currentY - 0.042,
       this.floorCenterZ,
       halfW,
       0.05,
@@ -397,9 +397,10 @@ export class ElevatorCabin {
     }
 
     // Set initial doors open at floor 0
-    this.setDoorsOpen(1);
     this.state = 'open';
+    this.doorOpenFactor = 1;
     this.waitOpenTimer = 8.0;
+    this.setDoorsOpen(1);
   }
 
   private updateIndicatorDisplay(): void {
@@ -428,7 +429,7 @@ export class ElevatorCabin {
 
   private syncCabinPhysics(y: number): void {
     this.floorCollider.body.setTranslation(
-      { x: this.shaftX, y: y - 0.05, z: this.floorCenterZ },
+      { x: this.shaftX, y: y - 0.042, z: this.floorCenterZ },
       true
     );
     for (const w of this.cabinWallColliders) {
@@ -555,12 +556,12 @@ export class ElevatorCabin {
       const isNearOutside = Math.abs(dx) < 1.75 && dz > 0.02 && dz < 2.8 && dy < 2.2;
 
       // Player crossing the doorway threshold (keep doors safely open so they aren't clipped!)
-      const inDoorwayZone = Math.abs(dx) < 1.2 && dz >= -0.55 && dz <= 0.55 && dy < 2.2;
+      const inDoorwayZone = Math.abs(dx) < 1.2 && dz >= -0.35 && dz <= 0.45 && dy < 2.2;
 
       // Player cleanly inside cabin (past threshold radius to back glass)
       const inCabin =
         Math.abs(dx) < this.cabinW * 0.5 &&
-        player.position.z < this.doorZ - 0.30 &&
+        player.position.z < this.doorZ - 0.35 &&
         player.position.z >= this.shaftZ - this.cabinD * 0.5 - 0.1 &&
         dy < 2.5;
 
@@ -618,8 +619,12 @@ export class ElevatorCabin {
       // Root player vertically to cabin strictly while THIS cabin is moving with player inside
       if (this.playerInsideCabin && this.state === 'moving') {
         this.controllingPlayerRide = true;
-        player.isRidingElevator = true;
-        player.elevatorY = this.currentY;
+        if (typeof player.syncElevatorRide === 'function') {
+          player.syncElevatorRide(this.currentY);
+        } else {
+          player.isRidingElevator = true;
+          player.elevatorY = this.currentY;
+        }
       } else if (this.controllingPlayerRide) {
         this.controllingPlayerRide = false;
         player.isRidingElevator = false;
@@ -674,8 +679,12 @@ export class ElevatorCabin {
 
         if (player && this.playerInsideCabin) {
           this.controllingPlayerRide = true;
-          player.isRidingElevator = true;
-          player.elevatorY = this.currentY;
+          if (typeof player.syncElevatorRide === 'function') {
+            player.syncElevatorRide(this.currentY);
+          } else {
+            player.isRidingElevator = true;
+            player.elevatorY = this.currentY;
+          }
         }
 
         if (t >= 1) {
@@ -688,6 +697,9 @@ export class ElevatorCabin {
           this.updateIndicatorDisplay();
           this.menuTriggeredThisRide = false; // Reset for next ride
           if (player && this.controllingPlayerRide) {
+            if (typeof player.syncElevatorRide === 'function') {
+              player.syncElevatorRide(this.currentY);
+            }
             this.controllingPlayerRide = false;
             player.isRidingElevator = false;
           }

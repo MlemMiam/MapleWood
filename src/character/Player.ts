@@ -262,6 +262,18 @@ export class Player {
     this.rig.root.rotation.y = this.yaw;
   }
 
+  public syncElevatorRide(elevatorY: number): void {
+    this.isRidingElevator = true;
+    this.elevatorY = elevatorY;
+    const targetNy = elevatorY + 0.875 + 0.038;
+    const cur = this.body.translation();
+    const bodyPos = { x: cur.x, y: targetNy, z: cur.z };
+    this.body.setTranslation(bodyPos, true);
+    this.body.setNextKinematicTranslation(bodyPos);
+    this.position.set(cur.x, elevatorY + 0.038, cur.z);
+    this.rig.root.position.copy(this.position);
+  }
+
   public update(
     dt: number,
     input: InputSnapshot,
@@ -432,7 +444,7 @@ export class Player {
       const cur = this.body.translation();
       const nx = cur.x + corrected.x;
       const nz = cur.z + corrected.z;
-      const ny = this.elevatorY + 0.875 + 0.03;
+      const ny = this.elevatorY + 0.875 + 0.038;
 
       const bodyPos = { x: nx, y: ny, z: nz };
       this.body.setTranslation(bodyPos, true);

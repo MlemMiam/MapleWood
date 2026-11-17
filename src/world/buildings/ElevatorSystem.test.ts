@@ -237,10 +237,13 @@ describe('ElevatorCabin walkability & door state machine', () => {
       stepPlayerWalk(physics, system, p.body, p.collider, fakePlayer, 0, -0.06, 65, ctx.callbacks);
       assert.ok(fakePlayer.position.z < -27.4);
 
-      // Wait ~1.45s so doors are mid-closing BEFORE menu opens, then walk back out
-      for (let i = 0; i < 90; i++) {
+      // Wait until doors start closing (before destination menu opens), then immediately walk back out
+      for (let i = 0; i < 100; i++) {
         physics.step(0.016);
         system.update(0.016, fakePlayer as unknown as Player, [], ctx.callbacks);
+        if (menuCalls.length > 0) break;
+        // Stop waiting ~0.18s after 1.3s boarding countdown finishes so doors are mid-closing
+        if (i >= 62) break;
       }
       assert.equal(menuCalls.length, 0);
       stepPlayerWalk(physics, system, p.body, p.collider, fakePlayer, 0, 0.06, 65, ctx.callbacks);
@@ -254,21 +257,32 @@ describe('ElevatorCabin walkability & door state machine', () => {
       system.eastElevator.requestFloor(2, ctx.callbacks);
 
       let observedActiveRideFlag = false;
-      for (let i = 0; i < 240; i++) {
-        physics.step(0.016);
-        system.update(0.016, fakePlayer as unknown as Player, [], ctx.callbacks);
-        if (fakePlayer.isRidingElevator) {
-          observedActiveRideFlag = true;
+      let maxSinkDuringAscent = 0;
+      const syncedPlayer = Object.assign(fakePlayer, {
+        syncElevatorRide(this: typeof fakePlayer, y: number) {
+          this.isRidingElevator = true;
+          this.elevatorY = y;
           p.body.setTranslation(
-            { x: fakePlayer.position.x, y: fakePlayer.elevatorY + 0.875 + 0.03, z: fakePlayer.position.z },
+            { x: this.position.x, y: y + 0.875 + 0.038, z: this.position.z },
             true
           );
-          fakePlayer.position.y = fakePlayer.elevatorY + 0.03;
+          this.position.y = y + 0.038;
+        },
+      });
+      for (let i = 0; i < 240; i++) {
+        physics.step(0.016);
+        system.update(0.016, syncedPlayer as unknown as Player, [], ctx.callbacks);
+        if (syncedPlayer.isRidingElevator) {
+          observedActiveRideFlag = true;
+          const cabinFloorTop = system.eastElevator.currentY + 0.009;
+          const sink = cabinFloorTop - syncedPlayer.position.y;
+          if (sink > maxSinkDuringAscent) maxSinkDuringAscent = sink;
         }
       }
       assert.ok(observedActiveRideFlag, 'West elevator update must not clear East elevator riding state');
+      assert.ok(maxSinkDuringAscent <= 0, `Player must never sink below cabin floor top during ascent, got sink=${maxSinkDuringAscent}`);
       assert.equal(system.eastElevator.currentFloor, 2);
-      assert.equal(fakePlayer.isRidingElevator, false);
+      assert.equal(syncedPlayer.isRidingElevator, false);
     } finally {
       physics.dispose();
       if (prevDoc === undefined) {
@@ -277,5 +291,39 @@ describe('ElevatorCabin walkability & door state machine', () => {
         (globalThis as { document?: unknown }).document = prevDoc;
       }
     }
+  });
+
+  it('removes baked inactive static elevator doors and dummy cabin slabs from main_building.glb', async () => {
+    const fs = await import('node:fs');
+    const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js');
+    const { stripBakedStaticElevatorParts } = await import('./MainBuilding');
+
+    const buf = fs.readFileSync('public/assets/models/main_building.glb');
+    const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+    const loader = new GLTFLoader();
+    const gltf = await new Promise<{ scene: THREE.Group }>((res, rej) =>
+      loader.parse(ab, '', res as unknown as (gltf: unknown) => void, rej)
+    );
+    const building = gltf.scene;
+    building.position.set(0, 0.05 - 0.6, -24.0);
+    building.updateMatrixWorld(true);
+
+    let steelRemoved = 0;
+    let brassRemoved = 0;
+    let steelRemainingTris = 0;
+    building.traverse((obj) => {
+      if (!(obj as THREE.Mesh).isMesh) return;
+      const mesh = obj as THREE.Mesh;
+      if (mesh.name === 'MW_Elevators_Steel') {
+        steelRemoved += stripBakedStaticElevatorParts(mesh, 'MW_Elevators_Steel');
+        steelRemainingTris = mesh.geometry.index ? mesh.geometry.index.count / 3 : 0;
+      } else if (mesh.name === 'MW_Elevators_Brass') {
+        brassRemoved += stripBakedStaticElevatorParts(mesh, 'MW_Elevators_Brass');
+      }
+    });
+
+    assert.equal(steelRemoved, 216, 'Should remove 192 inactive static door tris + 24 dummy slab tris from MW_Elevators_Steel');
+    assert.equal(steelRemainingTris, 96, 'Should keep all 96 shaft corner steel column tris intact');
+    assert.equal(brassRemoved, 24, 'Should remove 24 dummy cabin ceiling tris from MW_Elevators_Brass');
   });
 });
