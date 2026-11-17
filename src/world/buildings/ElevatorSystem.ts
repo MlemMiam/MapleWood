@@ -59,6 +59,7 @@ export class ElevatorCabin {
   private cabinLeafL!: THREE.Mesh;
   private cabinLeafR!: THREE.Mesh;
   private floorCollider: { body: RAPIER.RigidBody; collider: RAPIER.Collider };
+  private wallColliders: Array<{ body: RAPIER.RigidBody; collider: RAPIER.Collider }> = [];
   private cabinWallColliders: Array<{
     body: RAPIER.RigidBody;
     x: number;

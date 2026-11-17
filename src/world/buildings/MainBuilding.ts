@@ -156,6 +156,8 @@ export function buildMainBuilding(ctx: WorldBuildContext): THREE.Group {
     'MW_Walls',
     'MW_InteriorWalls',
     'MW_InteriorStairs',
+    'MW_AtriumHandrails',
+    'MW_AtriumRailings',
     'MW_Stone',
     'MW_Columns',
   ]);
@@ -213,6 +215,21 @@ export function buildMainBuilding(ctx: WorldBuildContext): THREE.Group {
           stripBakedStaticElevatorParts(mesh, baseName);
         }
 
+// Register interior wall/stair/ramp colliders for the third-person camera (prevents clipping through walls)
+        if (
+          baseName.startsWith('MW_InteriorWalls') ||
+          baseName.startsWith('MW_InteriorDoorFrames') ||
+          baseName.startsWith('MW_InteriorStairs') ||
+          baseName.startsWith('MW_AtriumHandrails') ||
+          baseName.startsWith('MW_AtriumRailings') ||
+          baseName === 'MW_Floors' ||
+          baseName === 'MW_Floors.001'
+        ) {
+          if (!cameraColliders.includes(mesh)) {
+            mesh.updateMatrixWorld(true);
+            cameraColliders.push(mesh);
+          }
+        }
         // Register walkable & wall trimesh colliders in Rapier
         if (COLLIDER_MESHES.has(baseName) && mesh.geometry) {
           const posAttr = mesh.geometry.getAttribute('position');

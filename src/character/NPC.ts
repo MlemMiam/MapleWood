@@ -18,13 +18,19 @@ export interface NPCChoiceData {
   label: string;
   reply: string;
   action: string;
-  audioUrl?: string;
+  audioUrl?: string | null;
 }
 
 export interface NPCWaypoint {
   x: number;
   z: number;
+  y?: number;
   run?: boolean;
+}
+
+export interface NPCScheduleEntry {
+  timePhase: string;
+  waypoints: NPCWaypoint[];
 }
 
 export interface NPCData {
@@ -42,8 +48,9 @@ export interface NPCData {
   seated?: boolean;
   seatYaw?: number;
   waypoints: NPCWaypoint[];
+  schedule?: NPCScheduleEntry[];
   greeting: string;
-  greetingAudioUrl?: string;
+  greetingAudioUrl?: string | null;
   choices: NPCChoiceData[];
 }
 
@@ -73,8 +80,8 @@ export class CampusNPC {
       accent: '#D4AF37',
     });
 
-    const start = data.waypoints[0] || { x: 0, z: 0 };
-    this.position.set(start.x, 0.05, start.z);
+    const start = data.waypoints[0] || { x: 0, z: 0, y: 0.05 };
+    this.position.set(start.x, start.y ?? 0.05, start.z);
     if (data.seatYaw !== undefined) {
       this.yaw = data.seatYaw;
       this.rig.root.rotation.y = this.yaw;
@@ -135,7 +142,8 @@ export class CampusNPC {
       speechLevel: number;
       speechTime: number;
       visemeHint?: VisemeKey | null;
-    }
+    },
+    timePhase?: string
   ): void {
     this.vrmController?.setNpcDialogueVisuals?.({
       lookAtPos: isTalkingToThis ? (dialogueVisuals?.lookAtPos ?? null) : null,
@@ -193,7 +201,13 @@ export class CampusNPC {
       (!isFar && (!this.vrmController || distToPlayer <= 22 || this.lodCounter === 0)) ||
       (isFar && this.lodCounter === 0);
 
-    const wps = this.data.waypoints;
+let wps = this.data.waypoints;
+    if (this.data.schedule && timePhase) {
+      const entry = this.data.schedule.find((s) => s.timePhase === timePhase);
+      if (entry && entry.waypoints && entry.waypoints.length > 0) {
+        wps = entry.waypoints;
+      }
+    }
     let animState: AnimState = 'idle';
     if (wps.length > 1) {
       if (this.waitTimer > 0) {
@@ -215,6 +229,7 @@ export class CampusNPC {
           const step = Math.min(dist, speed * dt);
           this.position.x += (dx / dist) * step;
           this.position.z += (dz / dist) * step;
+          if (target.y !== undefined) this.position.y = target.y;
 
           const targetYaw = Math.atan2(-dx, -dz);
           let diff = targetYaw - this.yaw;

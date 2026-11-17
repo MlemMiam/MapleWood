@@ -174,7 +174,7 @@ export default function App() {
   const npcAnalyserRef = useRef<AnalyserNode | null>(null);
   const npcAnalyserDataRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
 
-  const playNpcVoiceUrl = useCallback((_url?: string) => {
+  const playNpcVoiceUrl = useCallback((_url?: string | null) => {
     if (npcVoiceAudioRef.current) {
       npcVoiceAudioRef.current.pause();
       npcVoiceAudioRef.current.currentTime = 0;
@@ -739,7 +739,7 @@ timer.update();
             gameRenderer.getWindStrength()
           );
           for (const npc of npcs) {
-            npc.update(dt, player.position, false);
+            npc.update(dt, player.position, false, undefined, timePhase);
           }
 
           hudAccum += dt;
@@ -767,7 +767,7 @@ timer.update();
           world.update(elapsed, dt, t >= 18.8 ? player.position : undefined);
           for (const npc of npcs) {
             if (npc.data.id !== 'npc-receptionist') {
-              npc.update(dt, player.position, false);
+              npc.update(dt, player.position, false, undefined, timePhase);
             }
           }
           if (director) {
@@ -870,7 +870,7 @@ timer.update();
             }
 
             for (const npc of npcs) {
-              npc.update(frameDt, player.position, false);
+              npc.update(frameDt, player.position, false, undefined, timePhase);
             }
 
             cameraCtrl.updateThirdPerson(
