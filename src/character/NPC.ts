@@ -278,7 +278,7 @@ let wps = this.data.waypoints;
 
         if (dist < 0.2) {
           this.wpIndex = (this.wpIndex + 1) % wps.length;
-          this.waitTimer = 1.6;
+          this.waitTimer = 0;
         } else {
           const isRunning = Boolean(target.run);
           animState = isRunning ? 'run' : 'walk';

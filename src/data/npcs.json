@@ -13,14 +13,33 @@
     "seated": true,
     "seatYaw": -2.5616,
     "waypoints": [
-      { "x": -5.43, "z": -20.74, "y": 0.05 }
+      {
+        "x": -5.43,
+        "z": -20.74,
+        "y": 0.05
+      }
     ],
     "greeting": "Bonjour ! Comment puis-je vous aider aujourd'hui ?",
     "greetingAudioUrl": "/assets/audio/helen_greeting.mp3",
     "choices": [
-      { "label": "Qui êtes vous ?", "reply": "Je suis l'Agente d'Accueil de Maplewood, Mme Parker.", "action": "helen-who", "audioUrl": "/assets/audio/helen_who.mp3" },
-      { "label": "Puis je avoir mon emploi du temps ?", "reply": "Oui, bien sûr !", "action": "show-schedule", "audioUrl": "/assets/audio/helen_schedule.mp3" },
-      { "label": "Au revoir !", "reply": "Au revoir, bonne journée!", "action": "helen-bye", "audioUrl": "/assets/audio/helen_bye.mp3" }
+      {
+        "label": "Qui êtes vous ?",
+        "reply": "Je suis l'Agente d'Accueil de Maplewood, Mme Parker.",
+        "action": "helen-who",
+        "audioUrl": "/assets/audio/helen_who.mp3"
+      },
+      {
+        "label": "Puis je avoir mon emploi du temps ?",
+        "reply": "Oui, bien sûr !",
+        "action": "show-schedule",
+        "audioUrl": "/assets/audio/helen_schedule.mp3"
+      },
+      {
+        "label": "Au revoir !",
+        "reply": "Au revoir, bonne journée!",
+        "action": "helen-bye",
+        "audioUrl": "/assets/audio/helen_bye.mp3"
+      }
     ]
   },
   {
@@ -36,36 +55,105 @@
     "hairColor": "#8B5A2B",
     "questId": null,
     "waypoints": [
-      { "x": 0, "z": -29.2, "y": 0.05 }
+      {
+        "x": 0,
+        "z": -15,
+        "y": 0.05
+      }
     ],
     "schedule": [
-      { "timePhase": "morning", "waypoints": [
-        { "x": -2, "z": -22, "y": 0.05, "run": false },
-        { "x": 2, "z": -26, "y": 0.05, "run": false },
-        { "x": 0, "z": -29.2, "y": 0.05, "run": false }
-      ]},
-      { "timePhase": "midday", "waypoints": [
-        { "x": 38.7, "z": -16.7, "y": 0.05, "run": true },
-        { "x": 35, "z": -18, "y": 0.05, "run": false }
-      ]},
-      { "timePhase": "afternoon", "waypoints": [
-        { "x": -39, "z": -17.15, "y": 9.5, "run": true },
-        { "x": -36, "z": -18, "y": 9.5, "run": false }
-      ]},
-      { "timePhase": "sunset", "waypoints": [
-        { "x": -56.7, "z": -16.7, "y": 4.9, "run": false },
-        { "x": -54, "z": -18, "y": 4.9, "run": false }
-      ]},
-      { "timePhase": "night", "waypoints": [
-        { "x": 0, "z": -29.2, "y": 0.05, "run": false }
-      ]}
+      {
+        "timePhase": "morning",
+        "waypoints": [
+          {
+            "x": -2,
+            "z": -22,
+            "y": 0.05
+          },
+          {
+            "x": 0,
+            "z": -29.2,
+            "y": 0.05
+          }
+        ]
+      },
+      {
+        "timePhase": "midday",
+        "waypoints": [
+          {
+            "x": 38.7,
+            "z": -16.7,
+            "y": 0.05
+          },
+          {
+            "x": 35,
+            "z": -18,
+            "y": 0.05
+          }
+        ]
+      },
+      {
+        "timePhase": "afternoon",
+        "waypoints": [
+          {
+            "x": 0,
+            "z": -29.2,
+            "y": 0.05
+          },
+          {
+            "x": -2,
+            "z": -22,
+            "y": 0.05
+          }
+        ]
+      },
+      {
+        "timePhase": "sunset",
+        "waypoints": [
+          {
+            "x": 0,
+            "z": -15,
+            "y": 0.05
+          },
+          {
+            "x": -2,
+            "z": -22,
+            "y": 0.05
+          }
+        ]
+      },
+      {
+        "timePhase": "night",
+        "waypoints": [
+          {
+            "x": 0,
+            "z": -29.2,
+            "y": 0.05
+          }
+        ]
+      }
     ],
     "greeting": "Salut ! Moi c'est Ellie. Tu es le nouvel arrivant ? Bienvenue à Maplewood !",
     "greetingAudioUrl": null,
     "choices": [
-      { "label": "Salut Ellie !", "reply": "Ravie de te rencontrer ! Si tu as besoin de quoi que ce soit, je suis là.", "action": "ellie-greet", "audioUrl": null },
-      { "label": "Tu peux me faire visiter ?", "reply": "Avec plaisir ! Suis-moi, je connais tous les recoins du lycée.", "action": "ellie-tour", "audioUrl": null },
-      { "label": "Au revoir !", "reply": "À bientôt ! Reviens me voir si tu te perds.", "action": "ellie-bye", "audioUrl": null }
+      {
+        "label": "Salut Ellie !",
+        "reply": "Ravie de te rencontrer ! Si tu as besoin de quoi que ce soit, je suis là.",
+        "action": "ellie-greet",
+        "audioUrl": null
+      },
+      {
+        "label": "Tu peux me faire visiter ?",
+        "reply": "Avec plaisir ! Suis-moi, je connais tous les recoins du lycée.",
+        "action": "ellie-tour",
+        "audioUrl": null
+      },
+      {
+        "label": "Au revoir !",
+        "reply": "À bientôt ! Reviens me voir si tu te perds.",
+        "action": "ellie-bye",
+        "audioUrl": null
+      }
     ]
   }
 ]
