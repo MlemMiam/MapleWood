@@ -278,7 +278,7 @@ export class ElevatorCabin {
     // Manual Interior Control Panel Interaction (backup in case player wants to reopen menu)
     interactions.register({
       id: `elev-panel-${side}`,
-      label: "Choisir l'étage de destination",
+      label: "Choisir l'étage",
       type: 'elevator',
       targetObject: panelPlate,
       worldPosition: this.panelWorldPos,
@@ -401,7 +401,7 @@ export class ElevatorCabin {
 
       interactions.register({
         id: `elev-call-${side}-${f}`,
-        label: `Appeler l'ascenseur (${flInfo.shortName})`,
+        label: "Appeler l'ascenseur",
         type: 'elevator',
         targetObject: callBtn,
         worldPosition: new THREE.Vector3(callBoxX, flInfo.y + 1.25, this.doorZ + 0.1),

@@ -646,7 +646,7 @@ export function buildCourtyard(ctx: WorldBuildContext): THREE.Group {
 
   interactions.register({
     id: 'courtyard-fountain',
-    label: 'se rafraîchir à la fontaine',
+    label: 'Boire à la fontaine',
     type: 'fountain',
     targetObject: fountainGroup,
     worldPosition: new THREE.Vector3(0, 1.0, 15.5),

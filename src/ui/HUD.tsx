@@ -1,7 +1,6 @@
 import React from 'react';
 import { Map, Pause, Sparkles, UserCheck, Volume2, VolumeX } from 'lucide-react';
 import { Minimap, type MinimapNpcMarker } from './Minimap';
-import type { QuestState } from '../interaction/QuestLogic';
 import type { Language } from '../engine/InputBindings';
 import type { TimePhase, WeatherType } from '../engine/Renderer';
 import { t } from '../utils/i18n';
@@ -17,7 +16,6 @@ interface HUDProps {
   stamina: number;
   interactPrompt: string | null;
   npcs: MinimapNpcMarker[];
-  questState: QuestState;
   muted: boolean;
   language: Language;
   weather?: WeatherType;
@@ -47,7 +45,6 @@ export const HUD: React.FC<HUDProps> = ({
   stamina,
   interactPrompt,
   npcs,
-  questState,
   muted,
   language,
   weather = 'sunny',
@@ -58,9 +55,6 @@ export const HUD: React.FC<HUDProps> = ({
   onPlayIntro,
   onOpenCustomization,
 }) => {
-  const activeQuests = Object.values(questState.quests).filter((q) => q.status === 'active');
-  const completedCount = Object.values(questState.quests).filter((q) => q.status === 'completed').length;
-  const totalQuests = Object.keys(questState.quests).length;
   const compass = getCompassLabel(playerYaw);
 
   return (
@@ -113,35 +107,6 @@ export const HUD: React.FC<HUDProps> = ({
             >
               {zoneName}
             </div>
-          </div>
-
-          {/* Compact Quest Tracker */}
-          <div
-            className="px-4 py-2.5 rounded-2xl border border-rose-200/85 text-xs text-[#3b334a] backdrop-blur-md shadow-sm"
-            style={{ backgroundColor: 'rgba(255, 249, 251, 0.85)' }}
-          >
-            <div className="flex items-center justify-between gap-3 text-[11px] text-rose-600 font-semibold mb-1">
-              <span>{t(language, 'missions')}</span>
-              <span className="font-mono-tabular bg-rose-100/80 px-1.5 py-0.5 rounded-full text-rose-700">
-                {completedCount}/{totalQuests}
-              </span>
-            </div>
-            {activeQuests.length > 0 ? (
-              <div className="space-y-1">
-                {activeQuests.slice(0, 2).map((q) => (
-                  <div key={q.id} className="text-[#1e1b2e] font-medium leading-snug">
-                    {q.title} ·{' '}
-                    <span className="font-mono-tabular text-rose-600 font-semibold">
-                      {q.progress}/{q.target}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-[#5c516b] leading-snug">
-                Parlez aux membres du lycée pour découvrir des missions.
-              </div>
-            )}
           </div>
         </div>
 
@@ -246,11 +211,7 @@ export const HUD: React.FC<HUDProps> = ({
             <span className="font-mono-tabular font-bold bg-rose-600 text-white px-1.5 py-0.5 rounded-full text-[10px]">
               E
             </span>
-            <span>
-              {interactPrompt.startsWith('Appuie ')
-                ? interactPrompt
-                : `${t(language, 'interactPrefix')} ${interactPrompt}`}
-            </span>
+            <span>{interactPrompt}</span>
           </div>
         )}
       </div>

@@ -50,7 +50,7 @@ export function createWhiteboard(
 
   interactions.register({
     id: `board-${id}`,
-    label: `lire le tableau (${subject})`,
+    label: 'Lire le tableau',
     type: 'whiteboard',
     targetObject: board,
     worldPosition: new THREE.Vector3(x, y, z),

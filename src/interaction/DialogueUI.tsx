@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { NPCChoiceData, NPCData } from '../character/NPC';
 
 export interface ActiveModalContent {
@@ -39,27 +39,42 @@ export const DialogueUI: React.FC<DialogueUIProps> = ({
   const [baskets, setBaskets] = useState(0);
   const [cursor, setCursor] = useState(0);
   const [choiceIndex, setChoiceIndex] = useState(0);
+  const choiceIndexRef = useRef(0);
+  const wheelAccumRef = useRef(0);
+  const usedWheelRef = useRef(false);
   const [lastShotMsg, setLastShotMsg] = useState(
     'Appuyez sur Tirer lorsque le curseur est dans la zone rose !'
   );
   const [scheduleRevealed, setScheduleRevealed] = useState(false);
-  const [typedCount, setTypedCount] = useState(0);
+  const [typingState, setTypingState] = useState<{
+    modal: ActiveModalContent | null;
+    count: number;
+  }>({ modal: null, count: 0 });
 
   const isNpc = modal.kind === 'npc';
   const fullBody = modal.body ?? '';
+  const needsTypewriter = isNpc && subtitlesEnabled && fullBody.length > 0;
+  const typedCount = needsTypewriter
+    ? typingState.modal === modal
+      ? typingState.count
+      : 0
+    : fullBody.length;
+  const isTyping = needsTypewriter && typedCount < fullBody.length;
+  const visibleBody = isNpc ? fullBody.slice(0, typedCount) : fullBody;
+  const hasChoices = Boolean(modal.choices && modal.choices.length > 0);
 
   useEffect(() => {
-    if (!isNpc || !subtitlesEnabled || !fullBody) {
-      setTypedCount(fullBody.length);
+    if (!needsTypewriter) {
+      setTypingState({ modal, count: fullBody.length });
       return;
     }
-    setTypedCount(0);
+    setTypingState({ modal, count: 0 });
     let idx = 0;
     let lastBlipMs = 0;
     const speaker = modal.title ?? '';
     const interval = window.setInterval(() => {
       idx += 1;
-      setTypedCount(idx);
+      setTypingState({ modal, count: idx });
       const ch = fullBody[idx - 1] ?? '';
       const nowMs = performance.now();
       if (onVoiceBlip && /[a-zA-ZÀ-ÿ0-9]/.test(ch) && nowMs - lastBlipMs >= 58) {
@@ -71,7 +86,7 @@ export const DialogueUI: React.FC<DialogueUIProps> = ({
       }
     }, 24);
     return () => window.clearInterval(interval);
-  }, [isNpc, subtitlesEnabled, fullBody, modal.title, onVoiceBlip]);
+  }, [modal, needsTypewriter, fullBody, onVoiceBlip]);
 
   useEffect(() => {
     if (!modal.scheduleImageUrl) {
@@ -112,70 +127,91 @@ export const DialogueUI: React.FC<DialogueUIProps> = ({
     }
   };
 
-  const isTyping = isNpc && subtitlesEnabled && typedCount < fullBody.length;
-  const visibleBody = isNpc ? fullBody.slice(0, typedCount) : fullBody;
-  const hasChoices = Boolean(modal.choices && modal.choices.length > 0);
-
   useEffect(() => {
+    choiceIndexRef.current = 0;
+    wheelAccumRef.current = 0;
+    usedWheelRef.current = false;
     setChoiceIndex(0);
   }, [modal]);
 
+  // Prevent Enter key from advancing or activating focused dialogue controls
   useEffect(() => {
-    if (!hasChoices || isTyping) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  // Mouse wheel selection for NPC dialogue choices (enabled once full sentence is displayed)
+  useEffect(() => {
+    if (!isNpc || !hasChoices || isTyping) return;
     const choices = modal.choices!;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        setChoiceIndex((i) => Math.min(i + 1, choices.length - 1));
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY === 0) return;
+      e.preventDefault();
+      if (choices.length <= 1) return;
+
+      let step = 0;
+      if (Math.abs(e.deltaY) >= 24) {
+        step = e.deltaY > 0 ? 1 : -1;
+        wheelAccumRef.current = 0;
+      } else {
+        wheelAccumRef.current += e.deltaY;
+        if (Math.abs(wheelAccumRef.current) >= 24) {
+          step = wheelAccumRef.current > 0 ? 1 : -1;
+          wheelAccumRef.current = 0;
+        }
+      }
+      if (step === 0) return;
+
+      usedWheelRef.current = true;
+      const cur = choiceIndexRef.current;
+      const next = Math.max(0, Math.min(cur + step, choices.length - 1));
+      if (next !== cur) {
+        choiceIndexRef.current = next;
+        setChoiceIndex(next);
         onPlayHoverSfx?.();
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        setChoiceIndex((i) => Math.max(i - 1, 0));
-        onPlayHoverSfx?.();
-      } else if (e.key === 'Enter') {
-        e.preventDefault();
-        onPlayChoiceSfx?.();
-        onSelectChoice(choices[choiceIndex]);
       }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [hasChoices, isTyping, modal, choiceIndex, onSelectChoice, onPlayChoiceSfx, onPlayHoverSfx]);
+    window.addEventListener('wheel', onWheel, { passive: false });
+    return () => window.removeEventListener('wheel', onWheel);
+  }, [isNpc, hasChoices, isTyping, modal, onPlayHoverSfx]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Enter') return;
-      if (isTyping) {
-        e.preventDefault();
-        setTypedCount(fullBody.length);
-        return;
+  const handleChoiceMouseEnter = useCallback(
+    (idx: number) => {
+      if (isTyping) return;
+      usedWheelRef.current = false;
+      if (choiceIndexRef.current !== idx) {
+        choiceIndexRef.current = idx;
+        setChoiceIndex(idx);
+        onPlayHoverSfx?.();
       }
-      if (!hasChoices) {
-        e.preventDefault();
+    },
+    [isTyping, onPlayHoverSfx]
+  );
+
+  const handleNpcSurfaceClick = (e: React.MouseEvent) => {
+    if (e.button !== 0 || isTyping) return;
+    if (hasChoices) {
+      const chosen = modal.choices![choiceIndexRef.current] ?? modal.choices![0];
+      if (chosen) {
         onPlayChoiceSfx?.();
-        onClose();
+        onSelectChoice(chosen);
       }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [isTyping, hasChoices, fullBody.length, onClose, onPlayChoiceSfx]);
-
-  const handleNpcSurfaceClick = () => {
-    if (isTyping) {
-      setTypedCount(fullBody.length);
       return;
     }
-    if (!hasChoices) {
-      onPlayChoiceSfx?.();
-      onClose();
-    }
+    onPlayChoiceSfx?.();
+    onClose();
   };
 
   if (isNpc) {
     return (
       <div
         className={`fixed inset-0 z-40 flex flex-col justify-end pointer-events-auto select-none animate-fadeIn ${
-          isTyping || !hasChoices ? 'cursor-pointer' : ''
+          isTyping ? 'cursor-default' : 'cursor-pointer'
         }`}
         style={{
           background:
@@ -206,16 +242,24 @@ export const DialogueUI: React.FC<DialogueUIProps> = ({
                 {onDismissSchedule && (
                   <button
                     type="button"
-                    onClick={onDismissSchedule}
-                    className="px-3 py-1 text-[11px] font-medium rounded-full border border-white/25 text-white/90 hover:border-rose-400 hover:text-white transition-colors cursor-pointer"
+                    tabIndex={-1}
+                    disabled={isTyping}
+                    onClick={() => {
+                      if (!isTyping) onDismissSchedule();
+                    }}
+                    className="px-3 py-1 text-[11px] font-medium rounded-full border border-white/25 text-white/90 hover:border-rose-400 hover:text-white transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
                   >
                     Retour au dialogue
                   </button>
                 )}
                 <button
                   type="button"
-                  onClick={onClose}
-                  className="px-3 py-1 text-[11px] font-medium rounded-full bg-rose-600 text-white hover:bg-rose-700 transition-colors cursor-pointer"
+                  tabIndex={-1}
+                  disabled={isTyping}
+                  onClick={() => {
+                    if (!isTyping) onClose();
+                  }}
+                  className="px-3 py-1 text-[11px] font-medium rounded-full bg-rose-600 text-white hover:bg-rose-700 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
                 >
                   Fermer
                 </button>
@@ -257,25 +301,25 @@ export const DialogueUI: React.FC<DialogueUIProps> = ({
 
             {subtitlesEnabled && fullBody && (
               <>
-{modal.imageUrl && (
-                <img
-                  src={modal.imageUrl}
-                  alt={modal.title}
-                  className="max-w-full max-h-[50vh] rounded-xl border border-rose-300/60 shadow-lg mb-3"
-                />
-              )}
-              <div className="border-l-2 border-rose-500 pl-4 py-0.5">
-                <p
-                  className="text-white text-base md:text-lg font-medium leading-relaxed whitespace-pre-line"
-                  style={{ textShadow: '0 1px 8px rgba(0, 0, 0, 0.9)' }}
-                >
-                  {visibleBody}
-                </p>
-              </div>
+                {modal.imageUrl && (
+                  <img
+                    src={modal.imageUrl}
+                    alt={modal.title}
+                    className="max-w-full max-h-[50vh] rounded-xl border border-rose-300/60 shadow-lg mb-3"
+                  />
+                )}
+                <div className="border-l-2 border-rose-500 pl-4 py-0.5">
+                  <p
+                    className="text-white text-base md:text-lg font-medium leading-relaxed whitespace-pre-line"
+                    style={{ textShadow: '0 1px 8px rgba(0, 0, 0, 0.9)' }}
+                  >
+                    {visibleBody}
+                  </p>
+                </div>
               </>
             )}
 
-            {/* Animated Continue Indicator (only when advancing with a single click, never during choices) */}
+            {/* Animated Continue Indicator (left click only, hidden while typing or during choices) */}
             {!isTyping && !hasChoices && (
               <div className="mt-2.5 pl-4 flex items-center gap-2 text-rose-400">
                 <svg
@@ -293,7 +337,7 @@ export const DialogueUI: React.FC<DialogueUIProps> = ({
                   <path d="m7 13 5 5 5-5" />
                 </svg>
                 <span className="text-[11px] uppercase tracking-widest text-white/60">
-                  Appuie sur Entrée pour continuer
+                  Clic gauche pour continuer
                 </span>
               </div>
             )}
@@ -311,10 +355,18 @@ export const DialogueUI: React.FC<DialogueUIProps> = ({
                 <button
                   key={idx}
                   type="button"
-                  onMouseEnter={() => onPlayHoverSfx?.()}
-                  onClick={() => {
+                  tabIndex={-1}
+                  disabled={isTyping}
+                  aria-selected={idx === choiceIndex}
+                  onMouseEnter={() => handleChoiceMouseEnter(idx)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (e.button !== 0 || isTyping) return;
+                    const chosen = usedWheelRef.current
+                      ? modal.choices![choiceIndexRef.current] ?? c
+                      : c;
                     onPlayChoiceSfx?.();
-                    onSelectChoice(c);
+                    onSelectChoice(chosen);
                   }}
                   className={`group w-full text-left px-4 py-2.5 rounded-full text-sm font-medium transition-all duration-200 cursor-pointer flex items-center justify-between gap-3 ${
                     idx === choiceIndex
@@ -328,6 +380,13 @@ export const DialogueUI: React.FC<DialogueUIProps> = ({
                   </span>
                 </button>
               ))}
+              {!isTyping && (
+                <div className="flex items-center justify-end gap-2 px-1 pt-0.5 text-[10px] uppercase tracking-widest text-white/55">
+                  <span>Molette : choisir</span>
+                  <span>·</span>
+                  <span>Clic gauche : confirmer</span>
+                </div>
+              )}
             </div>
           )}
         </div>

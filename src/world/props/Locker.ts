@@ -82,7 +82,7 @@ export function buildLockerBank(
 
       interactions.register({
         id: `locker-${i}-${l.interactiveLabel}`,
-        label: `fouiller le ${l.interactiveLabel}`,
+        label: `Ouvrir le ${l.interactiveLabel}`,
         type: 'locker',
         targetObject: proxy,
         worldPosition: new THREE.Vector3(l.x, l.y + 1.0, l.z),

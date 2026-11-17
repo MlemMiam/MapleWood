@@ -52,7 +52,7 @@ export function createVendingMachine(
 
   interactions.register({
     id: `vending-${id}`,
-    label: `utiliser le distributeur (${kind})`,
+    label: 'Utiliser le distributeur',
     type: 'vending',
     targetObject: g,
     worldPosition: new THREE.Vector3(x, y + 1.0, z),

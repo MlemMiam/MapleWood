@@ -139,7 +139,7 @@ export function createDoor(
     onToggle?.(opened);
   };
 
-  const itemLabel = `ouvrir / fermer : ${label}`;
+  const itemLabel = `Ouvrir : ${label}`;
   interactions.register({
     id: `door-${id}`,
     label: itemLabel,

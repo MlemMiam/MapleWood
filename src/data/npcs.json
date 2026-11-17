@@ -3,7 +3,7 @@
     "id": "npc-receptionist",
     "name": "Mme Parker",
     "role": "Agente d'Accueil",
-    "promptLabel": "Appuie sur E pour parler à Mme Parker",
+    "promptLabel": "Parler à Mme Parker",
     "roomId": "lobby",
     "vrmUrl": "/assets/models/Helen.vrm",
     "shirtColor": "#1F3864",

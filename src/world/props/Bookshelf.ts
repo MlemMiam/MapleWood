@@ -66,7 +66,7 @@ export function createBookshelf(
 
   interactions.register({
     id: `bookshelf-${id}`,
-    label: `consulter les livres (${title})`,
+    label: 'Consulter les livres',
     type: 'book',
     targetObject: g,
     worldPosition: new THREE.Vector3(x, y + 1.1, z),

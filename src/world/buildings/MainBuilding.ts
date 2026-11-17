@@ -364,7 +364,7 @@ function loadMainEntranceDoor(
 
   interactions.register({
     id: 'door-main-entrance',
-    label: "ouvrir / fermer : Entrée du Hall d'accueil",
+    label: "Ouvrir l'entrée",
     type: 'door',
     targetObject: doorRoot,
     worldPosition: new THREE.Vector3(doorX, doorY + 1.2, doorZ),
@@ -439,7 +439,7 @@ function loadMainEntranceDoor(
       interactions.unregister('door-main-entrance');
       interactions.register({
         id: 'door-main-entrance',
-        label: "ouvrir / fermer : Entrée du Hall d'accueil",
+        label: "Ouvrir l'entrée",
         type: 'door',
         targetObject: doorRoot,
         worldPosition: new THREE.Vector3(doorX, doorY + 1.2, doorZ),
@@ -639,7 +639,7 @@ function loadStairwellDoors(
 
     interactions.register({
       id: `door-stairwell-${cfg.id}`,
-      label: `ouvrir / fermer : ${cfg.name}`,
+      label: "Ouvrir l'escalier",
       type: 'door',
       targetObject: doorRoot,
       worldPosition: new THREE.Vector3(doorX, doorY + 1.35, doorZ),
@@ -784,7 +784,7 @@ function loadHallFurniture(
         bulletin.getWorldPosition(wp);
         interactions.register({
           id: 'hall-bulletin-board',
-          label: "lire le panneau d'affichage : Vie du Campus",
+          label: 'Lire le panneau',
           type: 'whiteboard',
           targetObject: bulletin,
           worldPosition: new THREE.Vector3(wp.x, floorY + 1.5, wp.z),
@@ -809,7 +809,7 @@ function loadHallFurniture(
           obj.getWorldPosition(wp);
           interactions.register({
             id: `hall-brochure-${obj.name}`,
-            label: 'lire la brochure de bienvenue',
+            label: 'Lire la brochure',
             type: 'book',
             targetObject: obj,
             worldPosition: new THREE.Vector3(wp.x, floorY + 1.0, wp.z),
@@ -827,7 +827,7 @@ function loadHallFurniture(
           furniture.updateMatrixWorld(true);
           interactions.register({
             id: 'hall-brochure',
-            label: 'lire la brochure de bienvenue',
+            label: 'Lire la brochure',
             type: 'book',
             targetObject: proxy,
             worldPosition: new THREE.Vector3(0, floorY + 0.5, -15.6),
@@ -840,7 +840,7 @@ function loadHallFurniture(
         trophy1.getWorldPosition(wp);
         interactions.register({
           id: 'hall-trophy-case',
-          label: 'admirer les trophées des Aigles',
+          label: 'Voir les trophées',
           type: 'book',
           targetObject: trophy1,
           worldPosition: new THREE.Vector3(wp.x, floorY + 1.3, wp.z),
@@ -875,10 +875,9 @@ function loadHallFurniture(
         const sitX = seatPos.x + seatForward.x * 0.10;
         const sitZ = seatPos.z + seatForward.z * 0.10;
         const sitYaw = Math.atan2(-seatForward.x, -seatForward.z);
-        const isSofa = sName.endsWith('_Sofa');
         interactions.register({
           id: `seat-${sName}`,
-          label: isSofa ? "s'asseoir / se lever : Canapé" : "s'asseoir / se lever : Fauteuil",
+          label: "S'asseoir",
           type: 'locker',
           targetObject: seatObj,
           worldPosition: new THREE.Vector3(seatPos.x, floorY + 0.65, seatPos.z),

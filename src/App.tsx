@@ -31,6 +31,7 @@ import {
 } from './interaction/QuestLogic';
 import { CampusWorld } from './world/World';
 import { Player } from './character/Player';
+import { charToFrenchSpeechSample, type VisemeKey } from './character/FlorieVRM';
 import { type CampusNPC, type NPCChoiceData, type NPCData, spawnCampusNPCs } from './character/NPC';
 import { LoadingScreen } from './ui/LoadingScreen';
 import { TitleOverlay } from './ui/TitleOverlay';
@@ -126,7 +127,12 @@ export default function App() {
     () => LOADING_TIPS[Math.floor(Math.random() * LOADING_TIPS.length)]
   );
   const [settings, setSettings] = useState<GameSettings>(() => loadSettings());
-  const [cursorPos, setCursorPos] = useState({ x: -100, y: -100 });
+  const [isPointerLocked, setIsPointerLocked] = useState(false);
+  const cursorCoordsRef = useRef({
+    x: typeof window !== 'undefined' ? window.innerWidth * 0.5 : 0,
+    y: typeof window !== 'undefined' ? window.innerHeight * 0.5 : 0,
+  });
+  const cursorElRef = useRef<HTMLDivElement | null>(null);
   const [muted, setMuted] = useState(false);
   const [fatalError, setFatalError] = useState<string | null>(null);
 
@@ -176,7 +182,12 @@ export default function App() {
   }, []);
 
   const handleCharacterBlip = useCallback((ch: string, speaker: string) => {
-    lastBlipTimeRef.current = performance.now();
+    const now = performance.now();
+    if (now - (lastBlipTimeRef.current ?? 0) > 400) {
+      dialogueSpeechStartRef.current = now;
+    }
+    lastBlipTimeRef.current = now;
+    lastBlipCharRef.current = ch;
     const s = speaker.toLowerCase();
     const voice =
       s.includes('parker') || s.includes('helen')
@@ -198,8 +209,14 @@ export default function App() {
   const lastTimePhaseRef = useRef<TimePhase>('morning');
   const activeNpcIdRef = useRef<string | null>(null);
   const lastBlipTimeRef = useRef<number>(0);
+  const lastBlipCharRef = useRef<string>('');
+  const dialogueSpeechStartRef = useRef<number>(0);
   const showCutsceneGalleryRef = useRef(false);
   showCutsceneGalleryRef.current = showCutsceneGallery;
+  const elevatorModalRef = useRef(elevatorModal);
+  elevatorModalRef.current = elevatorModal;
+  const activeModalRef = useRef(activeModal);
+  activeModalRef.current = activeModal;
   const introElapsedRef = useRef(0);
   const introStageFlagsRef = useRef({
     sparkle0: false,
@@ -316,20 +333,50 @@ export default function App() {
     }
   }, [settings, muted]);
 
-  // Custom themed cursor (togglable with F4)
+  const isMenuOpen =
+    phase !== 'playing' ||
+    Boolean(elevatorModal) ||
+    showCutsceneGallery ||
+    Boolean(activeModal) ||
+    Boolean(fatalError);
+  const showGameCursor =
+    isMenuOpen || (settings.customCursorEnabled && !isPointerLocked);
+
+  // Custom themed game cursor (visible in all menus and free-cursor mode; hidden only during active pointer lock)
   useEffect(() => {
-    document.documentElement.style.cursor = 'none';
-    document.body.style.cursor = 'none';
-    const canvas = document.getElementById('canvas-container');
-    if (canvas) canvas.style.cursor = 'none';
-    const onMove = (e: MouseEvent) => setCursorPos({ x: e.clientX, y: e.clientY });
+    const syncCursorDom = (x: number, y: number) => {
+      cursorCoordsRef.current = { x, y };
+      if (cursorElRef.current) {
+        cursorElRef.current.style.left = `${x}px`;
+        cursorElRef.current.style.top = `${y}px`;
+      }
+    };
+
+    const onMove = (e: MouseEvent) => {
+      if (document.pointerLockElement) return;
+      syncCursorDom(e.clientX, e.clientY);
+    };
+
+    const onPointerLockChange = () => {
+      const locked = Boolean(document.pointerLockElement);
+      setIsPointerLocked(locked);
+      if (!locked) {
+        syncCursorDom(window.innerWidth * 0.5, window.innerHeight * 0.5);
+      }
+    };
+
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Control' && !e.repeat) {
         e.preventDefault();
         setSettings((s) => {
           const next = !s.customCursorEnabled;
           const { input } = engineRefs.current || {};
-          if (phaseRef.current === 'playing') {
+          const inGameplay =
+            phaseRef.current === 'playing' &&
+            !elevatorModalRef.current &&
+            !showCutsceneGalleryRef.current &&
+            !activeModalRef.current;
+          if (inGameplay) {
             if (next) input?.exitPointerLock();
             else input?.requestPointerLock();
           }
@@ -337,13 +384,39 @@ export default function App() {
         });
       }
     };
-    window.addEventListener('mousemove', onMove);
+
+    window.addEventListener('pointermove', onMove, { capture: true, passive: true });
+    window.addEventListener('mousemove', onMove, { capture: true, passive: true });
+    window.addEventListener('pointerdown', onMove, { capture: true, passive: true });
+    document.addEventListener('pointerlockchange', onPointerLockChange);
     window.addEventListener('keydown', onKey);
     return () => {
-      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('pointermove', onMove, { capture: true });
+      window.removeEventListener('mousemove', onMove, { capture: true });
+      window.removeEventListener('pointerdown', onMove, { capture: true });
+      document.removeEventListener('pointerlockchange', onPointerLockChange);
       window.removeEventListener('keydown', onKey);
     };
   }, []);
+
+  useEffect(() => {
+    const hideNativeCursor = showGameCursor || isPointerLocked;
+    const cursorVal = hideNativeCursor ? 'none' : 'auto';
+    document.documentElement.style.cursor = cursorVal;
+    document.body.style.cursor = cursorVal;
+    const canvas = document.getElementById('canvas-container');
+    if (canvas) canvas.style.cursor = cursorVal;
+
+    if (showGameCursor && (cursorCoordsRef.current.x < 0 || cursorCoordsRef.current.y < 0)) {
+      const cx = window.innerWidth * 0.5;
+      const cy = window.innerHeight * 0.5;
+      cursorCoordsRef.current = { x: cx, y: cy };
+      if (cursorElRef.current) {
+        cursorElRef.current.style.left = `${cx}px`;
+        cursorElRef.current.style.top = `${cy}px`;
+      }
+    }
+  }, [showGameCursor, isPointerLocked]);
 
   // Main Engine Lifecycle (mounts ONCE)
   useEffect(() => {
@@ -564,9 +637,14 @@ export default function App() {
       const params = new URLSearchParams(window.location.search);
       const autostart = params.get('autostart') === '1';
 
-      // Click on canvas locks pointer when playing
+      // Click on canvas locks pointer when playing (never when an overlay menu is open)
       const onCanvasClick = () => {
-        if (phaseRef.current === 'playing') {
+        if (
+          phaseRef.current === 'playing' &&
+          !elevatorModalRef.current &&
+          !showCutsceneGalleryRef.current &&
+          !activeModalRef.current
+        ) {
           input.requestPointerLock();
         }
       };
@@ -931,6 +1009,7 @@ timer.update();
             world.update(elapsed, dt, player.position);
             let speechLevel = 0;
             let speechTime = 0;
+            let visemeHint: VisemeKey | null = null;
             const voiceEl = npcVoiceAudioRef.current;
             if (voiceEl && !voiceEl.paused && !voiceEl.ended) {
               speechTime = voiceEl.currentTime;
@@ -944,20 +1023,24 @@ timer.update();
                   sumSq += norm * norm;
                 }
                 const rms = Math.sqrt(sumSq / data.length);
-                speechLevel = Math.min(1, rms * 4.8);
+                speechLevel = Math.min(1, rms * 3.8);
               } else {
-                speechLevel = 0.45 + 0.35 * Math.sin(speechTime * 11);
+                speechLevel = 0.45 + 0.35 * Math.sin(speechTime * 10);
               }
             } else {
-              // Lip-sync for text blips (no full voice audio)
+              // Phoneme-driven lip-sync for text blips (smooth syllable bell envelope)
               const now = performance.now();
               const sinceBlip = now - (lastBlipTimeRef.current ?? 0);
-              if (sinceBlip < 140) {
-                speechTime = sinceBlip / 1000;
-                speechLevel = 0.5 + 0.3 * Math.sin(sinceBlip * 0.05);
+              if (sinceBlip >= 0 && sinceBlip < 135) {
+                speechTime = Math.max(0, (now - dialogueSpeechStartRef.current) / 1000);
+                const sample = charToFrenchSpeechSample(lastBlipCharRef.current);
+                const env = Math.sin((sinceBlip / 135) * Math.PI);
+                speechLevel = sample.weight * (0.28 + 0.72 * env);
+                visemeHint = sample.viseme;
               } else {
                 speechLevel = 0;
                 speechTime = 0;
+                visemeHint = null;
               }
             }
 
@@ -986,6 +1069,7 @@ timer.update();
                       lookAtPos: gameRenderer.camera.position,
                       speechLevel,
                       speechTime,
+                      visemeHint,
                     }
                   : undefined
               );
@@ -1473,18 +1557,6 @@ timer.update();
       {/* Isolated WebGL Viewport Container */}
       <div id="canvas-container" ref={mountRef} className="fixed inset-0 z-0" />
 
-      {(settings.customCursorEnabled || phase !== 'playing') && !activeModal && (
-        <div
-          className="pointer-events-none fixed z-[9999] -translate-x-1/2 -translate-y-1/2"
-          style={{ left: cursorPos.x, top: cursorPos.y }}
-        >
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-            <path d="M4 2 L4 20 L9 15 L12 22 L15 21 L12 14 L19 14 Z" fill="#1e1b2e" stroke="#e11d48" strokeWidth="1.5" strokeLinejoin="round" />
-          </svg>
-        </div>
-      )}
-      <style>{`*, *::before, *::after { cursor: none !important; }`}</style>
-
       {phase === 'loading' && (
         <LoadingScreen progress={loadProgress} tip={loadingTip} />
       )}
@@ -1567,7 +1639,6 @@ timer.update();
           stamina={hudPos.stamina}
           interactPrompt={phase === 'playing' ? interactPrompt : null}
           npcs={npcMarkers}
-          questState={questState}
           muted={muted}
           language={settings.language}
           weather={weather}
@@ -1643,6 +1714,40 @@ timer.update();
           onRespawn={handleRespawn}
           onQuitToTitle={() => updatePhase('title')}
         />
+      )}
+
+      {(showGameCursor || isPointerLocked) && (
+        <style>{`*, *::before, *::after { cursor: none !important; }`}</style>
+      )}
+      {showGameCursor && (
+        <div
+          ref={cursorElRef}
+          aria-hidden="true"
+          className="pointer-events-none fixed z-[9999] -translate-x-[4px] -translate-y-[2px]"
+          style={{
+            left: cursorCoordsRef.current.x,
+            top: cursorCoordsRef.current.y,
+          }}
+        >
+          <svg
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            style={{
+              filter:
+                'drop-shadow(0 1px 2px rgba(255, 255, 255, 0.55)) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.45))',
+            }}
+          >
+            <path
+              d="M4 2 L4 20 L9 15 L12 22 L15 21 L12 14 L19 14 Z"
+              fill="#1e1b2e"
+              stroke="#e11d48"
+              strokeWidth="1.5"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </div>
       )}
     </div>
   );

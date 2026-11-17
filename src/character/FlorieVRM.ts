@@ -107,11 +107,25 @@ export interface FlorieVRMController {
     isTalking: boolean;
     speechLevel: number;
     speechTime: number;
+    visemeHint?: VisemeKey | null;
   }) => void;
   setCutsceneOverride?: (opts: CutsceneActorOverride | null) => void;
 }
 
-type VisemeKey = 'aa' | 'ih' | 'ou' | 'ee' | 'oh';
+export type VisemeKey = 'aa' | 'ih' | 'ou' | 'ee' | 'oh';
+
+export function charToFrenchSpeechSample(ch: string): { viseme: VisemeKey; weight: number } {
+  const c = ch.toLowerCase();
+  if (/[bmp]/.test(c)) return { viseme: 'ih', weight: 0.06 };
+  if (/[aàâá]/.test(c)) return { viseme: 'aa', weight: 0.88 };
+  if (/[oôö]/.test(c)) return { viseme: 'oh', weight: 0.90 };
+  if (/[uùûü]/.test(c)) return { viseme: 'ou', weight: 0.92 };
+  if (/[iîïy]/.test(c)) return { viseme: 'ih', weight: 0.86 };
+  if (/[eéèêë]/.test(c)) return { viseme: 'ee', weight: 0.86 };
+  if (/[fv]/.test(c)) return { viseme: 'ih', weight: 0.32 };
+  if (/[a-zà-ÿ]/.test(c)) return { viseme: 'ee', weight: 0.45 };
+  return { viseme: 'ih', weight: 0.36 };
+}
 type VisemeCue = [
   start: number,
   end: number,
@@ -1166,6 +1180,7 @@ export async function parseFlorieVrmFromBuffer(
     isTalking: false,
     speechLevel: 0,
     speechTime: 0,
+    visemeHint: null as VisemeKey | null,
   };
   let npcTalkBlend = 0;
   let npcLookBlend = 0;
@@ -1186,11 +1201,13 @@ export async function parseFlorieVrmFromBuffer(
     isTalking: boolean;
     speechLevel: number;
     speechTime: number;
+    visemeHint?: VisemeKey | null;
   }) => {
     npcTalkState.lookAtPos = opts.lookAtPos;
     npcTalkState.isTalking = opts.isTalking;
     npcTalkState.speechLevel = opts.speechLevel;
     npcTalkState.speechTime = opts.speechTime;
+    npcTalkState.visemeHint = opts.visemeHint ?? null;
   };
 
   let cutsceneOverride: CutsceneActorOverride | null = null;
@@ -2185,8 +2202,8 @@ export async function parseFlorieVrmFromBuffer(
       // 6) Natural periodic eye blinking & nuanced facial expressions via VRM ExpressionManager
       const hasVRoidMorphs = faceMorphTargets.length > 0;
       let activeBlink = 0;
-      const talkSmile = npcTalkBlend * (0.34 + npcTalkState.speechLevel * 0.16);
-      const talkBrow = npcTalkBlend * Math.max(0, (npcTalkState.speechLevel - 0.18) * 0.85);
+      const talkSmile = npcTalkBlend * (0.24 + npcTalkState.speechLevel * 0.08);
+      const talkBrow = npcTalkBlend * Math.max(0, (npcTalkState.speechLevel - 0.25) * 0.65);
       const cutExpr = cutsceneOverride?.expression ?? 'none';
       const cutHappy =
         cutExpr === 'happy'
@@ -2237,13 +2254,22 @@ export async function parseFlorieVrmFromBuffer(
         vrm.expressionManager.setValue('surprised', hasVRoidMorphs ? 0 : effCuriousBrow * 0.45);
         const sLvl = npcTalkState.speechLevel;
         const sTime = npcTalkState.speechTime;
-        const lipActive = npcTalkBlend > 0.05 && sLvl > 0.03;
-        const lipDamp = lipActive ? 1 - Math.exp(-34 * safeDt) : 1 - Math.exp(-18 * safeDt);
-        const cycle = (sTime * 9.5) % 4.0;
-        const wAa = lipActive ? sLvl * (0.42 + 0.38 * Math.max(0, Math.sin(cycle * 1.57))) : 0;
-        const wOh = lipActive ? sLvl * 0.38 * Math.max(0, Math.cos(cycle * 1.57)) : 0;
-        const wIh = lipActive ? sLvl * 0.28 * Math.max(0, Math.sin((cycle + 1.2) * 1.57)) : 0;
-        const wEe = lipActive ? sLvl * 0.22 * Math.max(0, -Math.sin(cycle * 1.57)) : 0;
+        const sHint = npcTalkState.visemeHint;
+        const lipActive = npcTalkBlend > 0.05 && sLvl > 0.025;
+        const lipDamp = lipActive ? 1 - Math.exp(-18 * safeDt) : 1 - Math.exp(-13 * safeDt);
+        const VOWEL_WHEEL: readonly VisemeKey[] = ['aa', 'ih', 'ee', 'oh', 'ou'];
+        const wheelPos = (((sTime * 4.6) % 5) + 5) % 5;
+        const wheelIdx0 = Math.floor(wheelPos) % 5;
+        const wheelIdx1 = (wheelIdx0 + 1) % 5;
+        const wheelFrac = wheelPos - Math.floor(wheelPos);
+        const w1 = 0.5 - 0.5 * Math.cos(wheelFrac * Math.PI);
+        const w0 = 1 - w1;
+        const syllableMod = sHint
+          ? 1.0
+          : 0.42 + 0.58 * (0.5 - 0.5 * Math.cos(sTime * 11.2));
+        const baseAmp = lipActive
+          ? Math.min(0.24, Math.max(0.015, sLvl * 0.24 * syllableMod))
+          : 0;
 
         for (const vk of ['aa', 'ih', 'ou', 'ee', 'oh'] as VisemeKey[]) {
           let targetV =
@@ -2253,16 +2279,21 @@ export async function parseFlorieVrmFromBuffer(
                 ? pose.expressionSoftMouthOpen * 0.22
                 : 0;
           if (lipActive) {
-            targetV =
-              vk === 'aa'
-                ? wAa
-                : vk === 'oh'
-                  ? wOh
-                  : vk === 'ih'
-                    ? wIh
-                    : vk === 'ee'
-                      ? wEe
-                      : wOh * 0.35;
+            let shapeShare = 0;
+            if (sHint) {
+              if (vk === sHint) {
+                shapeShare = 0.88;
+              } else {
+                const hintIdx = VOWEL_WHEEL.indexOf(sHint);
+                const coIdx = (hintIdx + 1) % 5;
+                if (vk === VOWEL_WHEEL[coIdx]) shapeShare = 0.12;
+              }
+            } else {
+              if (vk === VOWEL_WHEEL[wheelIdx0]) shapeShare += w0;
+              if (vk === VOWEL_WHEEL[wheelIdx1]) shapeShare += w1;
+            }
+            const vowelScale = vk === 'aa' ? 0.86 : vk === 'oh' ? 0.90 : 1.0;
+            targetV = baseAmp * shapeShare * vowelScale;
           }
           currentVisemes[vk] = THREE.MathUtils.lerp(currentVisemes[vk], targetV, lipDamp);
           vrm.expressionManager.setValue(vk, currentVisemes[vk]);
@@ -2323,7 +2354,15 @@ export async function parseFlorieVrmFromBuffer(
             cutExpr === 'happy' ? 0 : effEyeSquint * 0.62 * (1 - activeBlink * 0.85);
         }
         if (mthFunIdx !== undefined) {
-          inf[mthFunIdx] = Math.min(0.45, effHappy * 0.48);
+          const visemeEnergy =
+            currentVisemes.aa +
+            currentVisemes.ih +
+            currentVisemes.ou +
+            currentVisemes.ee +
+            currentVisemes.oh;
+          const dialogueMouthQuiet =
+            npcTalkBlend > 0.05 ? Math.max(0.18, 1 - visemeEnergy * 3.4) : 1;
+          inf[mthFunIdx] = Math.min(0.32, effHappy * 0.36) * dialogueMouthQuiet;
         }
       }
 

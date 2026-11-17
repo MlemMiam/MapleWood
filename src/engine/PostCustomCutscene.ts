@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {
+  charToFrenchSpeechSample,
   discoverFlorieVrmBuffer,
   parseFlorieVrmFromBuffer,
   type FlorieVRMController,
@@ -414,14 +415,15 @@ export class PostCustomCutsceneDirector {
     const currentChar =
       activeSub && charIdx >= 0 && charIdx < activeSub.text.length ? activeSub.text[charIdx] : '';
     const isPronouncedLetter = /[a-zA-ZÀ-ÿ0-9]/.test(currentChar);
-    const isVowel = /[aeiouyàâéèêëîïôùûüAEIOUYÀÂÉÈÊËÎÏÔÙÛÜ]/.test(currentChar);
     const charPhase = isActivelyTyping ? ((t - lineStart) % charInterval) / charInterval : 0;
     const florieTalking = isActivelyTyping && activeSub?.speaker === 'Florie';
     const helenTalking = isActivelyTyping && activeSub?.speaker === 'Mme Parker';
+    const speechSample = isPronouncedLetter ? charToFrenchSpeechSample(currentChar) : null;
     const speechLevel =
-      isActivelyTyping && isPronouncedLetter
-        ? (isVowel ? 0.82 : 0.52) * (0.45 + 0.55 * Math.sin(charPhase * Math.PI))
+      isActivelyTyping && speechSample
+        ? speechSample.weight * (0.35 + 0.65 * Math.sin(charPhase * Math.PI))
         : 0;
+    const visemeHint = isActivelyTyping && speechSample ? speechSample.viseme : null;
     const speechTime = t - lineStart;
 
     if (t >= 16.65 && !this.cuesTriggered.has('openDoor')) {
@@ -622,6 +624,7 @@ export class PostCustomCutsceneDirector {
         isTalking: florieTalking,
         speechLevel: florieTalking ? speechLevel : 0,
         speechTime,
+        visemeHint: florieTalking ? visemeHint : null,
       });
 
       const blushAmount = t >= 26.8 ? smoothstep((t - 26.8) / 0.6) : 0;
@@ -762,6 +765,7 @@ export class PostCustomCutsceneDirector {
         lookAtPos: lookTarget,
         speechLevel: helenTalking ? speechLevel : 0,
         speechTime,
+        visemeHint: helenTalking ? visemeHint : null,
       });
     }
 

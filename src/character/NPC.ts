@@ -9,6 +9,7 @@ import {
 } from './PlayerAnimations';
 import {
   type FlorieVRMController,
+  type VisemeKey,
   fetchVrmBufferWithFallback,
   parseFlorieVrmFromBuffer,
 } from './FlorieVRM';
@@ -83,7 +84,7 @@ export class CampusNPC {
 
     interactions.register({
       id: `npc-${data.id}`,
-      label: data.promptLabel ?? `parler à ${data.name} (${data.role})`,
+      label: data.promptLabel ?? `Parler à ${data.name}`,
       type: 'npc',
       targetObject: this.rig.root,
       worldPosition: this.position,
@@ -129,13 +130,19 @@ export class CampusNPC {
     dt: number,
     playerPos: THREE.Vector3,
     isTalkingToThis: boolean,
-    dialogueVisuals?: { lookAtPos: THREE.Vector3 | null; speechLevel: number; speechTime: number }
+    dialogueVisuals?: {
+      lookAtPos: THREE.Vector3 | null;
+      speechLevel: number;
+      speechTime: number;
+      visemeHint?: VisemeKey | null;
+    }
   ): void {
     this.vrmController?.setNpcDialogueVisuals?.({
       lookAtPos: isTalkingToThis ? (dialogueVisuals?.lookAtPos ?? null) : null,
       isTalking: isTalkingToThis,
       speechLevel: isTalkingToThis ? (dialogueVisuals?.speechLevel ?? 0) : 0,
       speechTime: dialogueVisuals?.speechTime ?? 0,
+      visemeHint: isTalkingToThis ? (dialogueVisuals?.visemeHint ?? null) : null,
     });
     const distToPlayer = Math.hypot(playerPos.x - this.position.x, playerPos.z - this.position.z);
 

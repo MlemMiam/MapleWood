@@ -755,7 +755,7 @@ export function createExteriorNoticeBoard(
 
   interactions.register({
     id,
-    label: `consulter : ${title}`,
+    label: 'Lire le panneau',
     type: 'book',
     targetObject: cabinet,
     worldPosition: new THREE.Vector3(x, y, z),
@@ -847,7 +847,7 @@ export function createExteriorPoster(
   const meta = POSTER_META[theme];
   interactions.register({
     id,
-    label: `lire l'affiche « ${meta.title} »`,
+    label: "Lire l'affiche",
     type: 'book',
     targetObject: frame,
     worldPosition: new THREE.Vector3(x, y, z),
