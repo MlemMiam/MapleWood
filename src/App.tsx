@@ -199,6 +199,8 @@ export default function App() {
   }, []);
   const [weather, setWeather] = useState<WeatherType>('sunny');
   const [timePhase, setTimePhase] = useState<TimePhase>('morning');
+  const [gameTime, setGameTime] = useState({ hour: 8, minute: 0 });
+  const gameTimeRef = useRef({ hour: 8, minute: 0, accum: 0 });
   const vrmInputRef = useRef<HTMLInputElement | null>(null);
 
   // Refs synced for the 60Hz loop so HUD state updates never recreate the WebGL canvas
@@ -674,6 +676,23 @@ timer.update();
         const frameDt = Math.min(rawDt, 0.22);
         const dt = Math.min(rawDt, 0.05);
         const elapsed = timer.getElapsed();
+
+        if (phaseRef.current === 'playing') {
+          gameTimeRef.current.accum += dt;
+          while (gameTimeRef.current.accum >= 1) {
+            gameTimeRef.current.accum -= 1;
+            gameTimeRef.current.minute += 1;
+            if (gameTimeRef.current.minute >= 60) {
+              gameTimeRef.current.minute = 0;
+              gameTimeRef.current.hour = (gameTimeRef.current.hour + 1) % 24;
+            }
+          }
+          setGameTime({ hour: gameTimeRef.current.hour, minute: gameTimeRef.current.minute });
+          const h = gameTimeRef.current.hour;
+          const tp: TimePhase = h >= 20 || h < 6 ? 'night' : h >= 17 ? 'sunset' : h >= 14 ? 'afternoon' : h >= 11 ? 'midday' : 'morning';
+          if (tp !== timePhase) setTimePhase(tp);
+        }
+
         const curPhase = phaseRef.current;
         const curSettings = settingsRef.current;
 
@@ -1644,6 +1663,7 @@ timer.update();
           language={settings.language}
           weather={weather}
           timePhase={timePhase}
+          gameTime={gameTime}
           onToggleMute={handleToggleMute}
           onOpenMap={() => updatePhase('map')}
           onOpenPause={() => updatePhase('paused')}

@@ -200,21 +200,7 @@ export class CampusNPC {
       return;
     }
 
-    // Pause patrol & face player if talking or very close
-    if (isTalkingToThis || distToPlayer < 2.2) {
-      const targetYaw = Math.atan2(-(playerPos.x - this.position.x), -(playerPos.z - this.position.z));
-      let diff = targetYaw - this.yaw;
-      while (diff > Math.PI) diff -= Math.PI * 2;
-      while (diff < -Math.PI) diff += Math.PI * 2;
-      this.yaw += diff * Math.min(1, dt * 8);
-      this.rig.root.rotation.y = this.yaw;
-      this.phase += dt * 1.5;
-      this.updateRigAnimation('idle', dt);
-      if (!this.vrmController) {
-        this.updateHeadTrack(playerPos, distToPlayer, dt);
-      }
-      return;
-    }
+    // (idle pause removed - NPC keeps walking)
 
     const isFar = distToPlayer > 32;
     if (this.vrmController) {

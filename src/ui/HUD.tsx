@@ -20,6 +20,7 @@ interface HUDProps {
   language: Language;
   weather?: WeatherType;
   timePhase?: TimePhase;
+  gameTime?: { hour: number; minute: number };
   onToggleMute: () => void;
   onOpenMap: () => void;
   onOpenPause: () => void;
@@ -49,6 +50,7 @@ export const HUD: React.FC<HUDProps> = ({
   language,
   weather = 'sunny',
   timePhase = 'morning',
+  gameTime,
   onToggleMute,
   onOpenMap,
   onOpenPause,
@@ -101,6 +103,11 @@ export const HUD: React.FC<HUDProps> = ({
                             : '☀️ Matin'}
               </span>
             </div>
+            {gameTime && (
+              <div className="px-2 py-0.5 rounded-full bg-slate-50/95 border border-slate-200/80 text-[10px] text-[#3b334a] font-mono-tabular font-bold">
+                {String(gameTime.hour).padStart(2, '0')}:{String(gameTime.minute).padStart(2, '0')}
+              </div>
+            )}
             <div
               className="font-display text-xl font-bold text-[#1e1b2e] leading-tight mt-0.5"
               data-testid="hud-zone-name"
