@@ -548,7 +548,7 @@ export class Player {
 
     // Distance-synced gait animation + footsteps
     let animState: AnimState = 'idle';
-    if (!this.isGrounded) {
+    if (!this.isGrounded && !this.isRidingElevator) {
       animState = 'jump';
     } else if (moving && horizDist > 0.002) {
       animState = wantsSprint ? 'run' : 'walk';

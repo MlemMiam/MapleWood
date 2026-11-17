@@ -571,14 +571,14 @@ export class ElevatorCabin {
       const isNearOutside = Math.abs(dx) < 1.75 && dz > 0.02 && dz < 2.8 && dy < 2.2;
 
       // Player crossing the doorway threshold (keep doors safely open so they aren't clipped!)
-      const inDoorwayZone = Math.abs(dx) < 1.2 && dz >= -0.35 && dz <= 0.45 && dy < 2.2;
+      const inDoorwayZone = Math.abs(dx) < 1.2 && dz >= -0.30 && dz <= 0.45 && dy < 2.2;
 
       // Player cleanly inside cabin (past threshold radius to back glass)
       const inCabin =
-        Math.abs(dx) < this.cabinW * 0.5 &&
-        player.position.z < this.doorZ - 0.35 &&
-        player.position.z >= this.shaftZ - this.cabinD * 0.5 - 0.1 &&
-        dy < 2.5;
+        Math.abs(dx) < this.cabinW * 0.5 + 0.20 &&
+        dz < -0.30 &&
+        player.position.z >= this.shaftZ - this.cabinD * 0.5 - 0.25 &&
+        dy < 3.2;
 
       // Player actively walking toward exit (+Z) or standing right at closed door wanting out
       const walkingTowardExit =
@@ -611,7 +611,15 @@ export class ElevatorCabin {
       }
 
       // Track passenger boarding
-      if (inCabin) {
+      if (this.state === 'moving' && this.controllingPlayerRide) {
+        // While moving, strictly maintain elevator riding lock so player never falls mid-flight
+        if (typeof player.syncElevatorRide === 'function') {
+          player.syncElevatorRide(this.currentY);
+        } else {
+          player.isRidingElevator = true;
+          player.elevatorY = this.currentY;
+        }
+      } else if (inCabin) {
         if (!this.playerInsideCabin) {
           this.playerInsideCabin = true;
           // Newly stepped in: close doors smoothly after 1.3s to pick destination
@@ -619,8 +627,17 @@ export class ElevatorCabin {
             this.waitOpenTimer = Math.min(this.waitOpenTimer, 1.3);
           }
         }
+        if (this.state === 'moving') {
+          this.controllingPlayerRide = true;
+          if (typeof player.syncElevatorRide === 'function') {
+            player.syncElevatorRide(this.currentY);
+          } else {
+            player.isRidingElevator = true;
+            player.elevatorY = this.currentY;
+          }
+        }
       } else {
-        if (this.playerInsideCabin) {
+        if (this.playerInsideCabin && this.state !== 'moving') {
           this.playerInsideCabin = false;
           this.menuTriggeredThisRide = false;
           this.justArrived = false;
@@ -629,20 +646,6 @@ export class ElevatorCabin {
             player.isRidingElevator = false;
           }
         }
-      }
-
-      // Root player vertically to cabin strictly while THIS cabin is moving with player inside
-      if (this.playerInsideCabin && this.state === 'moving') {
-        this.controllingPlayerRide = true;
-        if (typeof player.syncElevatorRide === 'function') {
-          player.syncElevatorRide(this.currentY);
-        } else {
-          player.isRidingElevator = true;
-          player.elevatorY = this.currentY;
-        }
-      } else if (this.controllingPlayerRide) {
-        this.controllingPlayerRide = false;
-        player.isRidingElevator = false;
       }
     } else {
       this.prevPlayerZ = null;

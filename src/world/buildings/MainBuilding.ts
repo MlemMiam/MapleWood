@@ -164,7 +164,7 @@ export function buildMainBuilding(ctx: WorldBuildContext): THREE.Group {
 
   const loader = new GLTFLoader();
   loader.load(
-    '/assets/models/main_building.glb?v=20261117_stairs',
+    '/assets/models/main_building.glb?v=20261117_stairs_v3',
     (gltf) => {
       const building = gltf.scene;
       building.name = 'MainBuilding_Blender';
@@ -483,6 +483,9 @@ function loadStairwellDoors(
     color: 0x545b63,
     roughness: 0.42,
     metalness: 0.28,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
   });
   const kickPlateMat = new THREE.MeshStandardMaterial({
     color: 0x8a9299,
@@ -505,10 +508,10 @@ function loadStairwellDoors(
     metalness: 0.3,
   });
 
-  const leafW = 0.88;
-  const leafH = 2.66;
-  const leafT = 0.055;
-  const hingeOffset = 0.90;
+  const leafW = 0.98;
+  const leafH = 2.76;
+  const leafT = 0.050;
+  const hingeOffset = 0.98;
   const AUTO_CLOSE_DISTANCE = 5.5;
   const MIN_OPEN_SECONDS = 0.8;
 
@@ -597,7 +600,7 @@ function loadStairwellDoors(
 
     const createLeaf = (isLeft: boolean): THREE.Group => {
       const pivot = new THREE.Group();
-      pivot.position.set(isLeft ? -hingeOffset : hingeOffset, 0, 0);
+      pivot.position.set(isLeft ? -hingeOffset + 0.025 : hingeOffset - 0.025, 0, 0);
 
       const leafGroup = new THREE.Group();
       const centerOffsetX = isLeft ? leafW * 0.5 : -leafW * 0.5;
