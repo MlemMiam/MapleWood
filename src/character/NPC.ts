@@ -294,6 +294,7 @@ let wps = this.data.waypoints;
           while (diff < -Math.PI) diff += Math.PI * 2;
           this.yaw += diff * Math.min(1, dt * 8);
           this.rig.root.rotation.y = this.yaw;
+          this.rig.root.position.copy(this.position);
 
           // Match player gait phase scaling for walk and run animations
           this.phase += step * (isRunning ? 2.05 : 3.6);
